@@ -1,0 +1,92 @@
+# Copyright 2024 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#==================================
+# ------ INTERPOSER LAYERS --------
+#==================================
+
+# Boundary layer
+prboundary = polygons(189, 0)
+
+# MIM capacitor layers
+mim = polygons(36, 0)
+vmim = polygons(129, 0)
+
+# Metal4 layers
+metal4 = polygons(50, 0)
+metal4_pin = polygons(50, 2)
+metal4_mask = polygons(50, 20)
+metal4_filler = polygons(50, 22)
+metal4_nofill = polygons(50, 23)
+metal4_slit = polygons(50, 24)
+metal4_text = polygons(50, 25)
+metal4_opc = polygons(50, 26)
+metal4_noqrc = polygons(50, 28)
+metal4_res = polygons(50, 29)
+metal4_iprobe = polygons(50, 33)
+metal4_diffprb = polygons(50, 34)
+
+# Via4 layer
+via4 = polygons(66, 0)
+
+# Metal5 layers
+metal5 = polygons(67, 0)
+metal5_pin = polygons(67, 2)
+metal5_mask = polygons(67, 20)
+metal5_filler = polygons(67, 22)
+metal5_nofill = polygons(67, 23)
+metal5_slit = polygons(67, 24)
+metal5_text = polygons(67, 25)
+metal5_opc = polygons(67, 26)
+metal5_noqrc = polygons(67, 28)
+metal5_res = polygons(67, 29)
+metal5_iprobe = polygons(67, 33)
+metal5_diffprb = polygons(67, 34)
+
+# TopVia1 layer
+topvia1 = polygons(125, 0)
+
+# TopMetal1 layers
+topmetal1 = polygons(126, 0)
+topmetal1_pin = polygons(126, 2)
+topmetal1_mask = polygons(126, 20)
+topmetal1_filler = polygons(126, 22)
+topmetal1_nofill = polygons(126, 23)
+topmetal1_slit = polygons(126, 24)
+topmetal1_text = polygons(126, 25)
+topmetal1_noqrc = polygons(126, 28)
+topmetal1_res = polygons(126, 29)
+topmetal1_iprobe = polygons(126, 33)
+topmetal1_diffprb = polygons(126, 34)
+
+# TopVia2 layer
+topvia2 = polygons(133, 0)
+
+# TopMetal2 layers
+topmetal2 = polygons(134, 0)
+topmetal2_pin = polygons(134, 2)
+topmetal2_mask = polygons(134, 20)
+topmetal2_filler = polygons(134, 22)
+topmetal2_nofill = polygons(134, 23)
+topmetal2_slit = polygons(134, 24)
+topmetal2_text = polygons(134, 25)
+topmetal2_noqrc = polygons(134, 28)
+topmetal2_res = polygons(134, 29)
+topmetal2_iprobe = polygons(134, 33)
+topmetal2_diffprb = polygons(134, 34)
+
+# MEMS and special layers
+memvia = polygons(145, 0)
+thinfilmres = polygons(146, 0)
+rfmem = polygons(147, 0)

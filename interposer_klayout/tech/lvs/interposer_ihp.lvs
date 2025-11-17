@@ -1,0 +1,62 @@
+# Copyright 2024 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#================================
+# INTERPOSER LVS MAIN RUNSET
+#================================
+
+# Optional definitions
+if $run_mode.nil?
+  $run_mode = "flat"
+end
+
+if $threads.nil?
+  $threads = 4
+end
+
+if $verbose.nil?
+  $verbose = false
+end
+
+# Report settings
+report_lvs(File.basename(source.path) + ".lvsdb")
+
+# Load layer definitions
+load(File.join(File.dirname(__FILE__), "rule_decks/layers_definitions.lvs"))
+
+# Define connectivity for backend metal stack
+# Metal4 -> Via4 -> Metal5 -> TopVia1 -> TopMetal1 -> TopVia2 -> TopMetal2
+connect(metal4, via4)
+connect(via4, metal5)
+connect(metal5, topvia1)
+connect(topvia1, topmetal1)
+connect(topmetal1, topvia2)
+connect(topvia2, topmetal2)
+
+# MEMS via connectivity
+connect(metal5, memvia)
+connect(memvia, topmetal1)
+
+# Extract netlist from layout
+netlist
+
+# Compare with reference schematic (if provided)
+if $schematic
+  schematic($schematic)
+  compare
+else
+  logger.info("No schematic provided - connectivity check only")
+end
+
+logger.info("LVS check complete for interposer backend layers")

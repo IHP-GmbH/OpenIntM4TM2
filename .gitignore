@@ -1,0 +1,40 @@
+# Project documentation (internal use only)
+CLAUDE.md
+
+# GDS files
+*.gds
+*.gds.gz
+*.oas
+
+# KLayout temporary files
+*.lym~
+*.lyp~
+*.lyt~
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store

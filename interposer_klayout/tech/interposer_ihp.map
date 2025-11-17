@@ -1,0 +1,76 @@
+#************************************************************************
+#************************************************************************
+# File: interposer_ihp.map
+# DATE: 2025
+#************************************************************************
+#************************************************************************
+#
+# Copyright 2023 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#*************************************************************************
+#-------------------------------------------------------------------------
+# EDI Stream layer mapping table for IHP-derived Interposer
+# Version: 1.0
+# Backend metal layers only (Metal4-5, TopMetal1-2)
+# Use only in combination with valid GDSII data of all used blocks!
+#-------------------------------------------------------------------------
+#EDI Layer Name  EDI Layer Type               GDS Layer Number   GDS Layer Type
+#==============  ==============               ================   ==============
+
+Metal4           NET,SPNET,PIN,LEFPIN,VIA     50                 0
+Metal4           PIN,LEFPIN                   50                 2
+Metal4           FILL                         50                 22
+Metal4           LEFOBS                       50                 4
+
+NAME             Metal4/PIN                   50                 25
+
+Via4             PIN                          66                 0
+Via4             LEFPIN                       66                 0
+Via4             VIA                          66                 0
+
+Metal5           NET,SPNET,PIN,LEFPIN,VIA     67                 0
+Metal5           PIN,LEFPIN                   67                 2
+Metal5           FILL                         67                 22
+Metal5           LEFOBS                       67                 4
+
+NAME             Metal5/PIN                   67                 25
+
+TopVia1          PIN                          125                0
+TopVia1          LEFPIN                       125                0
+TopVia1          VIA                          125                0
+
+TopMetal1        NET,SPNET,PIN,LEFPIN,VIA     126                0
+TopMetal1        PIN,LEFPIN                   126                2
+TopMetal1        FILL                         126                22
+TopMetal1        LEFOBS                       126                4
+
+NAME             TopMetal1/PIN                126                25
+
+TopVia2          PIN                          133                0
+TopVia2          LEFPIN                       133                0
+TopVia2          VIA                          133                0
+
+TopMetal2        NET,SPNET,PIN,LEFPIN,VIA     134                0
+TopMetal2        PIN,LEFPIN                   134                2
+TopMetal2        FILL                         134                22
+TopMetal2        LEFOBS                       134                4
+
+NAME             TopMetal2/PIN                134                25
+
+COMP             ALL                          189                0
+
+NAME             COMP                         63                 0
+
+DIEAREA          ALL                          189                4

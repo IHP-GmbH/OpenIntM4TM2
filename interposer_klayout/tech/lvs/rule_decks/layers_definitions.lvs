@@ -1,0 +1,68 @@
+# Copyright 2024 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#==================================
+# ------ INTERPOSER LAYERS --------
+#==================================
+
+# Boundary layer
+prboundary = input(189, 0)
+
+# MIM capacitor layers
+mim = input(36, 0)
+vmim = input(129, 0)
+
+# Metal4 layers
+metal4_drawing = input(50, 0)
+metal4_pin = input(50, 2)
+metal4_text = input(50, 25)
+metal4_res = input(50, 29)
+
+# Via4 layer
+via4 = input(66, 0)
+
+# Metal5 layers
+metal5_drawing = input(67, 0)
+metal5_pin = input(67, 2)
+metal5_text = input(67, 25)
+metal5_res = input(67, 29)
+
+# TopVia1 layer
+topvia1 = input(125, 0)
+
+# TopMetal1 layers
+topmetal1_drawing = input(126, 0)
+topmetal1_pin = input(126, 2)
+topmetal1_text = input(126, 25)
+topmetal1_res = input(126, 29)
+
+# TopVia2 layer
+topvia2 = input(133, 0)
+
+# TopMetal2 layers
+topmetal2_drawing = input(134, 0)
+topmetal2_pin = input(134, 2)
+topmetal2_text = input(134, 25)
+topmetal2_res = input(134, 29)
+
+# MEMS and special layers
+memvia = input(145, 0)
+thinfilmres = input(146, 0)
+rfmem = input(147, 0)
+
+# Combine drawing and pin layers for connectivity
+metal4 = metal4_drawing.or(metal4_pin).or(metal4_text)
+metal5 = metal5_drawing.or(metal5_pin).or(metal5_text)
+topmetal1 = topmetal1_drawing.or(topmetal1_pin).or(topmetal1_text)
+topmetal2 = topmetal2_drawing.or(topmetal2_pin).or(topmetal2_text)
