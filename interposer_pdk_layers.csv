@@ -38,7 +38,6 @@ TopMetal1,res,126,29,Wire resistor
 TopMetal1,iprobe,126,33,Current probe
 TopMetal1,diffprb,126,34,Differential Current probe
 Vmim,drawing,129,0,used to mark net mim capacitors
-AntMetal1,drawing,132,0,"Extra first-metal layer for antenna and passive integration"
 TopVia2,drawing,133,0,"Defines via between TopMetal1 and
 TopMetal2,drawing,134,0,Defines 2-nd thick TopMetal layer
 TopMetal2,pin,134,2,TopMetal2 pin layer
@@ -54,3 +53,14 @@ TopMetal2,diffprb,134,34,Differential Current probe
 MEMVia,drawing,145,0,Local Vias within RFM area
 ThinFilmRes,drawing,146,0,"ThinFilmRes(V) and recognition layer for RFMEMS"
 RFMEM,drawing,147,0,Areas for integrated RFMEMS devices
+Passiv,drawing,9,0,Defines regions where passivation coating is removed
+Passiv,pin,9,2,Passiv pin layer
+Passiv,pillar,9,35,Passiv copper pillar layer
+Passiv,sbump,9,36,Passiv solder bump layer
+Passiv,pdl,9,40,Passiv PDL layer
+EdgeSeal,drawing,39,0,"EdgeSeal definition layer, reserved for internal use only"
+EdgeSeal,boundary,39,4,EdgeSeal boundary layer
+dfpad,drawing,41,0,Pad recognition layer
+dfpad,pillar,41,35,Copper pillar pad recognition layer
+dfpad,sbump,41,36,Solder bump pad recognition layer
+TEXT,drawing,63,0,"Macro cell name, element text layer"

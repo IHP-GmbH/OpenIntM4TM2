@@ -8,7 +8,7 @@ This PDK is derived from IHP SG13G2 130nm BiCMOS process, with all frontend devi
 
 ## Layer Stack
 
-The interposer supports 13 layer groups:
+The interposer supports 17 base layers:
 
 ### Metal Interconnect Stack
 - **Metal4** (50/0) - 4th metal interconnect layer
@@ -28,7 +28,13 @@ The interposer supports 13 layer groups:
 - **RFMEM** (147/0) - RFMEMS device areas
 - **MEMVia** (145/0) - Local vias within RFMEMS area
 
-### Utility
+### Pads & Utility
+- **Passiv** (9/0) - Passivation opening regions (removes passivation coating)
+- **EdgeSeal** (39/0, 39/4) - Die edge sealing (internal use)
+- **dfpad** (41/0) - Pad recognition layer
+- **dfpad.pillar** (41/35) - Copper pillar pad recognition
+- **dfpad.sbump** (41/36) - Solder bump pad recognition
+- **TEXT** (63/0) - Macro cell name and element text
 - **prBoundary** (189/0) - Cell boundary layer
 
 ## Directory Structure
@@ -95,10 +101,11 @@ klayout -b -r tech/lvs/interposer_ihp.lvs -rd input=<your_layout.gds>
 - All device layers (MOS, BJT, diode, resistor, inductor, etc.)
 - AntMetal1 layer (not needed for interposer)
 
-### Retained (13 layers)
+### Retained (17 base layers)
 - Backend metal stack only (Metal4 through TopMetal2)
 - Passive components (MIM capacitors, thin film resistors)
 - RFMEMS integration layers
+- Pad and utility layers (Passiv, EdgeSeal, dfpad, TEXT)
 - Essential boundary layers
 
 ## Source

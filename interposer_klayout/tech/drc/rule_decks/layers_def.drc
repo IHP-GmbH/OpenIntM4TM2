@@ -90,3 +90,27 @@ topmetal2_diffprb = polygons(134, 34)
 memvia = polygons(145, 0)
 thinfilmres = polygons(146, 0)
 rfmem = polygons(147, 0)
+
+# Passivation layers
+passiv = polygons(9, 0)
+passiv_pin = polygons(9, 2)
+passiv_pillar = polygons(9, 35)
+passiv_sbump = polygons(9, 36)
+passiv_pdl = polygons(9, 40)
+
+# EdgeSeal layers
+edgeseal = polygons(39, 0)
+edgeseal_boundary = polygons(39, 4)
+
+# Pad recognition layers
+dfpad = polygons(41, 0)
+dfpad_pillar = polygons(41, 35)
+dfpad_sbump = polygons(41, 36)
+
+# Text layer
+text = labels(63, 0)
+
+# Pad derivations (from main.drc)
+pad = passiv.and(dfpad).and(topmetal2)
+cu_pillarpad = passiv_pillar.and(dfpad_pillar).and(topmetal2)
+sbumppad = dfpad_sbump.and(passiv_sbump).and(topmetal2)

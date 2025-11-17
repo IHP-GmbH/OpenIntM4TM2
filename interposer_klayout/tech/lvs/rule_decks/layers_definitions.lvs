@@ -61,8 +61,30 @@ memvia = input(145, 0)
 thinfilmres = input(146, 0)
 rfmem = input(147, 0)
 
+# Passivation layers
+passiv_drawing = input(9, 0)
+passiv_pin = input(9, 2)
+passiv_pillar = input(9, 35)
+passiv_sbump = input(9, 36)
+passiv_pdl = input(9, 40)
+
+# EdgeSeal layers
+edgeseal_drawing = input(39, 0)
+edgeseal_boundary = input(39, 4)
+
+# Pad recognition layers
+dfpad_drawing = input(41, 0)
+dfpad_pillar = input(41, 35)
+dfpad_sbump = input(41, 36)
+
+# Text layer
+text = input(63, 0)
+
 # Combine drawing and pin layers for connectivity
 metal4 = metal4_drawing.or(metal4_pin).or(metal4_text)
 metal5 = metal5_drawing.or(metal5_pin).or(metal5_text)
 topmetal1 = topmetal1_drawing.or(topmetal1_pin).or(topmetal1_text)
 topmetal2 = topmetal2_drawing.or(topmetal2_pin).or(topmetal2_text)
+passiv = passiv_drawing.or(passiv_pin)
+dfpad = dfpad_drawing
+edgeseal = edgeseal_drawing
