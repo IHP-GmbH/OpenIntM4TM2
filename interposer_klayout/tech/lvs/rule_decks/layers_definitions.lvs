@@ -80,6 +80,14 @@ dfpad_sbump = input(41, 36)
 # Text layer
 text = input(63, 0)
 
+# LBE layer (Localized Backside Etch)
+lbe = input(157, 0)
+
+# IND layers (Inductor marker - no device extraction for interposer)
+ind_drawing = input(27, 0)
+ind_pin = input(27, 2)
+ind_text = input(27, 25)
+
 # Combine drawing and pin layers for connectivity
 metal4 = metal4_drawing.or(metal4_pin).or(metal4_text)
 metal5 = metal5_drawing.or(metal5_pin).or(metal5_text)
@@ -88,3 +96,4 @@ topmetal2 = topmetal2_drawing.or(topmetal2_pin).or(topmetal2_text)
 passiv = passiv_drawing.or(passiv_pin)
 dfpad = dfpad_drawing
 edgeseal = edgeseal_drawing
+ind = ind_drawing.or(ind_pin)

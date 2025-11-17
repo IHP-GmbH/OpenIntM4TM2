@@ -8,7 +8,7 @@ This PDK is derived from IHP SG13G2 130nm BiCMOS process, with all frontend devi
 
 ## Layer Stack
 
-The interposer supports 17 base layers:
+The interposer supports 19 base layers:
 
 ### Metal Interconnect Stack
 - **Metal4** (50/0) - 4th metal interconnect layer
@@ -36,6 +36,8 @@ The interposer supports 17 base layers:
 - **dfpad.sbump** (41/36) - Solder bump pad recognition
 - **TEXT** (63/0) - Macro cell name and element text
 - **prBoundary** (189/0) - Cell boundary layer
+- **LBE** (157/0) - Localized backside etch for TSV/cavity applications
+- **IND** (27/0, 27/2, 27/25) - Inductor marking (visual marker, TopMetal1/2 inductors)
 
 ## Directory Structure
 
@@ -101,12 +103,15 @@ klayout -b -r tech/lvs/interposer_ihp.lvs -rd input=<your_layout.gds>
 - All device layers (MOS, BJT, diode, resistor, inductor, etc.)
 - AntMetal1 layer (not needed for interposer)
 
-### Retained (17 base layers)
+### Retained (19 base layers)
 - Backend metal stack only (Metal4 through TopMetal2)
-- Passive components (MIM capacitors, thin film resistors)
+- Passive components (MIM capacitors, thin film resistors, inductors)
 - RFMEMS integration layers
 - Pad and utility layers (Passiv, EdgeSeal, dfpad, TEXT)
+- Advanced features (LBE for TSV/cavities, IND for inductor marking)
 - Essential boundary layers
+
+**Note on IND layer:** Used for visual marking of inductor areas only. Full LVS device extraction not supported in interposer PDK (requires frontend substrate/well layers).
 
 ## Source
 

@@ -64,3 +64,7 @@ dfpad,drawing,41,0,Pad recognition layer
 dfpad,pillar,41,35,Copper pillar pad recognition layer
 dfpad,sbump,41,36,Solder bump pad recognition layer
 TEXT,drawing,63,0,"Macro cell name, element text layer"
+LBE,drawing,157,0,For localized back side etch
+IND,drawing,27,0,Identifies inductor areas
+IND,pin,27,2,IND pin layer
+IND,text,27,25,Text layer for IND

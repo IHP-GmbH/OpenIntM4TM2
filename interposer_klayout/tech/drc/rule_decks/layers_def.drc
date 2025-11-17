@@ -114,3 +114,11 @@ text = labels(63, 0)
 pad = passiv.and(dfpad).and(topmetal2)
 cu_pillarpad = passiv_pillar.and(dfpad_pillar).and(topmetal2)
 sbumppad = dfpad_sbump.and(passiv_sbump).and(topmetal2)
+
+# LBE layer (Localized Backside Etch)
+lbe = polygons(157, 0)
+
+# IND layers (Inductor marker - visual only)
+ind = polygons(27, 0)
+ind_pin = polygons(27, 2)
+ind_text = labels(27, 25)
