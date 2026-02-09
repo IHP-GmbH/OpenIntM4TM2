@@ -88,6 +88,11 @@ ind_drawing = input(27, 0)
 ind_pin = input(27, 2)
 ind_text = input(27, 25)
 
+# Recognition layers for Cu Pillar and Solder Bump
+recog_drawing = input(99, 0)
+recog_pillar = input(99, 35)
+recog_sbump = input(99, 36)
+
 # Combine drawing and pin layers for connectivity
 metal4 = metal4_drawing.or(metal4_pin).or(metal4_text)
 metal5 = metal5_drawing.or(metal5_pin).or(metal5_text)

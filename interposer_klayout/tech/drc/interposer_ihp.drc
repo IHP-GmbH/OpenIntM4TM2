@@ -16,6 +16,8 @@
 # INTERPOSER DRC MAIN RUNSET
 #================================
 
+require 'json'
+
 # Optional definitions
 if $run_mode.nil?
   $run_mode = "tiling"
@@ -29,14 +31,69 @@ if $verbose.nil?
   $verbose = false
 end
 
+# DRC tolerance for floating point comparisons
+drc_tole = 1e-6
+
+# Control flags
+BEOL = true
+PRECHECK_DRC = false
+
 # Report settings
 report("Interposer DRC Report", File.basename(source.path))
 
-# Load layer definitions
-load(File.join(File.dirname(__FILE__), "rule_decks/layers_def.drc"))
+#================================================
+# ------------ LOAD DRC RULE VALUES -------------
+#================================================
 
-# Backend metal stack only - no frontend device rules needed
-# Placeholder for specific design rules (spacing, width, etc.)
-# These should be defined based on actual process requirements
+rule_deck_path = File.join(File.dirname(__FILE__), "rule_decks")
+json_file = File.join(rule_deck_path, "interposer_tech_default.json")
+
+if File.exist?(json_file)
+  json_data = JSON.parse(File.read(json_file))
+  drc_rules = json_data['rules']
+  logger.info("Loaded DRC rules from #{json_file}")
+else
+  logger.warn("DRC rules file not found: #{json_file}")
+  drc_rules = {}
+end
+
+#================================================
+#------------ PRE-DEFINED FUNCTIONS -------------
+#================================================
+
+# Function to detect circular shapes (required for Cu Pillar shape validation)
+def get_circle(polygon_check)
+  maybe_circle1 = polygon_check.with_bbox_aspect_ratio(1)
+  maybe_circle2 = maybe_circle1.select { |polygon| polygon.num_points >= 16 }
+  # Circle detection based on area ratio of bounding box to shape area ~ 4/pi ~ 1.2732
+  # (Derived from: (d^2) / (pi * d^2 / 4) = 4/pi)
+  maybe_circle2.without_holes.with_area_ratio(1.270, 1.276)
+end
+
+#================================================
+# ------------ LOAD LAYER DEFINITIONS -----------
+#================================================
+
+load(File.join(rule_deck_path, "layers_def.drc"))
+
+#================================================
+# ------------ LOAD DRC RULE DECKS --------------
+#================================================
+
+# Passivation rules
+passiv_rules = File.join(rule_deck_path, "5_27_passiv.drc")
+load(passiv_rules) if File.exist?(passiv_rules)
+
+# Pad rules (general)
+pad_rules = File.join(rule_deck_path, "6_9_pad.drc")
+load(pad_rules) if File.exist?(pad_rules)
+
+# Cu Pillar specific rules
+copperpillar_rules = File.join(rule_deck_path, "6_9_copperpillar.drc")
+load(copperpillar_rules) if File.exist?(copperpillar_rules)
+
+# LBE rules
+lbe_rules = File.join(rule_deck_path, "9_1_lbe.drc")
+load(lbe_rules) if File.exist?(lbe_rules)
 
 logger.info("DRC check complete for interposer backend layers")

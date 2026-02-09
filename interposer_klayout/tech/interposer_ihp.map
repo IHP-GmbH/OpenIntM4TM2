@@ -74,3 +74,19 @@ COMP             ALL                          189                0
 NAME             COMP                         63                 0
 
 DIEAREA          ALL                          189                4
+
+# Passivation layers
+Passiv           NET,SPNET,PIN,LEFPIN         9                  0
+Passiv           PIN,LEFPIN                   9                  2
+
+# Cu Pillar and Solder Bump pad layers
+Passiv_pillar    ALL                          9                  35
+Passiv_sbump     ALL                          9                  36
+dfpad            ALL                          41                 0
+dfpad_pillar     ALL                          41                 35
+dfpad_sbump      ALL                          41                 36
+
+# Recognition layers
+Recog            ALL                          99                 0
+Recog_pillar     ALL                          99                 35
+Recog_sbump      ALL                          99                 36

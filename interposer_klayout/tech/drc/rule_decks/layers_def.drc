@@ -122,3 +122,22 @@ lbe = polygons(157, 0)
 ind = polygons(27, 0)
 ind_pin = polygons(27, 2)
 ind_text = labels(27, 25)
+
+# Recognition layers for Cu Pillar and Solder Bump
+recog = polygons(99, 0)
+recog_pillar = polygons(99, 35)
+recog_sbump = polygons(99, 36)
+
+#==================================
+# ------ ALIAS FOR DRC RULES ------
+#==================================
+# Aliases with _drw suffix for compatibility with rule decks
+
+metal4_drw = metal4
+metal5_drw = metal5
+topmetal1_drw = topmetal1
+topmetal2_drw = topmetal2
+dfpad_drw = dfpad
+
+# CHIP extent (bounding box of the design)
+CHIP = extent.sized(0.0)

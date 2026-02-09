@@ -1,0 +1,25 @@
+{
+    "description": "Interposer IHP DRC rule values - Cu Pillar and Solder Bump parameters",
+    "version": "1.0",
+    "based_on": "IHP SG13G2 Layout Rules Rev 0.4",
+    "rules": {
+        "Pad_aR": 30.00,
+        "Pad_a1": 150.00,
+        "Pad_bR": 8.40,
+        "Pad_d": 7.50,
+        "Pad_dR": 25.00,
+        "Pad_eR": 7.00,
+        "Pad_fR": 7.00,
+        "Pad_gR": 1.40,
+        "Padb_a": 60.00,
+        "Padb_b": 70.00,
+        "Padb_c": 10.00,
+        "Padb_d": 50.00,
+        "Padb_e": 130.00,
+        "Padc_a": 35.00,
+        "Padc_b": 40.00,
+        "Padc_c": 7.50,
+        "Padc_d": 30.00,
+        "Padc_e": 75.00
+    }
+}
