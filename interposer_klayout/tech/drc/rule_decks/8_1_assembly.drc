@@ -46,10 +46,15 @@ if BEOL
   asm_c.forget
 
   # Rule ASM.d: Min. chiplet-to-interposer-edge spacing is 100 um
+  # Uses enclosed check since chiplets should be inside prBoundary
   logger.info('Executing rule ASM.d')
   asm_d_value = drc_rules['ASM_d'].to_f
-  asm_d = exchange0_drw.separation(prboundary_drw.edges, asm_d_value.um, euclidian)
+  asm_d_l1 = exchange0_drw.enclosed(prboundary_drw, asm_d_value.um, euclidian).polygons
+  asm_d_l2 = exchange0_drw.not_inside(prboundary_drw)
+  asm_d = asm_d_l1.join(asm_d_l2)
   asm_d.output('ASM.d', "8.1. ASM.d : Min. chiplet to interposer edge spacing is #{asm_d_value} um")
+  asm_d_l1.forget
+  asm_d_l2.forget
   asm_d.forget
 
   # Rule ASM.e: Min. chiplet area is 10000 um2 (sanity check for degenerate polygons)

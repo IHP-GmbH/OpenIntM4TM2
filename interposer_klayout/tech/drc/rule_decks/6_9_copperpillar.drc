@@ -63,10 +63,14 @@ if BEOL
   padc_d.forget
 
   # Rule Padc.e: Min. CuPillarPad pitch is 75 um (default, see Table 6.1 for other options: 80, 95 um)
+  # Note: DRCLayer#pitch not available in KLayout 0.30. Using sized-overlap approach:
+  # grow each pad by half-pitch, then flag edge pairs closer than 1nm (i.e. overlapping).
   logger.info('Executing rule Padc.e')
   padc_e_value = drc_rules['Padc_e'].to_f
-  padc_e = cu_pillarpad.pitch(padc_e_value.um)
+  padc_e_grown = cu_pillarpad.sized((padc_e_value / 2.0).um)
+  padc_e = padc_e_grown.space(0.001.um, euclidian)
   padc_e.output('Padc.e', "6.9.2. Padc.e : Min. CuPillarPad pitch is #{padc_e_value} um")
+  padc_e_grown.forget
   padc_e.forget
 
   # Rule Padc.f: Allowed passivation opening shape is Circle only

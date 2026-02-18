@@ -17,6 +17,14 @@
 #================================
 
 require 'json'
+require 'logger'
+
+# Logger setup (stdout only)
+logger = Logger.new($stdout)
+logger.formatter = proc do |_severity, datetime, _progname, msg|
+  "#{datetime}: #{msg}\n"
+end
+$stdout.sync = true
 
 # Optional definitions
 if $run_mode.nil?
@@ -38,8 +46,22 @@ drc_tole = 1e-6
 BEOL = true
 PRECHECK_DRC = false
 
+# Load input layout (batch mode via -rd input=<path>)
+if $input
+  if $topcell
+    source($input, $topcell)
+  else
+    source($input)
+  end
+end
+
 # Report settings
-report("Interposer DRC Report", File.basename(source.path))
+if $report
+  report("Interposer DRC Report", $report)
+else
+  input_basename = File.basename(source.path, File.extname(source.path))
+  report("Interposer DRC Report", "#{input_basename}_drc.lyrdb")
+end
 
 #================================================
 # ------------ LOAD DRC RULE VALUES -------------
@@ -74,30 +96,21 @@ end
 # ------------ LOAD LAYER DEFINITIONS -----------
 #================================================
 
-load(File.join(rule_deck_path, "layers_def.drc"))
-
-#================================================
-# ------------ LOAD DRC RULE DECKS --------------
-#================================================
-
-# Passivation rules
-passiv_rules = File.join(rule_deck_path, "5_27_passiv.drc")
-load(passiv_rules) if File.exist?(passiv_rules)
-
-# Pad rules (general)
-pad_rules = File.join(rule_deck_path, "6_9_pad.drc")
-load(pad_rules) if File.exist?(pad_rules)
-
-# Cu Pillar specific rules
-copperpillar_rules = File.join(rule_deck_path, "6_9_copperpillar.drc")
-load(copperpillar_rules) if File.exist?(copperpillar_rules)
-
-# LBE rules
-lbe_rules = File.join(rule_deck_path, "9_1_lbe.drc")
-load(lbe_rules) if File.exist?(lbe_rules)
-
-# Assembly-level chiplet placement rules
-assembly_rules = File.join(rule_deck_path, "8_1_assembly.drc")
-load(assembly_rules) if File.exist?(assembly_rules)
+# Load all DRC subscripts via a single eval so local variables (layer defs,
+# drc_rules, logger) are shared across all rule decks. Ruby's load() runs in
+# main scope and separate eval() calls don't share locals.
+drc_files = %w[
+  layers_def.drc
+  5_27_passiv.drc
+  6_9_pad.drc
+  6_9_copperpillar.drc
+  9_1_lbe.drc
+  8_1_assembly.drc
+]
+drc_source = drc_files.map { |f|
+  path = File.join(rule_deck_path, f)
+  File.exist?(path) ? File.read(path) : ""
+}.join("\n")
+eval(drc_source)
 
 logger.info("DRC check complete for interposer backend layers")
