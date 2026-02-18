@@ -138,6 +138,14 @@ metal5_drw = metal5
 topmetal1_drw = topmetal1
 topmetal2_drw = topmetal2
 dfpad_drw = dfpad
+passiv_drw = passiv
+edgeseal_drw = edgeseal
+lbe_drw = lbe
+prboundary_drw = prboundary
+
+# Assembly exchange layers (chiplet boundaries)
+exchange0_drw = polygons(190, 0)
+exchange1_drw = polygons(191, 0)
 
 # CHIP extent (bounding box of the design)
 CHIP = extent.sized(0.0)
