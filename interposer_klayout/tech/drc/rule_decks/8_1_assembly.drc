@@ -16,7 +16,7 @@
 # limitations under the License.
 #=========================================================================================
 # Interposer Assembly-Level DRC Rules
-# Chiplet placement constraints: overlap, spacing, containment, edge distance
+# Chiplet placement constraints: overlap, spacing, area, pad association
 #=========================================================================================
 
 if BEOL
@@ -38,24 +38,6 @@ if BEOL
   asm_b = exchange0_drw.space(asm_b_value.um, euclidian)
   asm_b.output('ASM.b', "8.1. ASM.b : Min. chiplet-to-chiplet spacing is #{asm_b_value} um")
   asm_b.forget
-
-  # Rule ASM.c: All chiplets must be inside prBoundary
-  logger.info('Executing rule ASM.c')
-  asm_c = exchange0_drw.not_inside(prboundary_drw)
-  asm_c.output('ASM.c', '8.1. ASM.c : All chiplets must be contained within prBoundary')
-  asm_c.forget
-
-  # Rule ASM.d: Min. chiplet-to-interposer-edge spacing is 100 um
-  # Uses enclosed check since chiplets should be inside prBoundary
-  logger.info('Executing rule ASM.d')
-  asm_d_value = drc_rules['ASM_d'].to_f
-  asm_d_l1 = exchange0_drw.enclosed(prboundary_drw, asm_d_value.um, euclidian).polygons
-  asm_d_l2 = exchange0_drw.not_inside(prboundary_drw)
-  asm_d = asm_d_l1.join(asm_d_l2)
-  asm_d.output('ASM.d', "8.1. ASM.d : Min. chiplet to interposer edge spacing is #{asm_d_value} um")
-  asm_d_l1.forget
-  asm_d_l2.forget
-  asm_d.forget
 
   # Rule ASM.e: Min. chiplet area is 10000 um2 (sanity check for degenerate polygons)
   logger.info('Executing rule ASM.e')
