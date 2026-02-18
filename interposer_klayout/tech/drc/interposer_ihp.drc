@@ -96,4 +96,8 @@ load(copperpillar_rules) if File.exist?(copperpillar_rules)
 lbe_rules = File.join(rule_deck_path, "9_1_lbe.drc")
 load(lbe_rules) if File.exist?(lbe_rules)
 
+# Assembly-level chiplet placement rules
+assembly_rules = File.join(rule_deck_path, "8_1_assembly.drc")
+load(assembly_rules) if File.exist?(assembly_rules)
+
 logger.info("DRC check complete for interposer backend layers")
