@@ -96,17 +96,35 @@ end
 # ------------ LOAD LAYER DEFINITIONS -----------
 #================================================
 
-# Load all DRC subscripts via a single eval so local variables (layer defs,
+# Load DRC subscripts via a single eval so local variables (layer defs,
 # drc_rules, logger) are shared across all rule decks. Ruby's load() runs in
 # main scope and separate eval() calls don't share locals.
-drc_files = %w[
-  layers_def.drc
-  5_27_passiv.drc
-  6_9_pad.drc
-  6_9_copperpillar.drc
-  9_1_lbe.drc
-  8_1_assembly.drc
-]
+#
+# Deck selection: pass -rd deck=<name>[,<name>...] to run specific decks only.
+# Without $deck, all decks are loaded (backward compatible).
+all_decks = {
+  'passiv'       => '5_27_passiv.drc',
+  'pad'          => '6_9_pad.drc',
+  'copperpillar' => '6_9_copperpillar.drc',
+  'lbe'          => '9_1_lbe.drc',
+  'assembly'     => '8_1_assembly.drc',
+}
+
+if $deck && !$deck.empty?
+  selected = $deck.split(',')
+  drc_files = ['layers_def.drc']
+  selected.each { |name|
+    stripped = name.strip
+    if all_decks.key?(stripped)
+      drc_files << all_decks[stripped]
+    else
+      logger.warn("Unknown deck '#{stripped}'. Available: #{all_decks.keys.join(', ')}")
+    end
+  }
+else
+  drc_files = ['layers_def.drc'] + all_decks.values
+end
+
 drc_source = drc_files.map { |f|
   path = File.join(rule_deck_path, f)
   File.exist?(path) ? File.read(path) : ""
