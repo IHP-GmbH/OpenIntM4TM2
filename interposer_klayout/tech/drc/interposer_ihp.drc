@@ -106,6 +106,9 @@ all_decks = {
   'passiv'       => '5_27_passiv.drc',
   'pad'          => '6_9_pad.drc',
   'copperpillar' => '6_9_copperpillar.drc',
+  'via4'         => '5_20_via4.drc',
+  'topvia1'      => '5_21_topvia1.drc',
+  'topvia2'      => '5_24_topvia2.drc',
   'lbe'          => '9_1_lbe.drc',
   'assembly'     => '8_1_assembly.drc',
 }

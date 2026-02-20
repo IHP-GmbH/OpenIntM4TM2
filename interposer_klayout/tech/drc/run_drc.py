@@ -19,7 +19,7 @@ import traceback
 from typing import Dict, List, Set, Union, Tuple
 
 # Available DRC decks (must match keys in interposer_ihp.drc all_decks hash)
-AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'lbe', 'assembly']
+AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'via4', 'topvia1', 'topvia2', 'lbe', 'assembly']
 
 
 # ================================================================
