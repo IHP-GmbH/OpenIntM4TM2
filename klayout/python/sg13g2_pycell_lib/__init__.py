@@ -62,6 +62,7 @@ moduleNames = [
         'ptap1_code',
         'ntap1_code',
         'bondpad_code',
+        'cupillar_code',
         'rfcmim_code',
         'esd_code',
         'rfmosfet_base_code',

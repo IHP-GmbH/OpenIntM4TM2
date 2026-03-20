@@ -1,7 +1,7 @@
 {
-    "description": "Interposer IHP DRC rule values - Cu Pillar and Solder Bump parameters",
-    "version": "1.0",
-    "based_on": "IHP SG13G2 Layout Rules Rev 0.4",
+    "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95.",
+    "version": "1.2",
+    "based_on": "IHP SG13G2 Layout Rules Rev 2.1 (2024-12-19)",
     "rules": {
         "Pad_aR": 30.00,
         "Pad_a1": 150.00,
@@ -34,6 +34,7 @@
         "Vn_a": 0.19,
         "Vn_b": 0.22,
         "Vn_c": 0.005,
+        "Vn_c1": 0.05,
         "TV1_a": 0.42,
         "TV1_b": 0.42,
         "TV1_c": 0.10,
@@ -41,6 +42,12 @@
         "TV2_a": 0.90,
         "TV2_b": 1.06,
         "TV2_c": 0.50,
-        "TV2_d": 0.50
+        "TV2_d": 0.50,
+        "Mn_a": 0.20,
+        "Mn_b": 0.21,
+        "TM1_a": 1.64,
+        "TM1_b": 1.64,
+        "TM2_a": 2.00,
+        "TM2_b": 2.00
     }
 }

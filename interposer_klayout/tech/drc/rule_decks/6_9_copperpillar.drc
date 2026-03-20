@@ -16,7 +16,21 @@
 # limitations under the License.
 #=========================================================================================
 # Interposer Cu Pillar DRC Rules
-# Based on IHP SG13G2 Layout Rules Section 6.9.2
+# Based on IHP SG13G2 Layout Rules Rev 2.1, Section 6.9.2
+#
+# Device recognition: CuPillarPad = Passiv:pillar + dfpad  (per document)
+#
+# Rule values are from Table 6.1. The JSON (interposer_tech_default.json) is
+# configured for Option 1 (35 um opening). To use Option 2 (40 um) or
+# Option 3 (45 um), update Padc_a/b/e in the JSON accordingly:
+#   Option 1: Padc_a=35, Padc_b=40, Padc_e=75
+#   Option 2: Padc_a=40, Padc_b=40, Padc_e=80
+#   Option 3: Padc_a=45, Padc_b=50, Padc_e=95
+# Padc_c (7.5) and Padc_d (30) are the same for all options.
+#
+# Note from document: Padc.e (pitch) and Padc.f (shape) are marked as
+# "not checked during DRC" in the layout rules. We check them anyway as
+# additional safeguards for the interposer flow.
 #=========================================================================================
 
 if BEOL
@@ -47,7 +61,9 @@ if BEOL
   # Rule Padc.c: Min. TopMetal2 (within dfpad) enclosure of CuPillarPad is 7.5 um
   logger.info('Executing rule Padc.c')
   padc_c_value = drc_rules['Padc_c'].to_f
-  padc_c_l1 = cu_pillarpad.enclosed(topmetal2, padc_c_value.um, projection).polygons
+  # Tolerance accounts for polygon discretization of circular shapes (~1nm at 256 points)
+  padc_c_tol = 0.01  # 10nm tolerance for circle-approximated enclosure
+  padc_c_l1 = cu_pillarpad.enclosed(topmetal2, padc_c_value.um - padc_c_tol, projection).polygons
   padc_c_l2 = dfpad_pillar.and(passiv_pillar).not(topmetal2)
   padc_c = padc_c_l1.join(padc_c_l2)
   padc_c.output('Padc.c', "6.9.2. Padc.c : Min. TopMetal2 (within dfpad) enclosure of CuPillarPad is #{padc_c_value} um")
@@ -63,14 +79,14 @@ if BEOL
   padc_d.forget
 
   # Rule Padc.e: Min. CuPillarPad pitch is 75 um (default, see Table 6.1 for other options: 80, 95 um)
-  # Note: DRCLayer#pitch not available in KLayout 0.30. Using sized-overlap approach:
-  # grow each pad by half-pitch, then flag edge pairs closer than 1nm (i.e. overlapping).
+  # Note: DRCLayer#pitch not available in KLayout 0.30. Convert pitch to spacing:
+  # pitch = edge_spacing + pad_size, so min_spacing = min_pitch - min_pad_size.
+  # For pads larger than Padc_a, this is conservative (tighter than needed).
   logger.info('Executing rule Padc.e')
   padc_e_value = drc_rules['Padc_e'].to_f
-  padc_e_grown = cu_pillarpad.sized((padc_e_value / 2.0).um)
-  padc_e = padc_e_grown.space(0.001.um, euclidian)
+  padc_e_min_space = (padc_e_value - padc_a_value).um
+  padc_e = cu_pillarpad.space(padc_e_min_space, euclidian)
   padc_e.output('Padc.e', "6.9.2. Padc.e : Min. CuPillarPad pitch is #{padc_e_value} um")
-  padc_e_grown.forget
   padc_e.forget
 
   # Rule Padc.f: Allowed passivation opening shape is Circle only
