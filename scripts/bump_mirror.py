@@ -41,16 +41,16 @@ CUPILLAR_3D_LAYERS = {
 # IHP SG13G2 Layout Rules Table 6.1 -- Cu-pillar options
 # Keyed by body diameter (um)
 #
-# Option 0 (body=35) is reverse-engineered from the manually-designed
+# Entry 'custom_25um' (body=35) is reverse-engineered from the manually-designed
 # fabrication GDS gds_to_kicad/gds_files/for_thermal_eval/T608_Interposer_SigSrc.gds
 # (Passiv 25 um circle, dfpad 45 um, top-row pitch 75 um). It corresponds to a
-# fine-pitch PacTech variant not listed in Table 6.1 of SG13G2_os_layout_rules.pdf.
+# fine-pitch PacTech variant NOT listed in Table 6.1 of SG13G2_os_layout_rules.pdf.
 # The PDF itself defers such geometries to the PacTech datasheet, which is not
 # yet available in the project. The body height/cap values below mirror Option 1
 # as a placeholder until the datasheet arrives.
 CUPILLAR_TABLE_6_1 = {
     35: {
-        'option': 0, 'passiv_opening': 25, 'spacing': 50, 'pitch': 75,
+        'option': 'custom_25um', 'passiv_opening': 25, 'spacing': 50, 'pitch': 75,
         'cu_height': 28, 'snag_height': 16, 'enclosure': 10.0,
     },
     44: {
@@ -462,8 +462,10 @@ class CuPillarGenerator:
         body_radius = body_diameter_um / 2.0
 
         cap_suffix = "" if with_cap else "_nocap"
+        opt_val = option['option']
+        opt_token = f"opt{opt_val}" if isinstance(opt_val, int) else str(opt_val)
         cell = self.layout.create_cell(
-            f"CUPILLAR_{body_diameter_um:.0f}um_opt{option['option']}{cap_suffix}")
+            f"CUPILLAR_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
 
         # Fabrication layers: Passiv uses passiv_radius, rest use tm2_radius
         for layer_name, (layer_num, datatype) in CUPILLAR_FAB_LAYERS.items():
@@ -1021,7 +1023,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         device_body_diameters[ref] = body_diam
         device_with_cap[ref] = pos_info.get('with_cap', True)
         option = CUPILLAR_TABLE_6_1.get(body_diam, {})
-        opt_label = f"opt{option.get('option', '?')}" if option else "default"
+        if option:
+            opt_val = option.get('option', '?')
+            opt_label = f"opt{opt_val}" if isinstance(opt_val, int) else str(opt_val)
+        else:
+            opt_label = "default"
 
         # Per-device DRC params from Table 6.1
         params = DrcParams.from_body_diameter(body_diam)
