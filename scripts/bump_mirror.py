@@ -38,18 +38,34 @@ CUPILLAR_3D_LAYERS = {
     'SnAgCap:pillar':   (501, 35),
 }
 
-CUPILLAR_BODY_DIAMETER = 44.0  # um, Table 6.1 Option 1
+# IHP SG13G2 Layout Rules Table 6.1 -- Cu-pillar options
+# Keyed by body diameter (um)
+CUPILLAR_TABLE_6_1 = {
+    44: {
+        'option': 1, 'passiv_opening': 35, 'spacing': 40, 'pitch': 75,
+        'cu_height': 28, 'snag_height': 16, 'enclosure': 7.5,
+    },
+    49: {
+        'option': 2, 'passiv_opening': 40, 'spacing': 40, 'pitch': 80,
+        'cu_height': 32, 'snag_height': 16, 'enclosure': 7.5,
+    },
+    54: {
+        'option': 3, 'passiv_opening': 45, 'spacing': 50, 'pitch': 95,
+        'cu_height': 42, 'snag_height': 19, 'enclosure': 7.5,
+    },
+}
+DEFAULT_BODY_DIAMETER = 49  # Option 2 (40um opening) -- default for assembly
 
 # IHP SG13G2: 1 DBU = 1 nm -> 0.001 um
 DBU_TO_UM = 0.001
 
-# Default tech values (Option 1, 35 um opening) -- used when no JSON provided
+# Default tech values (Option 2, 40 um opening) -- used when no JSON provided
 DEFAULT_DRC_PARAMS = {
-    'Padc_a': 35.0,
+    'Padc_a': 40.0,
     'Padc_b': 40.0,
     'Padc_c': 7.5,
     'Padc_d': 30.0,
-    'Padc_e': 75.0,
+    'Padc_e': 80.0,
 }
 
 
@@ -60,17 +76,33 @@ DEFAULT_DRC_PARAMS = {
 @dataclass
 class DrcParams:
     """Cu-pillar DRC parameters from interposer_tech_default.json."""
-    diameter_um: float = 35.0       # Padc_a
+    diameter_um: float = 40.0       # Padc_a (Option 2 default)
     min_spacing_um: float = 40.0    # Padc_b (edge-to-edge)
     min_enclosure_um: float = 7.5   # Padc_c (TM2 enclosure around passiv)
     min_edgeseal_um: float = 30.0   # Padc_d
-    min_pitch_um: float = 75.0      # Padc_e (center-to-center)
+    min_pitch_um: float = 80.0      # Padc_e (center-to-center, Option 2)
+
+    @classmethod
+    def from_body_diameter(cls, body_diameter: float) -> 'DrcParams':
+        """Create DRC params from Table 6.1 based on Cu-pillar body diameter."""
+        option = CUPILLAR_TABLE_6_1.get(body_diameter)
+        if option is None:
+            print(f"Warning: Unknown body diameter {body_diameter} um, "
+                  f"using Option 2 defaults", file=sys.stderr)
+            return cls()
+        return cls(
+            diameter_um=option['passiv_opening'],
+            min_spacing_um=option['spacing'],
+            min_enclosure_um=option['enclosure'],
+            min_edgeseal_um=30.0,
+            min_pitch_um=option['pitch'],
+        )
 
     @classmethod
     def load(cls, path: Optional[str] = None) -> 'DrcParams':
         """Load DRC params from interposer_tech_default.json.
 
-        Falls back to hardcoded Option 1 defaults if path is None or
+        Falls back to hardcoded Option 2 defaults if path is None or
         file is missing.
         """
         if path is None:
@@ -364,83 +396,114 @@ class DrcValidator:
 # ---------------------------------------------------------------------------
 
 class CuPillarGenerator:
-    """Generate Cu-pillar pad GDS from bump locations."""
+    """Generate Cu-pillar pad GDS from bump locations.
 
-    def __init__(self, diameter_um: float = 35.0, enclosure_um: float = 7.5,
-                 num_points: int = 256):
+    Supports per-device body diameters via Table 6.1 lookup.
+    Caches pillar cells by body diameter so mixed-option assemblies
+    use the correct geometry for each device.
+    """
+
+    def __init__(self, enclosure_um: float = 7.5, num_points: int = 256):
         if db is None:
             raise ImportError("klayout package required for GDS generation. "
                               "Install with: pip install klayout")
-        self.diameter_um = diameter_um
         self.enclosure_um = enclosure_um
         self.num_points = num_points
         self.layout = db.Layout()
         self.layout.dbu = 0.001  # 1 nm
         self.top_cell = self.layout.create_cell("TOP")
-        self._pillar_cell: Optional[db.Cell] = None
+        self._pillar_cells: Dict[Tuple[float, bool], db.Cell] = {}
 
-    def _get_pillar_cell(self) -> 'db.Cell':
-        """Get or create the shared Cu-pillar geometry cell."""
-        if self._pillar_cell is not None:
-            return self._pillar_cell
+    def _make_circle(self, radius: float) -> List:
+        """Generate circle polygon points."""
+        points = []
+        for i in range(self.num_points):
+            angle = 2 * math.pi * i / self.num_points
+            points.append(db.DPoint(radius * math.cos(angle),
+                                    radius * math.sin(angle)))
+        return points
 
-        radius = self.diameter_um / 2.0
-        tm2_radius = radius + self.enclosure_um
+    def _get_pillar_cell(self, body_diameter_um: float,
+                         with_cap: bool = True) -> 'db.Cell':
+        """Get or create Cu-pillar cell for a given body diameter.
 
-        cell_name = f"CUPILLAR_{self.diameter_um:.0f}um"
-        cell = self.layout.create_cell(cell_name)
+        Uses Table 6.1 to derive passiv opening and TM2 radii from
+        the body diameter. Cells are cached by (body_diameter, with_cap).
 
-        # Fabrication layers
+        Args:
+            body_diameter_um: Cu-pillar body diameter from Table 6.1
+            with_cap: If True, include SnAgCap 3D visualization layer.
+                      If False, only CuPillar body (for wafer-level testing).
+        """
+        key = (body_diameter_um, with_cap)
+        if key in self._pillar_cells:
+            return self._pillar_cells[key]
+
+        option = CUPILLAR_TABLE_6_1.get(body_diameter_um)
+        if option is None:
+            raise ValueError(
+                f"Unknown Cu-pillar body diameter: {body_diameter_um} um. "
+                f"Valid: {sorted(CUPILLAR_TABLE_6_1.keys())} (Table 6.1)")
+
+        passiv_radius = option['passiv_opening'] / 2.0
+        tm2_radius = passiv_radius + self.enclosure_um
+        body_radius = body_diameter_um / 2.0
+
+        cap_suffix = "" if with_cap else "_nocap"
+        cell = self.layout.create_cell(
+            f"CUPILLAR_{body_diameter_um:.0f}um_opt{option['option']}{cap_suffix}")
+
+        # Fabrication layers: Passiv uses passiv_radius, rest use tm2_radius
         for layer_name, (layer_num, datatype) in CUPILLAR_FAB_LAYERS.items():
             layer_idx = self.layout.layer(layer_num, datatype)
-            r = radius if layer_name == 'Passiv:pillar' else tm2_radius
+            r = passiv_radius if layer_name == 'Passiv:pillar' else tm2_radius
+            cell.shapes(layer_idx).insert(db.DPolygon(self._make_circle(r)))
 
-            points = []
-            for i in range(self.num_points):
-                angle = 2 * math.pi * i / self.num_points
-                x = r * math.cos(angle)
-                y = r * math.sin(angle)
-                points.append(db.DPoint(x, y))
-            cell.shapes(layer_idx).insert(db.DPolygon(points))
-
-        # 3D auxiliary layers
-        body_radius = CUPILLAR_BODY_DIAMETER / 2.0
+        # 3D visualization layers (CuPillar body always, SnAgCap optional)
         for layer_name, (layer_num, datatype) in CUPILLAR_3D_LAYERS.items():
+            if not with_cap and 'SnAgCap' in layer_name:
+                continue
             layer_idx = self.layout.layer(layer_num, datatype)
-            points = []
-            for i in range(self.num_points):
-                angle = 2 * math.pi * i / self.num_points
-                x = body_radius * math.cos(angle)
-                y = body_radius * math.sin(angle)
-                points.append(db.DPoint(x, y))
-            cell.shapes(layer_idx).insert(db.DPolygon(points))
+            cell.shapes(layer_idx).insert(
+                db.DPolygon(self._make_circle(body_radius)))
 
-        self._pillar_cell = cell
+        self._pillar_cells[key] = cell
         return cell
 
-    def add_bumps(self, bumps: List[BumpLocation]) -> int:
-        """Place Cu-pillar instances at bump locations.
+    def add_device_bumps(self, ref: str, bumps: List[BumpLocation],
+                         body_diameter_um: float,
+                         with_cap: bool = True) -> int:
+        """Place Cu-pillar instances for a single device.
 
-        Groups by device_ref for cell hierarchy:
-        TOP > CUPILLARS_{ref} > CUPILLAR_{diameter}um instances
+        Creates cell hierarchy: TOP > CUPILLARS_{ref} > CUPILLAR_{diam}um
         """
-        pillar_cell = self._get_pillar_cell()
+        pillar_cell = self._get_pillar_cell(body_diameter_um, with_cap)
+        group_cell = self.layout.create_cell(f"CUPILLARS_{ref}")
+        self.top_cell.insert(db.DCellInstArray(group_cell, db.DTrans()))
 
-        # Group bumps by device
+        count = 0
+        for b in bumps:
+            trans = db.DTrans(db.DVector(b.global_x_um, b.global_y_um))
+            group_cell.insert(db.DCellInstArray(pillar_cell, trans))
+            count += 1
+        return count
+
+    def add_bumps(self, bumps: List[BumpLocation],
+                  body_diameter_um: float = DEFAULT_BODY_DIAMETER,
+                  with_cap: bool = True) -> int:
+        """Place Cu-pillar instances at bump locations (single diameter).
+
+        Groups by device_ref for cell hierarchy.
+        For mixed-option assemblies, use add_device_bumps() per device.
+        """
         by_device: Dict[str, List[BumpLocation]] = {}
         for b in bumps:
             by_device.setdefault(b.device_ref, []).append(b)
 
         total = 0
         for ref, device_bumps in sorted(by_device.items()):
-            group_cell = self.layout.create_cell(f"CUPILLARS_{ref}")
-            self.top_cell.insert(db.DCellInstArray(group_cell, db.DTrans()))
-
-            for b in device_bumps:
-                trans = db.DTrans(db.DVector(b.global_x_um, b.global_y_um))
-                group_cell.insert(db.DCellInstArray(pillar_cell, trans))
-                total += 1
-
+            total += self.add_device_bumps(ref, device_bumps,
+                                           body_diameter_um, with_cap)
         return total
 
     def write(self, output_path: str):
@@ -493,34 +556,25 @@ def load_pin_lists(pin_args: List[str]) -> Dict[str, 'PinList']:
 
 
 def load_chiplet_positions(path: str) -> Dict[str, dict]:
-    """Parse chiplet YAML for component positions.
+    """Parse chiplet YAML for component positions and connection stacks.
 
     Returns:
-        Dict mapping component id to {'x': float, 'y': float, 'rotation': float}
+        Dict mapping component id to {
+            'x': float, 'y': float, 'rotation': float,
+            'connection': str or None,
+            'body_diameter': float or None
+        }
         Skips components with type 'interposer'.
     """
     try:
         import yaml
     except ImportError:
-        # Fallback: simple YAML parsing for the subset we need
         return _parse_chiplet_simple(path)
 
     with open(path, 'r') as f:
         data = yaml.safe_load(f)
 
-    positions = {}
-    for comp in data.get('components', []):
-        if comp.get('type') == 'interposer':
-            continue
-        cid = comp.get('id', '')
-        pos = comp.get('position', {})
-        rot = comp.get('rotation', {})
-        positions[cid] = {
-            'x': float(pos.get('x', 0.0)),
-            'y': float(pos.get('y', 0.0)),
-            'rotation': float(rot.get('z', 0.0)),
-        }
-    return positions
+    return _extract_positions(data)
 
 
 def _parse_chiplet_simple(path: str) -> Dict[str, dict]:
@@ -550,7 +604,9 @@ def _parse_chiplet_simple(path: str) -> Dict[str, dict]:
 
 
 def _extract_positions(data: dict) -> Dict[str, dict]:
-    """Extract positions from parsed chiplet data."""
+    """Extract positions and connection stack info from parsed chiplet data."""
+    connection_stacks = data.get('connection_stacks', {})
+
     positions = {}
     for comp in data.get('components', []):
         if comp.get('type') == 'interposer':
@@ -558,10 +614,26 @@ def _extract_positions(data: dict) -> Dict[str, dict]:
         cid = comp.get('id', '')
         pos = comp.get('position', {})
         rot = comp.get('rotation', {})
+
+        # Look up body diameter and cap presence from connection stack
+        conn_id = comp.get('connection')
+        body_diameter = None
+        with_cap = True  # default: with SnAg cap (assembly config)
+        if conn_id and conn_id in connection_stacks:
+            stack = connection_stacks[conn_id]
+            layers = stack.get('layers', [])
+            if layers:
+                body_diameter = float(layers[0].get('diameter', 0))
+            layer_names = [l.get('name', '') for l in layers]
+            with_cap = any('SnAg' in n for n in layer_names)
+
         positions[cid] = {
             'x': float(pos.get('x', 0.0)),
             'y': float(pos.get('y', 0.0)),
             'rotation': float(rot.get('z', 0.0)),
+            'connection': conn_id,
+            'body_diameter': body_diameter,
+            'with_cap': with_cap,
         }
     return positions
 
@@ -729,60 +801,104 @@ def parse_rotations(rot_args: Optional[List[str]],
                   file=sys.stderr)
 
 
+def _resolve_body_diameter(positions: Dict[str, dict], ref: str,
+                           cli_diameter: Optional[float]) -> float:
+    """Determine body diameter for a device.
+
+    Priority: CLI override (reverse-lookup) > chiplet connection_stack > default.
+    """
+    if cli_diameter is not None:
+        # CLI --diameter is passiv opening; reverse-lookup to body diameter
+        for body_diam, opt in CUPILLAR_TABLE_6_1.items():
+            if abs(opt['passiv_opening'] - cli_diameter) < 0.01:
+                return float(body_diam)
+        # No match -- warn and use default
+        print(f"Warning: --diameter {cli_diameter} does not match any Table 6.1 "
+              f"passiv opening, using default body diameter {DEFAULT_BODY_DIAMETER}",
+              file=sys.stderr)
+        return float(DEFAULT_BODY_DIAMETER)
+
+    pos_info = positions.get(ref, {})
+    body_diam = pos_info.get('body_diameter')
+    if body_diam and body_diam in CUPILLAR_TABLE_6_1:
+        return body_diam
+    return float(DEFAULT_BODY_DIAMETER)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Load DRC params
-    params = DrcParams.load(args.tech_json)
-
-    # Resolve diameter/enclosure
-    diameter = args.diameter if args.diameter is not None else params.diameter_um
-    enclosure = args.enclosure if args.enclosure is not None else params.min_enclosure_um
-
     # Load pin lists
     pin_lists = load_pin_lists(args.pins)
 
-    # Load positions
+    # Load positions (includes connection stack info when using --chiplet)
     if args.chiplet:
         positions = load_chiplet_positions(args.chiplet)
     else:
         positions = parse_positions(args.position)
         parse_rotations(args.rotation, positions)
 
-    # Compute and validate per device
-    validator = DrcValidator(params)
+    enclosure = args.enclosure if args.enclosure is not None else 7.5
+
+    # Compute and validate per device with per-device DRC params
     passed_devices: Dict[str, List[BumpLocation]] = {}
+    device_body_diameters: Dict[str, float] = {}
+    device_with_cap: Dict[str, bool] = {}
     failed_devices: List[str] = []
+    skipped_devices: List[str] = []
     all_reports: Dict[str, ValidationReport] = {}
 
     for ref, pin_list in pin_lists.items():
+        pos_info = positions.get(ref, {})
+
+        # In chiplet mode, skip devices without a connection field
+        if args.chiplet and not pos_info.get('connection'):
+            print(f"  {ref}: no connection stack, skipping (wirebond/other)")
+            skipped_devices.append(ref)
+            continue
+
+        body_diam = _resolve_body_diameter(positions, ref, args.diameter)
+        device_body_diameters[ref] = body_diam
+        device_with_cap[ref] = pos_info.get('with_cap', True)
+        option = CUPILLAR_TABLE_6_1.get(body_diam, {})
+        opt_label = f"opt{option.get('option', '?')}" if option else "default"
+
+        # Per-device DRC params from Table 6.1
+        params = DrcParams.from_body_diameter(body_diam)
+        passiv_diam = option.get('passiv_opening', params.diameter_um)
+
         device_bumps = compute_bump_locations({ref: pin_list}, positions)
         if not device_bumps:
             print(f"  {ref}: no bump locations (missing position?), skipping")
             failed_devices.append(ref)
             continue
 
-        report = validator.validate(device_bumps, args.diameter, args.enclosure)
+        validator = DrcValidator(params)
+        report = validator.validate(device_bumps, passiv_diam, enclosure)
         all_reports[ref] = report
 
         if report.passed:
             passed_devices[ref] = device_bumps
-            print(f"  {ref}: {len(device_bumps)} bumps, DRC PASSED")
+            print(f"  {ref}: {len(device_bumps)} bumps, {opt_label} "
+                  f"(body={body_diam}um), DRC PASSED")
         else:
             failed_devices.append(ref)
             summary = report.summary
-            print(f"  {ref}: {len(device_bumps)} bumps, DRC FAILED "
+            print(f"  {ref}: {len(device_bumps)} bumps, {opt_label} "
+                  f"(body={body_diam}um), DRC FAILED "
                   f"({summary['error']} errors)")
             for r in report.results:
                 if r.severity == 'error':
                     print(f"    ERROR  [{r.rule}] {r.message}")
 
     total_passed = sum(len(b) for b in passed_devices.values())
-    total_devices = len(pin_lists)
+    total_devices = len(pin_lists) - len(skipped_devices)
     print(f"\nSummary: {len(passed_devices)}/{total_devices} devices passed DRC, "
           f"{total_passed} bumps valid")
 
+    if skipped_devices:
+        print(f"Skipped (no connection): {', '.join(skipped_devices)}")
     if failed_devices:
         print(f"Failed devices: {', '.join(failed_devices)}")
 
@@ -792,6 +908,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             'devices': {ref: rpt.to_dict() for ref, rpt in all_reports.items()},
             'passed_devices': list(passed_devices.keys()),
             'failed_devices': failed_devices,
+            'skipped_devices': skipped_devices,
         }
         with open(args.report, 'w') as f:
             json.dump(combined, f, indent=2)
@@ -800,17 +917,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.validate_only:
         return 0
 
-    # Generate GDS for devices that passed
+    # Generate GDS for devices that passed, with per-device geometry
     if not passed_devices:
         print("\nNo devices passed DRC. GDS generation skipped.",
               file=sys.stderr)
         return 1
 
-    all_bumps = [b for bumps in passed_devices.values() for b in bumps]
-    generator = CuPillarGenerator(diameter, enclosure)
-    count = generator.add_bumps(all_bumps)
+    generator = CuPillarGenerator(enclosure_um=enclosure)
+    total_count = 0
+    for ref, device_bumps in sorted(passed_devices.items()):
+        body_diam = device_body_diameters[ref]
+        cap = device_with_cap.get(ref, True)
+        total_count += generator.add_device_bumps(ref, device_bumps,
+                                                  body_diam, cap)
     generator.write(args.output)
-    print(f"\nGenerated {count} Cu-pillar pads ({len(passed_devices)} devices) "
+    print(f"\nGenerated {total_count} Cu-pillar pads ({len(passed_devices)} devices) "
           f"-> {args.output}")
 
     if failed_devices:
