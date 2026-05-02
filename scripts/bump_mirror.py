@@ -40,7 +40,19 @@ CUPILLAR_3D_LAYERS = {
 
 # IHP SG13G2 Layout Rules Table 6.1 -- Cu-pillar options
 # Keyed by body diameter (um)
+#
+# Option 0 (body=35) is reverse-engineered from the manually-designed
+# fabrication GDS gds_to_kicad/gds_files/for_thermal_eval/T608_Interposer_SigSrc.gds
+# (Passiv 25 um circle, dfpad 45 um, top-row pitch 75 um). It corresponds to a
+# fine-pitch PacTech variant not listed in Table 6.1 of SG13G2_os_layout_rules.pdf.
+# The PDF itself defers such geometries to the PacTech datasheet, which is not
+# yet available in the project. The body height/cap values below mirror Option 1
+# as a placeholder until the datasheet arrives.
 CUPILLAR_TABLE_6_1 = {
+    35: {
+        'option': 0, 'passiv_opening': 25, 'spacing': 50, 'pitch': 75,
+        'cu_height': 28, 'snag_height': 16, 'enclosure': 10.0,
+    },
     44: {
         'option': 1, 'passiv_opening': 35, 'spacing': 40, 'pitch': 75,
         'cu_height': 28, 'snag_height': 16, 'enclosure': 7.5,
@@ -691,6 +703,134 @@ def compute_bump_locations(
 
 
 # ---------------------------------------------------------------------------
+# Auto-resolver -- conservative DRC-aware bump shifting
+# ---------------------------------------------------------------------------
+
+def auto_resolve_collisions(
+    bumps: List[BumpLocation],
+    params: 'DrcParams',
+    diameter_um: float,
+    max_displacement_um: float = 10.0,
+    max_iters: int = 20,
+) -> Tuple[List[BumpLocation], dict]:
+    """Conservatively shift bump positions to resolve DRC violations.
+
+    Strategy: in each iteration find the single worst-violating pair (smallest
+    center-to-center gap below required) and push the two bumps apart along
+    their connecting line, splitting the deficit symmetrically. Each bump has a
+    per-pillar displacement budget (max_displacement_um from origin); when the
+    budget is exhausted the bump stops contributing. Iterates until convergence
+    or max_iters.
+
+    Required separation = max(Padc.e min pitch, Padc.a diameter + Padc.b min
+    spacing). Coincident points (overlapping pads) cannot be split and produce
+    a warning -- those must be fixed in the footprint.
+
+    Args:
+        bumps: 1:1 bump locations (caller's list is not modified).
+        params: DRC parameters (uses min_spacing_um, min_pitch_um).
+        diameter_um: passiv opening diameter (Padc.a).
+        max_displacement_um: per-bump displacement cap from origin.
+        max_iters: iteration cap.
+
+    Returns:
+        (resolved_bumps, report) -- report has 'converged', 'moved_count',
+        'max_delta_um', 'iterations_used', 'movements' (per-bump deltas) and
+        'remaining_violations'.
+    """
+    work = [BumpLocation(b.device_ref, b.pin_name, b.global_x_um, b.global_y_um)
+            for b in bumps]
+    n = len(work)
+    origins = [(b.global_x_um, b.global_y_um) for b in work]
+
+    required = max(params.min_pitch_um,
+                   diameter_um + params.min_spacing_um)
+
+    converged = False
+    coincident_skipped = False
+    iters_used = 0
+    for it in range(max_iters):
+        iters_used = it + 1
+        worst = None
+        worst_gap = 0.0
+        for i in range(n):
+            for j in range(i + 1, n):
+                dx = work[j].global_x_um - work[i].global_x_um
+                dy = work[j].global_y_um - work[i].global_y_um
+                d = math.sqrt(dx * dx + dy * dy)
+                gap = required - d
+                if gap > 0.01 and gap > worst_gap:
+                    worst_gap = gap
+                    worst = (i, j, d, dx, dy)
+        if worst is None:
+            converged = True
+            break
+
+        i, j, d, dx, dy = worst
+        if d < 1e-6:
+            print(f"Warning: bumps {work[i].device_ref}:{work[i].pin_name} and "
+                  f"{work[j].device_ref}:{work[j].pin_name} are coincident "
+                  f"(overlap in source footprint); auto-resolve cannot split "
+                  f"them. Fix the footprint.", file=sys.stderr)
+            coincident_skipped = True
+            break
+
+        ux, uy = dx / d, dy / d
+        push_each = worst_gap / 2.0
+
+        for idx, sign in ((i, -1), (j, +1)):
+            ox, oy = origins[idx]
+            cur_disp = math.hypot(work[idx].global_x_um - ox,
+                                   work[idx].global_y_um - oy)
+            budget = max_displacement_um - cur_disp
+            if budget <= 0.0:
+                continue
+            actual = min(push_each, budget)
+            work[idx].global_x_um += sign * ux * actual
+            work[idx].global_y_um += sign * uy * actual
+
+    movements = []
+    for orig, b in zip(origins, work):
+        ddx = b.global_x_um - orig[0]
+        ddy = b.global_y_um - orig[1]
+        dd = math.hypot(ddx, ddy)
+        if dd > 0.01:
+            movements.append({
+                'device_ref': b.device_ref,
+                'pin_name': b.pin_name,
+                'orig_x_um': round(orig[0], 4),
+                'orig_y_um': round(orig[1], 4),
+                'new_x_um': round(b.global_x_um, 4),
+                'new_y_um': round(b.global_y_um, 4),
+                'delta_x_um': round(ddx, 4),
+                'delta_y_um': round(ddy, 4),
+                'delta_total_um': round(dd, 4),
+            })
+
+    remaining = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx = work[j].global_x_um - work[i].global_x_um
+            dy = work[j].global_y_um - work[i].global_y_um
+            if math.sqrt(dx * dx + dy * dy) < required - 0.01:
+                remaining += 1
+
+    report = {
+        'iterations_used': iters_used,
+        'converged': converged and not coincident_skipped,
+        'moved_count': len(movements),
+        'max_delta_um': max((m['delta_total_um'] for m in movements),
+                            default=0.0),
+        'max_displacement_budget_um': max_displacement_um,
+        'required_separation_um': round(required, 3),
+        'movements': movements,
+        'remaining_violations': remaining,
+        'coincident_skipped': coincident_skipped,
+    }
+    return work, report
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -747,6 +887,25 @@ Examples:
     parser.add_argument(
         '--validate-only', action='store_true',
         help='Run DRC validation only, no GDS output',
+    )
+    ar_group = parser.add_mutually_exclusive_group()
+    ar_group.add_argument(
+        '--auto-resolve', dest='auto_resolve', action='store_true',
+        default=True,
+        help='Conservatively shift cu-pillars to resolve DRC collisions (default ON)',
+    )
+    ar_group.add_argument(
+        '--no-auto-resolve', dest='auto_resolve', action='store_false',
+        help='Disable auto-resolve; fail on any DRC violation',
+    )
+    parser.add_argument(
+        '--max-displacement', type=float, default=10.0, metavar='UM',
+        help='Per-pillar displacement budget for auto-resolve (default 10 um). '
+             'Conservative -- chiplet designers should leave room between pads.',
+    )
+    parser.add_argument(
+        '--auto-resolve-best-effort', action='store_true',
+        help='Generate GDS even if auto-resolve does not converge (with warnings)',
     )
     parser.add_argument(
         '--report', metavar='FILE',
@@ -874,8 +1033,32 @@ def main(argv: Optional[List[str]] = None) -> int:
             failed_devices.append(ref)
             continue
 
+        ar_report: Optional[dict] = None
+        if args.auto_resolve:
+            device_bumps, ar_report = auto_resolve_collisions(
+                device_bumps, params, passiv_diam,
+                max_displacement_um=args.max_displacement,
+            )
+            if ar_report['moved_count'] > 0:
+                print(f"  {ref}: auto-resolve moved "
+                      f"{ar_report['moved_count']} cu-pillars "
+                      f"(max delta {ar_report['max_delta_um']:.2f} um, "
+                      f"{ar_report['iterations_used']} iters, "
+                      f"converged={ar_report['converged']})")
+            if not ar_report['converged'] and not args.auto_resolve_best_effort:
+                msg = (f'{ar_report["remaining_violations"]} unresolved '
+                       f'collisions after {ar_report["iterations_used"]} '
+                       f'iterations (budget {args.max_displacement} um/pillar)')
+                if ar_report['coincident_skipped']:
+                    msg += '; coincident pads in source footprint'
+                print(f"  {ref}: auto-resolve FAILED -- {msg}",
+                      file=sys.stderr)
+                # fall through: let DRC validator emit the formal errors
+
         validator = DrcValidator(params)
         report = validator.validate(device_bumps, passiv_diam, enclosure)
+        if ar_report is not None:
+            report.params = {**report.params, 'auto_resolve': ar_report}
         all_reports[ref] = report
 
         if report.passed:
