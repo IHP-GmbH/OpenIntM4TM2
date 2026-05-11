@@ -1,7 +1,14 @@
 # flip-chip GDS utility
 
-Mirror-X (face-down) a GDS file. Extracted from `hyp_to_gds.py::_place_die_flipped()`
-so the same flip used in the interposer assembly flow can be applied standalone.
+Mirror-X (face-down) a GDS file, flattened into a single cell. Matches the
+convention used by the interposer assembly pipeline
+(`hyp_to_gds.py::_place_die_flipped`).
+
+> **Note.** The flip transform itself is trivial in KLayout:
+> `ICplxTrans(1.0, 180.0, True, ...)`, also known as **M180** or
+> "Flip Horizontally" in the GUI. This script exists so the same convention
+> (M180 + flattening for downstream EM/thermal tools) is available standalone
+> and stays consistent with the assembly pipeline.
 
 ## Requirements
 
@@ -25,60 +32,40 @@ Options:
 
 | flag | default | meaning |
 |---|---|---|
-| `--mode {flatten,hierarchy}` | `flatten` | see below |
 | `--top-cell NAME` | autodetect | top cell in the input GDS |
 | `--output-cell NAME` | `<top>_flipped` | name for the flipped cell |
 | `--rotation DEG` | `0` | extra rotation baked into the flip |
 
-## Modes
+## What it does
 
-- **flatten** (default): per-layer shape extraction from the top cell
-  (recursive, flattens hierarchy), mirror-X applied, single flat output cell.
-  Use this for EM / thermal simulators that do not honor instance-level
-  mirroring.
+1. Reads the input GDS.
+2. Wraps the top cell with `M180 = ICplxTrans(1, 180, mirror=True)` --
+   net effect: `(x, y) -> (-x, y)`.
+3. Flattens the wrapper to a single cell so simulators that do not honor
+   instance-level mirroring see correct per-layer geometry.
+4. Writes the output GDS.
 
-- **hierarchy**: preserves the original cell tree and emits a wrapper that
-  instantiates the top cell with mirror-X at the instance level. Smaller
-  file, faster to write, consumer must honor the mirror flag on the
-  instance.
-
-In both modes the transform is mirror-X = negate X (mirror around the Y-axis).
-Y coordinates are unchanged. Layer numbers are preserved.
+Layer numbers are preserved. The z-order inversion of a flipped BEOL stack
+is **not** captured (GDS has no z); handle z-inversion downstream via the
+stackup YAML.
 
 ## Examples
 
-Basic flip (flatten):
-
 ```bash
+# basic flip
 ./flip-chip.sh --input_gds die.gds --output_gds die_flipped.gds
-```
 
-Preserve hierarchy:
-
-```bash
-./flip-chip.sh --input_gds die.gds --output_gds die_flipped.gds --mode hierarchy
-```
-
-Flip and rotate 90 degrees in one transform:
-
-```bash
+# flip + rotate 90 deg in one transform
 ./flip-chip.sh --input_gds die.gds --output_gds die_flipped.gds --rotation 90
-```
 
-Multi-top GDS -- pick the cell explicitly:
-
-```bash
+# multi-top GDS -- pick the cell explicitly
 ./flip-chip.sh --input_gds die.gds --output_gds die_flipped.gds --top-cell MyTop
 ```
 
-## Notes
+## Programmatic use
 
-- The flip is purely geometric in the X-Y plane. GDS has no z information,
-  so the z-order inversion of a flipped BEOL stack is NOT captured by this
-  tool. Handle z-inversion downstream via your stackup YAML.
-- `flip_chip_gds.py` can also be imported directly:
-
-  ```python
-  from flip_chip_gds import flip_chip_gds
-  flip_chip_gds(Path("die.gds"), Path("die_flipped.gds"), mode="flatten")
-  ```
+```python
+from pathlib import Path
+from flip_chip_gds import flip_chip_gds
+flip_chip_gds(Path("die.gds"), Path("die_flipped.gds"))
+```

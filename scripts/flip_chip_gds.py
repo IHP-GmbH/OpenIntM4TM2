@@ -4,25 +4,13 @@ flip_chip_gds.py -- Standalone Flip-Chip GDS Mirror-X Utility
 
 Reads an input GDS and writes a flipped (mirror-X, face-down) copy.
 
-Two modes are supported:
+Wraps the top cell with an M180 transform (mirror-X = negate X coordinates)
+and flattens to a single cell, so EM/thermal simulators that do not honor
+instance-level mirroring see correct per-layer geometry.
 
-  flatten   (default) -- per-layer shape extraction from the top cell,
-                         recursively flattens the hierarchy, applies the
-                         mirror-X transform, and emits a single flat cell.
-                         Matches hyp_to_gds.py::_place_die_flipped(); intended
-                         for EM/thermal simulators that do not honor
-                         instance-level mirroring.
-
-  hierarchy           -- preserves the original cell hierarchy and emits a
-                         wrapper cell that instantiates the source top cell
-                         with the mirror-X transform applied at the instance
-                         level. Smaller files, faster to write, but the
-                         consumer must honor mirrored instances.
-
-In both modes the transform is mirror-X = negate X coordinates (mirror
-around the Y-axis). The z-order inversion of a flipped BEOL stack is NOT
-captured in GDS (layers have no z-height); layer numbers are preserved
-and z-inversion must be handled downstream by the stackup YAML.
+The transform itself is trivial in KLayout (M180 / `ICplxTrans(1, 180, True, ...)`);
+this script exists so the same convention used by the interposer assembly
+pipeline (hyp_to_gds.py::_place_die_flipped) is available standalone.
 """
 
 import argparse
@@ -56,106 +44,50 @@ def find_top_cell(layout: db.Layout, requested: str = None) -> db.Cell:
     return top_cells[0]
 
 
-def _flip_flatten(src: db.Layout, template: db.Cell, out_name: str,
-                  rotation: float) -> db.Layout:
-    """Flatten + mirror-X: per-layer region extraction into a single cell."""
-    dst = db.Layout()
-    dst.dbu = src.dbu
-
-    # Replicate every (layer, datatype) so layer indices align between src/dst.
-    layer_map = {li: dst.layer(src.get_info(li)) for li in src.layer_indices()}
-
-    wrapper = dst.create_cell(out_name)
-
-    # Mirror-X = negate X only.
-    # ICplxTrans(mag, angle, mirror, displacement):
-    #   mirror=True mirrors around X-axis (Y -> -Y), then
-    #   +180 deg rotation negates both X and Y -> net: negate X only.
-    # Optional device rotation is baked into the same transform.
-    mirror_trans = db.ICplxTrans(1.0, rotation + 180.0, True, db.Vector(0, 0))
-
-    layers_with_shapes = 0
-    for src_li, dst_li in layer_map.items():
-        region = db.Region(template.begin_shapes_rec(src_li))
-        if region.is_empty():
-            continue
-        wrapper.shapes(dst_li).insert(region.transformed(mirror_trans))
-        layers_with_shapes += 1
-
-    if layers_with_shapes == 0:
-        raise RuntimeError(f"Cell '{template.name}' contains no shapes on any layer")
-
-    print(f"  Layers flipped  : {layers_with_shapes}")
-    return dst
-
-
-def _flip_hierarchy(src: db.Layout, template: db.Cell, out_name: str,
-                    rotation: float) -> db.Layout:
-    """Preserve hierarchy: instantiate template under a wrapper with mirror-X.
-
-    The source layout is reused as the destination (its full cell tree is
-    already there). A new wrapper cell is added that places the original top
-    via a DCplxTrans carrying the mirror-X flag and optional rotation.
-    Consumers must honor the mirror flag on the instance.
-    """
-    if src.cell(out_name) is not None:
-        raise ValueError(
-            f"Output cell name '{out_name}' already exists in the input GDS; "
-            "pass --output-cell to choose a different name.")
-
-    wrapper = src.create_cell(out_name)
-    mirror_trans = db.DCplxTrans(1.0, rotation + 180.0, True, db.DVector(0.0, 0.0))
-    wrapper.insert(db.DCellInstArray(template.cell_index(), mirror_trans))
-
-    print(f"  Cells preserved : {src.cells()}")
-    return src
-
-
 def flip_chip_gds(input_gds: Path, output_gds: Path,
-                  mode: str = "flatten",
                   top_cell_name: str = None,
                   output_cell_name: str = None,
                   rotation: float = 0.0) -> None:
-    """Flip a GDS file along the X axis (mirror around Y-axis).
+    """Flip a GDS file along the X axis (mirror around Y-axis) and flatten.
 
     Args:
         input_gds: Path to source GDS.
         output_gds: Path to write flipped GDS.
-        mode: 'flatten' (per-layer flat, matches hyp_to_gds.py) or
-              'hierarchy' (instance-level mirror, hierarchy preserved).
         top_cell_name: Optional name of the top cell in input_gds. Autodetect
             if omitted (fails on multi-top GDS).
         output_cell_name: Name for the flipped cell in the output. Defaults
             to '<original>_flipped'.
-        rotation: Additional rotation in degrees, baked into the same
-            transform (matches hyp_to_gds.py behavior).
+        rotation: Additional rotation in degrees, baked into the same transform.
     """
-    if mode not in ("flatten", "hierarchy"):
-        raise ValueError(f"Unknown mode '{mode}'. Use 'flatten' or 'hierarchy'.")
-
     if not input_gds.exists():
         raise FileNotFoundError(f"Input GDS not found: {input_gds}")
 
-    src = db.Layout()
-    src.read(str(input_gds))
+    layout = db.Layout()
+    layout.read(str(input_gds))
 
-    template = find_top_cell(src, top_cell_name)
+    template = find_top_cell(layout, top_cell_name)
     out_name = output_cell_name or f"{template.name}_flipped"
 
-    if mode == "flatten":
-        dst = _flip_flatten(src, template, out_name, rotation)
-    else:
-        dst = _flip_hierarchy(src, template, out_name, rotation)
+    if layout.cell(out_name) is not None:
+        raise ValueError(
+            f"Output cell name '{out_name}' already exists; "
+            "pass --output-cell to choose a different name.")
+
+    wrapper = layout.create_cell(out_name)
+    # M180 = mirror=True + rotate 180 deg -> negate X only. Optional device
+    # rotation is baked into the same transform.
+    flip = db.DCplxTrans(1.0, rotation + 180.0, True, db.DVector(0, 0))
+    wrapper.insert(db.DCellInstArray(template.cell_index(), flip))
+    wrapper.flatten(-1, False)
 
     output_gds.parent.mkdir(parents=True, exist_ok=True)
-    dst.write(str(output_gds))
+    layout.write(str(output_gds))
 
     print(f"  Input  : {input_gds}")
     print(f"  Output : {output_gds}")
     print(f"  Source top cell : {template.name}")
     print(f"  Flipped cell    : {out_name}")
-    print(f"  Mode            : {mode}")
-    print(f"  Transform       : mirror-X (negate X), rotation={rotation} deg")
+    print(f"  Transform       : M180 (mirror-X, negate X), rotation={rotation} deg")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -170,12 +102,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--output_gds', required=True, metavar='PATH',
         help='Path where the flipped GDS will be written.',
-    )
-    parser.add_argument(
-        '--mode', choices=['flatten', 'hierarchy'], default='flatten',
-        help=("'flatten' (default): per-layer flat cell, matches hyp_to_gds.py "
-              "_place_die_flipped() -- safe for EM/thermal tools. "
-              "'hierarchy': preserve cell tree, mirror at instance level."),
     )
     parser.add_argument(
         '--top-cell', default=None, metavar='NAME',
@@ -198,7 +124,6 @@ def main(argv=None) -> int:
         flip_chip_gds(
             input_gds=Path(args.input_gds),
             output_gds=Path(args.output_gds),
-            mode=args.mode,
             top_cell_name=args.top_cell,
             output_cell_name=args.output_cell,
             rotation=args.rotation,
