@@ -211,13 +211,18 @@ class DrcValidator:
 
     def validate(self, bumps: List[BumpLocation],
                  diameter_um: Optional[float] = None,
-                 enclosure_um: Optional[float] = None) -> ValidationReport:
+                 enclosure_um: Optional[float] = None,
+                 max_detail: Optional[int] = 5) -> ValidationReport:
         """Run all DRC checks on bump locations.
 
         Args:
             bumps: List of bump locations in global coordinates
             diameter_um: User-specified diameter (checked against Padc_a)
             enclosure_um: User-specified enclosure (checked against Padc_c)
+            max_detail: Max per-rule detailed violation entries to emit
+                (a trailing "... and N more" summary covers the rest).
+                Pass ``None`` for a complete, uncapped report (every
+                violation gets its own result with structured details).
 
         Returns:
             ValidationReport with all check results
@@ -228,13 +233,13 @@ class DrcValidator:
         results.extend(self._check_diameter(diameter_um))
 
         # Padc.b -- edge-to-edge spacing
-        results.extend(self._check_spacing(bumps, diameter_um))
+        results.extend(self._check_spacing(bumps, diameter_um, max_detail))
 
         # Padc.c -- enclosure check
         results.extend(self._check_enclosure(enclosure_um))
 
         # Padc.e -- center-to-center pitch
-        results.extend(self._check_pitch(bumps))
+        results.extend(self._check_pitch(bumps, max_detail))
 
         # Padc.f -- circular shape (always passes, info)
         results.append(ValidationResult(
@@ -272,7 +277,8 @@ class DrcValidator:
         )]
 
     def _check_spacing(self, bumps: List[BumpLocation],
-                       diameter_um: Optional[float] = None) -> List[ValidationResult]:
+                       diameter_um: Optional[float] = None,
+                       max_detail: Optional[int] = 5) -> List[ValidationResult]:
         """Padc.b: edge-to-edge spacing >= min_spacing_um."""
         d = diameter_um if diameter_um is not None else self.params.diameter_um
         min_spacing = self.params.min_spacing_um
@@ -297,7 +303,7 @@ class DrcValidator:
 
                 if edge_spacing < min_spacing - 0.01:
                     violations += 1
-                    if violations <= 5:  # limit detail entries
+                    if max_detail is None or violations <= max_detail:
                         results.append(ValidationResult(
                             rule='Padc.b',
                             severity='error',
@@ -319,11 +325,12 @@ class DrcValidator:
                 severity='info',
                 message=f'All edge-to-edge spacings >= {min_spacing} um',
             ))
-        elif violations > 5:
+        elif max_detail is not None and violations > max_detail:
             results.append(ValidationResult(
                 rule='Padc.b',
                 severity='error',
-                message=f'... and {violations - 5} more spacing violations',
+                message=f'... and {violations - max_detail} more spacing '
+                        f'violations',
             ))
 
         return results
@@ -350,7 +357,8 @@ class DrcValidator:
             message=f'Enclosure {enclosure_um} um >= minimum {min_encl} um',
         )]
 
-    def _check_pitch(self, bumps: List[BumpLocation]) -> List[ValidationResult]:
+    def _check_pitch(self, bumps: List[BumpLocation],
+                     max_detail: Optional[int] = 5) -> List[ValidationResult]:
         """Padc.e: center-to-center pitch >= min_pitch_um."""
         min_pitch = self.params.min_pitch_um
         results: List[ValidationResult] = []
@@ -371,7 +379,7 @@ class DrcValidator:
 
                 if center_dist < min_pitch - 0.01:
                     violations += 1
-                    if violations <= 5:
+                    if max_detail is None or violations <= max_detail:
                         results.append(ValidationResult(
                             rule='Padc.e',
                             severity='error',
@@ -393,11 +401,12 @@ class DrcValidator:
                 severity='info',
                 message=f'All center-to-center pitches >= {min_pitch} um',
             ))
-        elif violations > 5:
+        elif max_detail is not None and violations > max_detail:
             results.append(ValidationResult(
                 rule='Padc.e',
                 severity='error',
-                message=f'... and {violations - 5} more pitch violations',
+                message=f'... and {violations - max_detail} more pitch '
+                        f'violations',
             ))
 
         return results
