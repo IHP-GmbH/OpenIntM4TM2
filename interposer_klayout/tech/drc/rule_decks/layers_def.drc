@@ -168,9 +168,5 @@ edgeseal_drw = edgeseal
 lbe_drw = lbe
 prboundary_drw = prboundary
 
-# Assembly exchange layers (chiplet boundaries)
-exchange0_drw = polygons(190, 0)
-exchange1_drw = polygons(191, 0)
-
 # CHIP extent (bounding box of the design)
 CHIP = extent.sized(0.0)

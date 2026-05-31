@@ -19,7 +19,14 @@ import traceback
 from typing import Dict, List, Set, Union, Tuple
 
 # Available DRC decks (must match keys in interposer_ihp.drc all_decks hash)
-AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'via4', 'topvia1', 'topvia2', 'lbe', 'assembly']
+AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'via4', 'topvia1', 'topvia2', 'lbe']
+
+# Decks that have been moved out of the interposer PDK. Recognised here so
+# that a stale CLI invocation prints a useful redirect instead of "unknown".
+RELOCATED_DECKS = {
+    'assembly': "Promoted to the ADK. Use adk/klayout/drc/run_drc.py "
+                "with --interposer-adapter <name>.",
+}
 
 
 # ================================================================
@@ -322,7 +329,7 @@ Available decks: {', '.join(AVAILABLE_DECKS)}
 
 Examples:
   %(prog)s --path design.gds                       # all decks
-  %(prog)s --path design.gds --deck assembly        # assembly only
+  %(prog)s --path design.gds --deck pad             # pad only
   %(prog)s --path design.gds --deck lbe --deck pad  # LBE + pad, merged
   %(prog)s --path design.gds --mp 5                 # parallel (one per deck)
 """,
@@ -399,6 +406,12 @@ def main():
     # Validate requested decks
     decks_to_run = args.deck if args.deck else []
     for d in decks_to_run:
+        if d in RELOCATED_DECKS:
+            logging.error(
+                f"Deck '{d}' is no longer in the interposer PDK. "
+                f"{RELOCATED_DECKS[d]}"
+            )
+            exit(1)
         if d not in AVAILABLE_DECKS:
             logging.error(f"Unknown deck '{d}'. Available: {', '.join(AVAILABLE_DECKS)}")
             exit(1)
