@@ -12,13 +12,13 @@
  limitations under the License.
 -->
 <technology>
- <name>interposer_ihp</name>
- <description>IHP-derived interposer technology (backend metal layers only)</description>
+ <name>intm4tm2</name>
+ <description>IHP 130-nm IntM4TM2 aluminum BEOL interposer (backend metal layers only)</description>
  <group/>
  <dbu>0.001</dbu>
  <base-path></base-path>
  <original-base-path></original-base-path>
- <layer-properties_file>interposer_ihp.lyp</layer-properties_file>
+ <layer-properties_file>intm4tm2.lyp</layer-properties_file>
  <add-other-layers>true</add-other-layers>
  <default-grids>0.01,0.005!</default-grids>
  <reader-options>
@@ -83,7 +83,7 @@
    <read-lef-with-def>true</read-lef-with-def>
    <macro-resolution-mode>default</macro-resolution-mode>
    <separate-groups>false</separate-groups>
-   <map-file>interposer_ihp.map</map-file>
+   <map-file>intm4tm2.map</map-file>
    <lef-files></lef-files>
   </lefdef>
   <mebes>
