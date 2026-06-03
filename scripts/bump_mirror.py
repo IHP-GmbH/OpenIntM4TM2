@@ -81,6 +81,34 @@ DEFAULT_DRC_PARAMS = {
 }
 
 
+# Interconnect PDK 3D body generator (sibling repo). bump_mirror draws the fab
+# pad openings; the 3D bodies (500/501) are owned by the interconnect PDK. When
+# the PDK is not on disk we fall back to the built-in CUPILLAR_3D_LAYERS below,
+# so this stays a no-op refactor for IHP cu-pillars.
+_bump3d_cache = None
+
+
+def _get_bump3d():
+    """Import interconnect_pdk/scripts/bump3d_generator.py, or None if absent."""
+    global _bump3d_cache
+    if _bump3d_cache is not None:
+        return _bump3d_cache or None
+    mod = None
+    try:
+        here = Path(__file__).resolve()
+        for base in here.parents:
+            cand = base / "interconnect_pdk" / "scripts"
+            if (cand / "bump3d_generator.py").is_file():
+                if str(cand) not in sys.path:
+                    sys.path.insert(0, str(cand))
+                import bump3d_generator as mod
+                break
+    except Exception:
+        mod = None
+    _bump3d_cache = mod or False
+    return mod
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -482,13 +510,20 @@ class CuPillarGenerator:
             r = passiv_radius if layer_name == 'Passiv:pillar' else tm2_radius
             cell.shapes(layer_idx).insert(db.DPolygon(self._make_circle(r)))
 
-        # 3D visualization layers (CuPillar body always, SnAgCap optional)
-        for layer_name, (layer_num, datatype) in CUPILLAR_3D_LAYERS.items():
-            if not with_cap and 'SnAgCap' in layer_name:
-                continue
-            layer_idx = self.layout.layer(layer_num, datatype)
-            cell.shapes(layer_idx).insert(
-                db.DPolygon(self._make_circle(body_radius)))
+        # 3D visualization layers (CuPillar body always, SnAgCap optional).
+        # Owned by the interconnect PDK; delegate to its generator when present,
+        # otherwise fall back to the built-in IHP layers (0-regression).
+        bump3d = _get_bump3d()
+        if bump3d is not None:
+            bump3d.add_3d_bodies(self.layout, cell, body_radius,
+                                 with_cap=with_cap, num_points=self.num_points)
+        else:
+            for layer_name, (layer_num, datatype) in CUPILLAR_3D_LAYERS.items():
+                if not with_cap and 'SnAgCap' in layer_name:
+                    continue
+                layer_idx = self.layout.layer(layer_num, datatype)
+                cell.shapes(layer_idx).insert(
+                    db.DPolygon(self._make_circle(body_radius)))
 
         self._pillar_cells[key] = cell
         return cell
