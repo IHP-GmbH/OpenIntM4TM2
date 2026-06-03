@@ -1583,54 +1583,6 @@
     <name>Recog.sbump</name>
     <source>99/36</source>
   </properties>
-  <properties>
-    <frame-color>#b87333</frame-color>
-    <fill-color>#b87333</fill-color>
-    <frame-brightness>0</frame-brightness>
-    <fill-brightness>0</fill-brightness>
-    <dither-pattern>C5</dither-pattern>
-    <line-style/>
-    <valid>true</valid>
-    <visible>true</visible>
-    <transparent>false</transparent>
-    <width>1</width>
-    <marked>false</marked>
-    <animation>0</animation>
-    <name>CuPillar.pillar - 3D aux (Cu body)</name>
-    <source>500/35</source>
-  </properties>
-  <properties>
-    <frame-color>#c0c0c0</frame-color>
-    <fill-color>#c0c0c0</fill-color>
-    <frame-brightness>0</frame-brightness>
-    <fill-brightness>0</fill-brightness>
-    <dither-pattern>C5</dither-pattern>
-    <line-style/>
-    <valid>true</valid>
-    <visible>true</visible>
-    <transparent>false</transparent>
-    <width>1</width>
-    <marked>false</marked>
-    <animation>0</animation>
-    <name>SnAgCap.pillar - 3D aux (solder cap)</name>
-    <source>501/35</source>
-  </properties>
-  <properties>
-    <frame-color>#808080</frame-color>
-    <fill-color>#808080</fill-color>
-    <frame-brightness>0</frame-brightness>
-    <fill-brightness>0</fill-brightness>
-    <dither-pattern>C5</dither-pattern>
-    <line-style/>
-    <valid>true</valid>
-    <visible>true</visible>
-    <transparent>false</transparent>
-    <width>1</width>
-    <marked>false</marked>
-    <animation>0</animation>
-    <name>SolderBall.sbump - 3D aux (SAC305 ball)</name>
-    <source>502/36</source>
-  </properties>
   <custom-dither-pattern>
     <pattern>
       <line>................</line>
