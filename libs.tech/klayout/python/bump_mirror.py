@@ -34,11 +34,6 @@ CUPILLAR_FAB_LAYERS = {
     'Recog:pillar':   (99, 35),
 }
 
-CUPILLAR_3D_LAYERS = {
-    'CuPillar:pillar':  (500, 35),
-    'SnAgCap:pillar':   (501, 35),
-}
-
 # IHP SG13G2 Layout Rules Table 6.1 -- Cu-pillar options
 # Keyed by body diameter (um)
 #
@@ -83,9 +78,11 @@ DEFAULT_DRC_PARAMS = {
 
 
 # Interconnect PDK 3D body generator (sibling repo). bump_mirror draws the fab
-# pad openings; the 3D bodies (500/501) are owned by the interconnect PDK. When
-# the PDK is not on disk we fall back to the built-in CUPILLAR_3D_LAYERS below,
-# so this stays a no-op refactor for IHP cu-pillars.
+# pad openings the interposer fabricates; the 3D bodies (e.g. CuPillar 500/35,
+# or a vendor's layers) are owned by the interconnect PDK. There is no built-in
+# fallback: emitting attachment pads without their bodies would produce a
+# complete GDS that looks fabricable while silently missing the interconnect,
+# so cell generation fails loud when the PDK is absent.
 _bump3d_cache = None
 
 
@@ -464,12 +461,23 @@ class CuPillarGenerator:
     use the correct geometry for each device.
     """
 
-    def __init__(self, enclosure_um: float = 7.5, num_points: int = 256):
+    def __init__(self, enclosure_um: float = 7.5, num_points: int = 256,
+                 bodies: Optional[List[Tuple[str, int, int]]] = None):
+        """
+        Args:
+            enclosure_um: TM2 enclosure around the passiv opening.
+            num_points:   circle discretization.
+            bodies:       3D body layers as (name, gds_layer, gds_datatype)
+                          tuples, normally interconnect_manifest.layers_3d()
+                          for the active method. None = the interconnect
+                          PDK generator's default (IHP cu-pillar pair).
+        """
         if db is None:
             raise ImportError("klayout package required for GDS generation. "
                               "Install with: pip install klayout")
         self.enclosure_um = enclosure_um
         self.num_points = num_points
+        self.bodies = bodies
         self.layout = db.Layout()
         self.layout.dbu = 0.001  # 1 nm
         self.top_cell = self.layout.create_cell("TOP")
@@ -522,20 +530,19 @@ class CuPillarGenerator:
             r = passiv_radius if layer_name == 'Passiv:pillar' else tm2_radius
             cell.shapes(layer_idx).insert(db.DPolygon(self._make_circle(r)))
 
-        # 3D visualization layers (CuPillar body always, SnAgCap optional).
-        # Owned by the interconnect PDK; delegate to its generator when present,
-        # otherwise fall back to the built-in IHP layers (0-regression).
+        # 3D body layers (pillar body always, cap optional). Owned by the
+        # interconnect PDK; no silent fallback -- pads without their bodies
+        # would be an incomplete attachment that no downstream DRC can flag.
         bump3d = _get_bump3d()
-        if bump3d is not None:
-            bump3d.add_3d_bodies(self.layout, cell, body_radius,
-                                 with_cap=with_cap, num_points=self.num_points)
-        else:
-            for layer_name, (layer_num, datatype) in CUPILLAR_3D_LAYERS.items():
-                if not with_cap and 'SnAgCap' in layer_name:
-                    continue
-                layer_idx = self.layout.layer(layer_num, datatype)
-                cell.shapes(layer_idx).insert(
-                    db.DPolygon(self._make_circle(body_radius)))
+        if bump3d is None:
+            raise RuntimeError(
+                "interconnect_pdk not found: cannot draw the 3D interconnect "
+                "bodies. Set INTERCONNECT_PDK_ROOT or clone the interconnect "
+                "PDK as a sibling checkout named 'interconnect_pdk' "
+                "(libs.tech/klayout/python/bump3d_generator.py).")
+        bump3d.add_3d_bodies(self.layout, cell, body_radius,
+                             bodies=self.bodies, with_cap=with_cap,
+                             num_points=self.num_points)
 
         self._pillar_cells[key] = cell
         return cell

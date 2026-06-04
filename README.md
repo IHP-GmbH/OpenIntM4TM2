@@ -41,7 +41,9 @@ IntM4TM2 is designed to compose with:
 - an **interconnect PDK** providing the chiplet attachment methods
   (Cu-pillar, solder bump, vendor microbumps) as a separate, vendor-swappable
   axis. The interposer itself only carries the fab-side pad openings it
-  manufactures.
+  manufactures. Bump generation (`bump_mirror.py`) therefore requires the
+  interconnect PDK on disk (sibling checkout `interconnect_pdk/` or
+  `$INTERCONNECT_PDK_ROOT`) to draw the 3D bodies; it fails loud without it.
 
 ## License
 
