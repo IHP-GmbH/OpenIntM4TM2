@@ -567,7 +567,7 @@ def main():
     script_dir = Path(__file__).resolve().parent
     default_output = script_dir / "gds"
     output_dir = Path(args.output_dir) if args.output_dir else default_output
-    drc_dir = script_dir.parent / "interposer_klayout" / "tech" / "drc"
+    drc_dir = script_dir.parent / "tech" / "drc"
 
     files = {}
     if args.generate:

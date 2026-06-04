@@ -42,7 +42,7 @@ The interposer supports 19 base layers:
 ## Directory Structure
 
 ```
-interposer_klayout/
+libs.tech/klayout/
 ├── tech/
 │   ├── intm4tm2.lyp    # Layer properties (colors, patterns)
 │   ├── intm4tm2.lyt    # Technology file (connectivity)
@@ -54,10 +54,12 @@ interposer_klayout/
 │   │       └── layers_def.drc
 │   ├── lvs/                  # Layout vs Schematic
 │   │   ├── intm4tm2.lvs
+│   │   ├── run_lvs.py
 │   │   └── rule_decks/
 │   │       └── layers_definitions.lvs
 │   └── macros/
-└── scripts/
+├── python/                   # Assembly tooling (bump_mirror.py)
+└── intm4tm2_tests/           # PCell, DRC and LVS tests
 ```
 
 ## Files
@@ -118,4 +120,4 @@ klayout -b -r tech/lvs/intm4tm2.lvs -rd input=<your_layout.gds>
 Derived from IHP SG13G2 PDK:
 - Original: https://github.com/IHP-GmbH/IHP-Open-PDK
 
-Layer definitions based on `interposer_pdk_layers.csv`
+Layer definitions follow the IntM4TM2 process layer table.

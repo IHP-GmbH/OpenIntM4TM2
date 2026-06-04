@@ -148,8 +148,8 @@ class DrcParams:
         if path is None:
             # Try auto-detect relative to this script
             script_dir = Path(__file__).resolve().parent
-            candidate = (script_dir.parent / "interposer_klayout" / "tech" /
-                         "drc" / "rule_decks" / "interposer_tech_default.json")
+            candidate = (script_dir.parent / "tech" / "drc" /
+                         "rule_decks" / "interposer_tech_default.json")
             if candidate.exists():
                 path = str(candidate)
 
@@ -575,7 +575,7 @@ class CuPillarGenerator:
 
 def _add_gds_to_kicad_to_path():
     """Add gds_to_kicad directory to sys.path for PinList import."""
-    gds_to_kicad_dir = (Path(__file__).resolve().parent.parent.parent /
+    gds_to_kicad_dir = (Path(__file__).resolve().parents[4] /
                         "gds_to_kicad")
     if gds_to_kicad_dir.is_dir():
         path_str = str(gds_to_kicad_dir)
