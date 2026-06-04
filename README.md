@@ -43,4 +43,4 @@ IntM4TM2 is designed to compose with:
 
 ## License
 
-Apache License 2.0, following the upstream IHP SG13G2 PDK.
+Apache License 2.0
