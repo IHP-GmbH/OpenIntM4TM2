@@ -16,6 +16,15 @@
 # INTERPOSER LVS MAIN RUNSET
 #================================
 
+require 'logger'
+
+# Logger setup (stdout only)
+logger = Logger.new($stdout)
+logger.formatter = proc do |_severity, datetime, _progname, msg|
+  "#{datetime}: #{msg}\n"
+end
+$stdout.sync = true
+
 # Optional definitions
 if $run_mode.nil?
   $run_mode = "flat"
@@ -29,34 +38,49 @@ if $verbose.nil?
   $verbose = false
 end
 
-# Report settings
-report_lvs(File.basename(source.path) + ".lvsdb")
-
-# Load layer definitions
-load(File.join(File.dirname(__FILE__), "rule_decks/layers_definitions.lvs"))
-
-# Define connectivity for backend metal stack
-# Metal4 -> Via4 -> Metal5 -> TopVia1 -> TopMetal1 -> TopVia2 -> TopMetal2
-connect(metal4, via4)
-connect(via4, metal5)
-connect(metal5, topvia1)
-connect(topvia1, topmetal1)
-connect(topmetal1, topvia2)
-connect(topvia2, topmetal2)
-
-# MEMS via connectivity
-connect(metal5, memvia)
-connect(memvia, topmetal1)
-
-# Extract netlist from layout
-netlist
-
-# Compare with reference schematic (if provided)
-if $schematic
-  schematic($schematic)
-  compare
-else
-  logger.info("No schematic provided - connectivity check only")
+# Load input layout (batch mode via -rd input=<path>)
+if $input
+  if $topcell
+    source($input, $topcell)
+  else
+    source($input)
+  end
 end
 
-logger.info("LVS check complete for interposer backend layers")
+# Report settings
+if $report
+  report_lvs($report)
+else
+  input_basename = File.basename(source.path, File.extname(source.path))
+  report_lvs("#{input_basename}.lvsdb")
+end
+
+# Extracted netlist output (SPICE, net names preserved) when requested
+if $target_netlist
+  target_netlist($target_netlist, write_spice(true), "Extracted by KLayout LVS - IntM4TM2 interposer")
+end
+
+# Run mode
+if $run_mode == "deep"
+  deep
+else
+  flat
+end
+
+threads($threads)
+
+#================================================
+# ------------ LOAD LVS RULE DECKS --------------
+#================================================
+
+# Load LVS subscripts via a single eval so local variables (layer defs,
+# logger) are shared across all rule decks. Ruby's load() runs in main
+# scope and separate eval() calls don't share locals.
+rule_deck_path = File.join(File.dirname(__FILE__), "rule_decks")
+lvs_files = ['layers_definitions.lvs', 'connectivity.lvs']
+
+lvs_source = lvs_files.map { |f|
+  path = File.join(rule_deck_path, f)
+  File.exist?(path) ? File.read(path) : ""
+}.join("\n")
+eval(lvs_source)
