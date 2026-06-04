@@ -456,14 +456,24 @@ def validate_drc(files: dict, drc_dir: Path):
     return all_ok, results
 
 
-def test_hyp_integration(output_dir: Path, drc_dir: Path):
-    """Integration test: create pin_list JSON, run GDSGenerator cu-pillar placement, DRC."""
+def run_hyp_integration(output_dir: Path, drc_dir: Path):
+    """Integration leg: create pin_list JSON, run GDSGenerator cu-pillar placement, DRC.
+
+    Script-harness entry (not a pytest test: takes script args, and the
+    name must not be collected by a host pytest sweep of this directory).
+    """
     print("\nRunning HYP-to-GDS integration test:")
 
-    # Add hyp_to_gds to path
-    hyp_gds_dir = Path(__file__).resolve().parent.parent.parent / \
-        "kicad_designs" / "kicad_interposer_hyperlynx_to_gds"
-    sys.path.insert(0, str(hyp_gds_dir))
+    # hyp_to_gds lives in the KiCad plugin; locate the sibling checkout via
+    # the ecosystem discovery convention (upward walk from this file).
+    hyp_gds_dir = None
+    for base in Path(__file__).resolve().parents:
+        cand = base / "chiplet_kicad_plugin"
+        if (cand / "hyp_to_gds.py").is_file():
+            hyp_gds_dir = cand
+            break
+    if hyp_gds_dir is not None:
+        sys.path.insert(0, str(hyp_gds_dir))
 
     try:
         from hyp_to_gds import GDSGenerator, LayerMap
@@ -609,7 +619,7 @@ def main():
             return 1
 
     if args.test_integration:
-        integ_ok = test_hyp_integration(output_dir, drc_dir)
+        integ_ok = run_hyp_integration(output_dir, drc_dir)
         if not integ_ok:
             print("\nIntegration test FAILED")
             return 1
