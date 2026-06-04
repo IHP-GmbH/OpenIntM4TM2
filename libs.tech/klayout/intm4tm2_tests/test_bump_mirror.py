@@ -472,6 +472,44 @@ class TestCuPillarGenerator:
         with pytest.raises(RuntimeError, match="interconnect_pdk not found"):
             gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)])
 
+    def test_manifest_opening_enables_non_table_diameter(self):
+        """A diameter outside Table 6.1 draws with the method-supplied
+        passivation opening (manifest fab_params); Table 6.1 still wins
+        for the diameters it knows."""
+        import klayout.db as kdb
+
+        gen = CuPillarGenerator(bodies=[("VendorXBumpCu", 510, 35),
+                                        ("VendorXBumpCap", 511, 35)],
+                                passiv_opening_um=35.0)
+        gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)],
+                      body_diameter_um=40)
+
+        fd, path = tempfile.mkstemp(suffix=".gds")
+        os.close(fd)
+        try:
+            gen.write(path)
+            layout = kdb.Layout()
+            layout.read(path)
+            cell_names = [layout.cell(i).name for i in range(layout.cells())]
+            assert "CUPILLAR_40um_manifest" in cell_names
+            # Passiv opening 35 -> r 17.5; TM2 = r + enclosure 7.5 = 25.
+            passiv = layout.layer(9, 35)
+            tm2 = layout.layer(134, 0)
+            cell = layout.cell("CUPILLAR_40um_manifest")
+            pbox = cell.dbbox_per_layer(passiv)
+            tbox = cell.dbbox_per_layer(tm2)
+            assert abs(pbox.width() - 35.0) < 0.1
+            assert abs(tbox.width() - 50.0) < 0.1
+        finally:
+            os.unlink(path)
+
+    def test_non_table_diameter_without_opening_still_raises(self):
+        """Without the manifest opening the unknown diameter stays loud."""
+        gen = CuPillarGenerator()
+        with pytest.raises(ValueError, match="Unknown Cu-pillar body diameter"):
+            gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)],
+                          body_diameter_um=40)
+
 
 class TestCLI:
 
