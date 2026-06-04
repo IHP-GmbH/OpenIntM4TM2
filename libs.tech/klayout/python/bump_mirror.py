@@ -12,6 +12,7 @@ via --cupillar-gds.
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -574,14 +575,24 @@ class CuPillarGenerator:
 # ---------------------------------------------------------------------------
 
 def _add_gds_to_kicad_to_path():
-    """Add gds_to_kicad directory to sys.path for PinList import."""
-    gds_to_kicad_dir = (Path(__file__).resolve().parents[4] /
-                        "gds_to_kicad")
-    if gds_to_kicad_dir.is_dir():
-        path_str = str(gds_to_kicad_dir)
-        if path_str not in sys.path:
-            sys.path.insert(0, path_str)
-        return True
+    """Add gds_to_kicad directory to sys.path for PinList import.
+
+    Resolution: $GDS_TO_KICAD_ROOT first, then an upward walk from this
+    file for a sibling gds_to_kicad/ checkout (ecosystem discovery
+    convention -- no fixed-depth path arithmetic).
+    """
+    candidates = []
+    env = os.environ.get("GDS_TO_KICAD_ROOT")
+    if env:
+        candidates.append(Path(env))
+    here = Path(__file__).resolve()
+    candidates.extend(base / "gds_to_kicad" for base in here.parents)
+    for cand in candidates:
+        if cand.is_dir():
+            path_str = str(cand)
+            if path_str not in sys.path:
+                sys.path.insert(0, path_str)
+            return True
     return False
 
 
