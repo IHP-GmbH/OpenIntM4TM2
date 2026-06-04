@@ -26,7 +26,7 @@ vmim = input(129, 0)
 # Metal4 layers
 metal4_drawing = input(50, 0)
 metal4_pin = input(50, 2)
-metal4_text = input(50, 25)
+metal4_text = labels(50, 25)
 metal4_res = input(50, 29)
 
 # Via4 layer
@@ -35,7 +35,7 @@ via4 = input(66, 0)
 # Metal5 layers
 metal5_drawing = input(67, 0)
 metal5_pin = input(67, 2)
-metal5_text = input(67, 25)
+metal5_text = labels(67, 25)
 metal5_res = input(67, 29)
 
 # TopVia1 layer
@@ -44,7 +44,7 @@ topvia1 = input(125, 0)
 # TopMetal1 layers
 topmetal1_drawing = input(126, 0)
 topmetal1_pin = input(126, 2)
-topmetal1_text = input(126, 25)
+topmetal1_text = labels(126, 25)
 topmetal1_res = input(126, 29)
 
 # TopVia2 layer
@@ -53,7 +53,7 @@ topvia2 = input(133, 0)
 # TopMetal2 layers
 topmetal2_drawing = input(134, 0)
 topmetal2_pin = input(134, 2)
-topmetal2_text = input(134, 25)
+topmetal2_text = labels(134, 25)
 topmetal2_res = input(134, 29)
 
 # MEMS and special layers
@@ -78,7 +78,7 @@ dfpad_pillar = input(41, 35)
 dfpad_sbump = input(41, 36)
 
 # Text layer
-text = input(63, 0)
+text = labels(63, 0)
 
 # LBE layer (Localized Backside Etch)
 lbe = input(157, 0)
@@ -86,7 +86,7 @@ lbe = input(157, 0)
 # IND layers (Inductor marker - no device extraction for interposer)
 ind_drawing = input(27, 0)
 ind_pin = input(27, 2)
-ind_text = input(27, 25)
+ind_text = labels(27, 25)
 
 # Recognition layers for Cu Pillar and Solder Bump
 recog_drawing = input(99, 0)
@@ -94,10 +94,12 @@ recog_pillar = input(99, 35)
 recog_sbump = input(99, 36)
 
 # Combine drawing and pin layers for connectivity
-metal4 = metal4_drawing.or(metal4_pin).or(metal4_text)
-metal5 = metal5_drawing.or(metal5_pin).or(metal5_text)
-topmetal1 = topmetal1_drawing.or(topmetal1_pin).or(topmetal1_text)
-topmetal2 = topmetal2_drawing.or(topmetal2_pin).or(topmetal2_text)
+# (text layers are labels; they attach net names via connect() in the
+# connectivity deck instead of being merged as polygons)
+metal4 = metal4_drawing.or(metal4_pin)
+metal5 = metal5_drawing.or(metal5_pin)
+topmetal1 = topmetal1_drawing.or(topmetal1_pin)
+topmetal2 = topmetal2_drawing.or(topmetal2_pin)
 passiv = passiv_drawing.or(passiv_pin)
 dfpad = dfpad_drawing
 edgeseal = edgeseal_drawing

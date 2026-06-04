@@ -1,0 +1,93 @@
+# Copyright 2024 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#==================================
+# ---- INTERPOSER CONNECTIVITY ----
+#==================================
+
+# Define connectivity for backend metal stack
+# Metal4 -> Via4 -> Metal5 -> TopVia1 -> TopMetal1 -> TopVia2 -> TopMetal2
+connect(metal4, via4)
+connect(via4, metal5)
+connect(metal5, topvia1)
+connect(topvia1, topmetal1)
+connect(topmetal1, topvia2)
+connect(topvia2, topmetal2)
+
+# MEMS via connectivity
+connect(metal5, memvia)
+connect(memvia, topmetal1)
+
+# Attach net names from text labels
+connect(metal4, metal4_text)
+connect(metal5, metal5_text)
+connect(topmetal1, topmetal1_text)
+connect(topmetal2, topmetal2_text)
+
+# Extract netlist from layout
+netlist
+
+# Create pins for named top-level nets so the extracted SPICE netlist
+# exposes interface nets. Netlist#make_top_level_pins skips nets without
+# device terminals, and a passive interposer has no devices - so pins
+# are created explicitly here.
+if $top_lvl_pins.to_s == "true"
+  top_circuit = netlist.top_circuit
+  top_circuit.each_net do |net|
+    next if net.pin_count > 0 || net.name.to_s.empty?
+    pin = top_circuit.create_pin(net.name)
+    top_circuit.connect_pin(pin.id, net)
+  end
+end
+
+# Label-consistency connectivity checks (no schematic needed).
+# KLayout's device-graph compare tolerates unmatched floating nets, and a
+# passive interposer has no devices - opens/shorts in labeled nets would
+# pass silently. Check label topology explicitly instead:
+#  - one net carrying two different labels -> short
+#  - one label split across several nets  -> open
+all_nets = []
+netlist.top_circuit.each_net { |n| all_nets << n }
+
+label_nets = Hash.new { |h, k| h[k] = [] }
+all_nets.each do |net|
+  name = net.name.to_s
+  next if name.empty?
+  base = name.sub(/\$\d+$/, "")
+  if base.include?(",")
+    logger.error("Connectivity SHORT: labels '#{base}' land on a single net ('#{net.expanded_name}')")
+  end
+  base.split(",").each { |lbl| label_nets[lbl] << net }
+end
+
+label_nets.each do |lbl, nets|
+  if nets.size > 1
+    ids = nets.map { |n| "net##{n.cluster_id}" }.join(", ")
+    logger.error("Connectivity OPEN: label '#{lbl}' is split across #{nets.size} nets (#{ids})")
+  end
+end
+
+# Compare with reference schematic (if provided)
+if $schematic
+  schematic($schematic)
+  if compare
+    logger.info("LVS netlists match")
+  else
+    logger.error("LVS netlists do NOT match - see report database")
+  end
+else
+  logger.info("No schematic provided - connectivity check only")
+end
+
+logger.info("LVS check complete for interposer backend layers")
