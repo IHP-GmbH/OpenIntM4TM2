@@ -384,7 +384,7 @@ def run_drc_on_file(gds_path: Path, drc_dir: Path, deck: str = 'copperpillar'):
     sys.path.insert(0, str(drc_dir))
     from run_drc import run_deck, get_rules_with_violations
 
-    drc_script = str(drc_dir / "interposer_ihp.drc")
+    drc_script = str(drc_dir / "intm4tm2.drc")
     layout = db.Layout()
     layout.read(str(gds_path))
     topcell = layout.top_cells()[0].name

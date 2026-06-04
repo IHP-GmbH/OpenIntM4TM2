@@ -18,7 +18,7 @@ import concurrent.futures
 import traceback
 from typing import Dict, List, Set, Union, Tuple
 
-# Available DRC decks (must match keys in interposer_ihp.drc all_decks hash)
+# Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
 AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'via4', 'topvia1', 'topvia2', 'lbe']
 
 # Decks that have been moved out of the interposer PDK. Recognised here so
@@ -398,7 +398,7 @@ def main():
     topcell = get_run_top_cell_name(args.topcell, layout_path)
 
     # Resolve DRC script path
-    drc_script = str(Path(__file__).resolve().parent / "interposer_ihp.drc")
+    drc_script = str(Path(__file__).resolve().parent / "intm4tm2.drc")
     if not Path(drc_script).is_file():
         logging.error(f"DRC script not found: {drc_script}")
         exit(1)
