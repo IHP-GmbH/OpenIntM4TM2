@@ -462,7 +462,8 @@ class CuPillarGenerator:
     """
 
     def __init__(self, enclosure_um: float = 7.5, num_points: int = 256,
-                 bodies: Optional[List[Tuple[str, int, int]]] = None):
+                 bodies: Optional[List[Tuple[str, int, int]]] = None,
+                 passiv_opening_um: Optional[float] = None):
         """
         Args:
             enclosure_um: TM2 enclosure around the passiv opening.
@@ -471,6 +472,10 @@ class CuPillarGenerator:
                           tuples, normally interconnect_manifest.layers_3d()
                           for the active method. None = the interconnect
                           PDK generator's default (IHP cu-pillar pair).
+            passiv_opening_um: fab pad opening for body diameters outside
+                          Table 6.1, normally the method's manifest
+                          fab_params (e.g. a vendor microbump). Table 6.1
+                          still wins for the diameters it knows.
         """
         if db is None:
             raise ImportError("klayout package required for GDS generation. "
@@ -478,6 +483,7 @@ class CuPillarGenerator:
         self.enclosure_um = enclosure_um
         self.num_points = num_points
         self.bodies = bodies
+        self.passiv_opening_um = passiv_opening_um
         self.layout = db.Layout()
         self.layout.dbu = 0.001  # 1 nm
         self.top_cell = self.layout.create_cell("TOP")
@@ -509,10 +515,18 @@ class CuPillarGenerator:
             return self._pillar_cells[key]
 
         option = CUPILLAR_TABLE_6_1.get(body_diameter_um)
+        if option is None and self.passiv_opening_um is not None:
+            # Method-supplied fab geometry (interconnect manifest
+            # fab_params): diameters outside the IHP Table 6.1 carry
+            # their own passivation opening.
+            option = {'option': 'manifest',
+                      'passiv_opening': self.passiv_opening_um}
         if option is None:
             raise ValueError(
                 f"Unknown Cu-pillar body diameter: {body_diameter_um} um. "
-                f"Valid: {sorted(CUPILLAR_TABLE_6_1.keys())} (Table 6.1)")
+                f"Valid: {sorted(CUPILLAR_TABLE_6_1.keys())} (Table 6.1), "
+                f"or construct the generator with passiv_opening_um for "
+                f"manifest-defined methods.")
 
         passiv_radius = option['passiv_opening'] / 2.0
         tm2_radius = passiv_radius + self.enclosure_um
