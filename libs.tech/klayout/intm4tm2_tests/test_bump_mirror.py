@@ -434,6 +434,44 @@ class TestCuPillarGenerator:
         gen = CuPillarGenerator()
         assert gen.add_bumps(bumps) == 5
 
+    def test_custom_bodies_select_method_layers(self):
+        """bodies= draws the method's 3D layers (e.g. a vendor's 510/511)
+        instead of the default IHP cu-pillar pair."""
+        import klayout.db as kdb
+
+        gen = CuPillarGenerator(bodies=[("VendorXBumpCu", 510, 35),
+                                        ("VendorXBumpCap", 511, 35)])
+        gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)])
+
+        fd, path = tempfile.mkstemp(suffix=".gds")
+        os.close(fd)
+        try:
+            gen.write(path)
+            layout = kdb.Layout()
+            layout.read(path)
+            layer_pairs = set()
+            for li in layout.layer_indices():
+                info = layout.get_info(li)
+                layer_pairs.add((info.layer, info.datatype))
+            # Vendor bodies present, IHP pair absent; fab pads unchanged.
+            assert (510, 35) in layer_pairs
+            assert (511, 35) in layer_pairs
+            assert (500, 35) not in layer_pairs
+            assert (501, 35) not in layer_pairs
+            assert {(134, 0), (9, 35), (41, 35), (99, 35)} <= layer_pairs
+        finally:
+            os.unlink(path)
+
+    def test_loud_failure_without_interconnect_pdk(self, monkeypatch):
+        """No interconnect PDK -> cell generation refuses (no silent
+        fallback that would emit pads without their bodies)."""
+        import bump_mirror
+
+        monkeypatch.setattr(bump_mirror, "_bump3d_cache", False)
+        gen = CuPillarGenerator()
+        with pytest.raises(RuntimeError, match="interconnect_pdk not found"):
+            gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)])
+
 
 class TestCLI:
 
