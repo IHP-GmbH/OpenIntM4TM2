@@ -52,9 +52,13 @@ if BEOL
   padc_a.forget
 
   # Rule Padc.b : Min. CuPillarPad space is 40 um (default, see Table 6.1 for other options)
+  # Tolerance accounts for polygon discretization of circular pads (same
+  # rationale as Padc.c below): a layout drawn exactly at the minimum
+  # measures a few nm short of it after 256-point approximation + nm grid.
   logger.info('Executing rule Padc.b')
   padc_b_value = drc_rules['Padc_b'].to_f
-  padc_b = cu_pillarpad.space(padc_b_value.um, euclidian)
+  padc_b_tol = 0.01  # 10nm tolerance for circle-approximated spacing
+  padc_b = cu_pillarpad.space(padc_b_value.um - padc_b_tol, euclidian)
   padc_b.output('Padc.b', "6.9.2. Padc.b : Min. CuPillarPad space is #{padc_b_value} um")
   padc_b.forget
 
@@ -84,7 +88,8 @@ if BEOL
   # For pads larger than Padc_a, this is conservative (tighter than needed).
   logger.info('Executing rule Padc.e')
   padc_e_value = drc_rules['Padc_e'].to_f
-  padc_e_min_space = (padc_e_value - padc_a_value).um
+  padc_e_tol = 0.01  # 10nm tolerance for circle-approximated spacing (see Padc.b)
+  padc_e_min_space = (padc_e_value - padc_a_value).um - padc_e_tol
   padc_e = cu_pillarpad.space(padc_e_min_space, euclidian)
   padc_e.output('Padc.e', "6.9.2. Padc.e : Min. CuPillarPad pitch is #{padc_e_value} um")
   padc_e.forget
