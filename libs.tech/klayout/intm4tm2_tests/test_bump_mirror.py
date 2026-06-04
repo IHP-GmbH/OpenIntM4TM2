@@ -29,7 +29,11 @@ from bump_mirror import (
 )
 
 # Also add gds_to_kicad for PinList
-GDS_TO_KICAD_DIR = Path(__file__).resolve().parents[4] / "gds_to_kicad"
+GDS_TO_KICAD_DIR = next(
+    (base / "gds_to_kicad" for base in Path(__file__).resolve().parents
+     if (base / "gds_to_kicad").is_dir()),
+    Path(__file__).resolve().parents[4] / "gds_to_kicad",
+)
 sys.path.insert(0, str(GDS_TO_KICAD_DIR))
 
 
@@ -457,7 +461,35 @@ class TestCLI:
                     os.unlink(p)
 
     def test_validation_failure_blocks_gds(self):
-        """CLI with pitch violation -> exit 1, no GDS."""
+        """--no-auto-resolve + pitch violation -> exit 1, no GDS.
+
+        This is the strict contract: with auto-resolve disabled a DRC
+        violation must block GDS generation outright."""
+        pins_path = _make_pin_list_json([
+            {"name": "Pin1", "center_x_dbu": 0.0, "center_y_dbu": 0.0},
+            {"name": "Pin2", "center_x_dbu": 60000.0, "center_y_dbu": 0.0},
+        ])
+        fd, gds_path = tempfile.mkstemp(suffix=".gds")
+        os.close(fd)
+        os.unlink(gds_path)
+
+        try:
+            ret = main([
+                '--pins', f'U1={pins_path}',
+                '--position', 'U1=0,0',
+                '--no-auto-resolve',
+                '-o', gds_path,
+            ])
+            assert ret == 1
+            assert not Path(gds_path).exists()
+        finally:
+            for p in [pins_path, gds_path]:
+                if Path(p).exists():
+                    os.unlink(p)
+
+    def test_default_auto_resolve_recovers_and_writes_gds(self):
+        """Default contract (auto-resolve ON): a pitch violation within the
+        displacement budget is shifted until DRC passes and GDS is written."""
         pins_path = _make_pin_list_json([
             {"name": "Pin1", "center_x_dbu": 0.0, "center_y_dbu": 0.0},
             {"name": "Pin2", "center_x_dbu": 60000.0, "center_y_dbu": 0.0},
@@ -472,8 +504,8 @@ class TestCLI:
                 '--position', 'U1=0,0',
                 '-o', gds_path,
             ])
-            assert ret == 1
-            assert not Path(gds_path).exists()
+            assert ret == 0
+            assert Path(gds_path).exists()
         finally:
             for p in [pins_path, gds_path]:
                 if Path(p).exists():
