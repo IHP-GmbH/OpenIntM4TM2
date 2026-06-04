@@ -186,7 +186,7 @@ def main():
 
     script_dir = Path(__file__).resolve().parent
     gds_dir = script_dir / "gds"
-    lvs_deck = script_dir.parent / "interposer_klayout" / "tech" / "lvs" / "intm4tm2.lvs"
+    lvs_deck = script_dir.parent / "tech" / "lvs" / "intm4tm2.lvs"
 
     files = {
         'clean': gds_dir / "lvs_clean.gds",

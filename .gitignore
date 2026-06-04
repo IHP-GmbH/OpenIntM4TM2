@@ -39,3 +39,6 @@ ENV/
 *.tmp
 *.temp
 .DS_Store
+
+# Reference example layouts are tracked despite the global *.gds ignore
+!libs.ref/**/*.gds

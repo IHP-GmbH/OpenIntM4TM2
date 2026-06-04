@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 # Add bump_mirror's directory to path
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "python"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from bump_mirror import (
@@ -29,7 +29,7 @@ from bump_mirror import (
 )
 
 # Also add gds_to_kicad for PinList
-GDS_TO_KICAD_DIR = SCRIPTS_DIR.parent.parent / "gds_to_kicad"
+GDS_TO_KICAD_DIR = Path(__file__).resolve().parents[4] / "gds_to_kicad"
 sys.path.insert(0, str(GDS_TO_KICAD_DIR))
 
 

@@ -10,24 +10,26 @@ edge seal and localized backside etch (LBE).
 
 ## Repository layout
 
+The repository follows the directory organization of the IHP open PDKs
+(e.g. `ihp-sg13g2`, `ihp-sg13cmos5l`).
+
 | Path | Contents |
 |---|---|
-| `interposer_klayout/` | KLayout technology (`intm4tm2.lyt`, `intm4tm2.lyp`, `intm4tm2.map`), DRC and LVS runsets, PCells and macros |
-| `scripts/` | Assembly utilities: `bump_mirror.py` (bump/pillar mirroring between mating dies), `flip_chip_gds.py` (flip-chip GDS transform) |
-| `tests/` | Cu-pillar PCell and DRC integration tests |
-| `layout_examples/` | Example layouts |
-| `interposer_pdk_layers.csv` | Layer reference table |
+| `libs.tech/klayout/tech/` | KLayout technology (`intm4tm2.lyt`, `intm4tm2.lyp`, `intm4tm2.map`), DRC and LVS runsets, macros |
+| `libs.tech/klayout/python/` | Assembly tooling: `bump_mirror.py` (Cu-pillar generation with DRC validation, bump/pillar mirroring between mating dies) |
+| `libs.tech/klayout/intm4tm2_tests/` | Cu-pillar PCell, DRC and LVS connectivity tests |
+| `libs.ref/intm4tm2_examples/gds/` | Example layouts (measurement test structures) |
 
 ## Getting started
 
-Open KLayout and install the technology from `interposer_klayout/tech/intm4tm2.lyt`
+Open KLayout and install the technology from `libs.tech/klayout/tech/intm4tm2.lyt`
 (Tools > Manage Technologies > Import Technology). The layer properties file and
 LEF/DEF layer mapping are picked up automatically.
 
 DRC:
 
 ```bash
-python3 interposer_klayout/tech/drc/run_drc.py --path <layout.gds> --topcell <cell>
+python3 libs.tech/klayout/tech/drc/run_drc.py --path <layout.gds> --topcell <cell>
 ```
 
 ## Ecosystem
