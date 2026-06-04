@@ -90,15 +90,26 @@ _bump3d_cache = None
 
 
 def _get_bump3d():
-    """Import interconnect_pdk/scripts/bump3d_generator.py, or None if absent."""
+    """Import the interconnect PDK's bump3d_generator.py, or None if absent.
+
+    Lives at interconnect_pdk/libs.tech/klayout/python/ (IHP layout, same as
+    this file in the interposer). $INTERCONNECT_PDK_ROOT first, then the
+    sibling-checkout walk; a set-but-invalid env falls through to the walk.
+    """
     global _bump3d_cache
     if _bump3d_cache is not None:
         return _bump3d_cache or None
     mod = None
     try:
+        py_subdir = ("libs.tech", "klayout", "python")
+        candidates = []
+        env = os.environ.get("INTERCONNECT_PDK_ROOT")
+        if env:
+            candidates.append(Path(env).joinpath(*py_subdir))
         here = Path(__file__).resolve()
         for base in here.parents:
-            cand = base / "interconnect_pdk" / "scripts"
+            candidates.append((base / "interconnect_pdk").joinpath(*py_subdir))
+        for cand in candidates:
             if (cand / "bump3d_generator.py").is_file():
                 if str(cand) not in sys.path:
                     sys.path.insert(0, str(cand))
