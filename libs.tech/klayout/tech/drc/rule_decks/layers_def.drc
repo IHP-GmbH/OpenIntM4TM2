@@ -135,8 +135,9 @@ recog_sbump = polygons(99, 36)
 
 # Note: the post-passivation 3D interconnect bodies (cu-pillar body 500/35,
 # SnAg cap 501/35, solder ball 502/36) are owned by the interconnect PDK
-# (interconnect_pdk/tech/drc/rule_decks/layers_def_3d.drc), not this interposer
-# deck. The interposer fabricates only the UBM openings (9/35, 41/35, 99/35).
+# (interconnect_pdk/libs.tech/klayout/tech/drc/rule_decks/layers_def_3d.drc),
+# not this interposer deck. The interposer fabricates only the UBM openings
+# (9/35, 41/35, 99/35).
 
 #==================================
 # ------ ALIAS FOR DRC RULES ------
