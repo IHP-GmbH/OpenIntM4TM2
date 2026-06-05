@@ -89,9 +89,11 @@ _bump3d_cache = None
 def _get_bump3d():
     """Import the interconnect PDK's bump3d_generator.py, or None if absent.
 
-    Lives at interconnect_pdk/libs.tech/klayout/python/ (IHP layout, same as
-    this file in the interposer). $INTERCONNECT_PDK_ROOT first, then the
+    Lives at <interconnect PDK>/libs.tech/klayout/python/ (IHP layout, same
+    as this file in the interposer). $INTERCONNECT_PDK_ROOT first, then the
     sibling-checkout walk; a set-but-invalid env falls through to the walk.
+    The walk accepts the canonical ecosystem name first, then the upstream
+    repository name, so default GitHub clones resolve too.
     """
     global _bump3d_cache
     if _bump3d_cache is not None:
@@ -105,7 +107,8 @@ def _get_bump3d():
             candidates.append(Path(env).joinpath(*py_subdir))
         here = Path(__file__).resolve()
         for base in here.parents:
-            candidates.append((base / "interconnect_pdk").joinpath(*py_subdir))
+            for name in ("interconnect_pdk", "IHP-Interconnect-IntM4TM2"):
+                candidates.append((base / name).joinpath(*py_subdir))
         for cand in candidates:
             if (cand / "bump3d_generator.py").is_file():
                 if str(cand) not in sys.path:
@@ -552,7 +555,8 @@ class CuPillarGenerator:
             raise RuntimeError(
                 "interconnect_pdk not found: cannot draw the 3D interconnect "
                 "bodies. Set INTERCONNECT_PDK_ROOT or clone the interconnect "
-                "PDK as a sibling checkout named 'interconnect_pdk' "
+                "PDK as a sibling checkout named 'interconnect_pdk' or "
+                "'IHP-Interconnect-IntM4TM2' "
                 "(libs.tech/klayout/python/bump3d_generator.py).")
         bump3d.add_3d_bodies(self.layout, cell, body_radius,
                              bodies=self.bodies, with_cap=with_cap,
@@ -610,15 +614,17 @@ def _add_gds_to_kicad_to_path():
     """Add gds_to_kicad directory to sys.path for PinList import.
 
     Resolution: $GDS_TO_KICAD_ROOT first, then an upward walk from this
-    file for a sibling gds_to_kicad/ checkout (ecosystem discovery
-    convention -- no fixed-depth path arithmetic).
+    file for a sibling checkout named gds_to_kicad/ (canonical) or
+    gds-to-kicad/ (upstream repository name) -- ecosystem discovery
+    convention, no fixed-depth path arithmetic.
     """
     candidates = []
     env = os.environ.get("GDS_TO_KICAD_ROOT")
     if env:
         candidates.append(Path(env))
     here = Path(__file__).resolve()
-    candidates.extend(base / "gds_to_kicad" for base in here.parents)
+    candidates.extend(base / name for base in here.parents
+                      for name in ("gds_to_kicad", "gds-to-kicad"))
     for cand in candidates:
         if cand.is_dir():
             path_str = str(cand)
