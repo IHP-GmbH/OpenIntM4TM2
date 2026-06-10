@@ -18,6 +18,7 @@ The repository follows the directory organization of the IHP open PDKs
 | `libs.tech/klayout/tech/` | KLayout technology (`intm4tm2.lyt`, `intm4tm2.lyp`, `intm4tm2.map`), DRC and LVS runsets, macros |
 | `libs.tech/klayout/python/` | Assembly tooling: `bump_mirror.py` (Cu-pillar generation with DRC validation, bump/pillar mirroring between mating dies) |
 | `libs.tech/klayout/intm4tm2_tests/` | Cu-pillar PCell, DRC and LVS connectivity tests |
+| `libs.tech/kicad/` | KiCad template board for assembly designs (copper layers pre-named after the PDK metals) |
 | `libs.ref/intm4tm2_examples/gds/` | Example layouts (measurement test structures) |
 
 ## Getting started
@@ -31,6 +32,12 @@ DRC:
 ```bash
 python3 libs.tech/klayout/tech/drc/run_drc.py --path <layout.gds> --topcell <cell>
 ```
+
+For chiplet assembly designs in KiCad, start from the template board in
+`libs.tech/kicad/`: the HYP-to-GDS exporter maps board copper to the PDK
+metals by name, and the template ships the required layer renames
+(`TopMetal2`/`TopMetal1`/`Metal5`/`Metal4`) plus the text-variable
+conventions. See `libs.tech/kicad/README.md`.
 
 ## Ecosystem
 
