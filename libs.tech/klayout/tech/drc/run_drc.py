@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """
 Interposer PDK DRC runner.
 
@@ -7,13 +8,15 @@ selective deck execution, parallel runs, and report merging.
 
 import argparse
 import os
+import shlex
+import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import logging
 import klayout.db
 from datetime import datetime, timezone
 import time
-from subprocess import check_call, CalledProcessError
+from subprocess import check_call, CalledProcessError, run as _run
 import concurrent.futures
 import traceback
 from typing import Dict, List, Set, Union, Tuple
@@ -181,14 +184,16 @@ def get_top_cell_names(gds_path: str) -> List[str]:
 def check_klayout_version():
     """Check that KLayout >= 0.29.11 is available."""
     try:
-        klayout_version_output = os.popen("klayout -b -v").read().strip()
+        klayout_version_output = _run(
+            ["klayout", "-b", "-v"], capture_output=True, text=True
+        ).stdout.strip()
     except Exception as e:
         logging.error(f"Error while checking KLayout version: {e}")
-        exit(1)
+        sys.exit(1)
 
     if not klayout_version_output:
         logging.error("KLayout not found. Make sure it is installed and in PATH.")
-        exit(1)
+        sys.exit(1)
 
     version_str = klayout_version_output.split()[-1]
     version_parts = version_str.split(".")
@@ -199,11 +204,11 @@ def check_klayout_version():
         patch = int(version_parts[2]) if len(version_parts) > 2 else 0
     except ValueError:
         logging.error(f"Failed to parse KLayout version: '{klayout_version_output}'")
-        exit(1)
+        sys.exit(1)
 
     if (major, minor, patch) < (0, 29, 11):
         logging.error(f"Minimum KLayout version is 0.29.11. Found: {version_str}")
-        exit(1)
+        sys.exit(1)
 
     logging.info(f"KLayout version: {version_str}")
 
@@ -214,11 +219,11 @@ def check_layout_path(layout_path: str) -> str:
 
     if not path.is_file():
         logging.error(f"Layout file '{layout_path}' does not exist.")
-        exit(1)
+        sys.exit(1)
 
     if not layout_path.lower().endswith((".gds", ".gds.gz", ".gds2", ".gds2.gz", ".oas")):
         logging.error(f"Layout '{layout_path}' is not GDS or OAS format.")
-        exit(1)
+        sys.exit(1)
 
     return str(path.resolve())
 
@@ -231,10 +236,10 @@ def get_run_top_cell_name(topcell_arg: str, layout_path: str) -> str:
     top_cells = get_top_cell_names(layout_path)
     if len(top_cells) > 1:
         logging.error("Layout has multiple top cells. Specify one with --topcell.")
-        exit(1)
+        sys.exit(1)
     elif not top_cells:
         logging.error("No top cell found in layout.")
-        exit(1)
+        sys.exit(1)
     return top_cells[0]
 
 
@@ -253,22 +258,25 @@ def run_deck(drc_script: str, deck_name: str, layout_path: str,
     layout_stem = Path(layout_path).stem
     report_path = run_dir / f"{layout_stem}_{topcell}_{deck_name}.lyrdb"
 
-    cmd = (
-        f"klayout -b -r '{drc_script}'"
-        f" -rd input='{layout_path}'"
-        f" -rd topcell='{topcell}'"
-        f" -rd report='{report_path}'"
-        f" -rd threads={threads}"
-        f" -rd run_mode='{run_mode}'"
-    )
+    # Build argv directly (no shell): KLayout accepts each `-rd name=value` as a
+    # separate token, so layout/report paths and the GDS-derived topcell name are
+    # passed verbatim and cannot be word-split or shell-interpreted.
+    cmd = [
+        "klayout", "-b", "-r", str(drc_script),
+        "-rd", f"input={layout_path}",
+        "-rd", f"topcell={topcell}",
+        "-rd", f"report={report_path}",
+        "-rd", f"threads={threads}",
+        "-rd", f"run_mode={run_mode}",
+    ]
     if deck_name != "all":
-        cmd += f" -rd deck='{deck_name}'"
+        cmd += ["-rd", f"deck={deck_name}"]
 
     logging.info(f"Running deck '{deck_name}' on {Path(layout_path).name} (topcell: {topcell})")
-    logging.debug(f"Command: {cmd}")
+    logging.debug("Command: %s", " ".join(shlex.quote(c) for c in cmd))
 
     try:
-        check_call(cmd, shell=True)
+        check_call(cmd)
     except CalledProcessError as e:
         logging.error(f"Deck '{deck_name}' failed with exit code {e.returncode}")
         raise
@@ -283,7 +291,7 @@ def check_drc_results(report_files: List[str], run_dir: Path,
 
     if not report_files:
         logging.error("No result databases generated. Check the logs.")
-        exit(1)
+        sys.exit(1)
 
     if len(report_files) > 1:
         layout_stem = Path(layout_path).stem
@@ -401,7 +409,7 @@ def main():
     drc_script = str(Path(__file__).resolve().parent / "intm4tm2.drc")
     if not Path(drc_script).is_file():
         logging.error(f"DRC script not found: {drc_script}")
-        exit(1)
+        sys.exit(1)
 
     # Validate requested decks
     decks_to_run = args.deck if args.deck else []
@@ -411,10 +419,10 @@ def main():
                 f"Deck '{d}' is no longer in the interposer PDK. "
                 f"{RELOCATED_DECKS[d]}"
             )
-            exit(1)
+            sys.exit(1)
         if d not in AVAILABLE_DECKS:
             logging.error(f"Unknown deck '{d}'. Available: {', '.join(AVAILABLE_DECKS)}")
-            exit(1)
+            sys.exit(1)
 
     # Execution strategy
     report_files = []
@@ -467,4 +475,4 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())
