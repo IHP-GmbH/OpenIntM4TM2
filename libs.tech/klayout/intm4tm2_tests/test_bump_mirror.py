@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Tests for bump_mirror.py -- Cu-Pillar Generator with DRC Pre-Validation."""
 
 import json
@@ -28,13 +29,16 @@ from bump_mirror import (
     main,
 )
 
-# Also add gds_to_kicad for PinList
+# Also add gds_to_kicad for PinList. Resolve only via the upward sibling walk;
+# tests that need PinList skip when it is absent rather than relying on a
+# brittle fixed-depth (parents[4]) guess that could point at the wrong dir.
 GDS_TO_KICAD_DIR = next(
     (base / "gds_to_kicad" for base in Path(__file__).resolve().parents
      if (base / "gds_to_kicad").is_dir()),
-    Path(__file__).resolve().parents[4] / "gds_to_kicad",
+    None,
 )
-sys.path.insert(0, str(GDS_TO_KICAD_DIR))
+if GDS_TO_KICAD_DIR is not None:
+    sys.path.insert(0, str(GDS_TO_KICAD_DIR))
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +361,8 @@ class TestAdditionalValidation:
 
     def test_rotation_transform(self):
         """Pin at (40000, 0) dbu + 90deg rotation -> (0, 40) um offset."""
+        if GDS_TO_KICAD_DIR is None:
+            pytest.skip("gds_to_kicad sibling not found")
         from pin_list import PinList, PinEntry
 
         pin_list = PinList(pins=[
@@ -801,3 +807,121 @@ class TestPerDeviceDimensions:
             assert positions["U1"]["body_diameter"] == 49.0
         finally:
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 robustness / contract regressions
+# ---------------------------------------------------------------------------
+
+class TestRobustness:
+
+    def test_chiplet_scalar_rotation_and_missing_fields(self):
+        """Hand-written YAML may use a scalar `rotation: 90` and omit a field;
+        load_chiplet_positions must coerce, not crash with AttributeError."""
+        yaml_text = (
+            "format_version: '1.0'\n"
+            "assembly:\n  name: t\n  units: um\n"
+            "components:\n"
+            "- id: U1\n  type: die\n  technology: sg13g2\n"
+            "  position:\n    x: 10\n    y: 20\n"
+            "  rotation: 90\n"                 # scalar, not {z: ...}
+            "- id: U2\n  type: die\n  technology: sg13g2\n"
+            "  position:\n    x: 5\n    y: 5\n"   # no rotation key at all
+        )
+        fd, path = tempfile.mkstemp(suffix=".chiplet")
+        with os.fdopen(fd, "w") as f:
+            f.write(yaml_text)
+        try:
+            pos = load_chiplet_positions(path)
+            assert abs(pos["U1"]["rotation"] - 90.0) < 1e-9
+            assert pos["U2"]["rotation"] == 0.0
+            assert pos["U1"]["x"] == 10.0 and pos["U1"]["y"] == 20.0
+        finally:
+            os.unlink(path)
+
+    def test_bad_position_and_rotation_raise_cli_error(self):
+        """Malformed CLI tokens raise CliInputError (caught by main), instead of
+        an uncaught ValueError or sys.exit inside importable parsers."""
+        from bump_mirror import parse_positions, parse_rotations, CliInputError
+        with pytest.raises(CliInputError):
+            parse_positions(["U1=abc"])          # wrong arity (no comma)
+        with pytest.raises(CliInputError):
+            parse_positions(["U1=1,2,3"])        # wrong arity (3 parts)
+        with pytest.raises(CliInputError):
+            parse_positions(["U1=x,y"])          # right arity, non-numeric coords
+        pos = {"U1": {"x": 0.0, "y": 0.0, "rotation": 0.0}}
+        with pytest.raises(CliInputError):
+            parse_rotations(["U1=spin"], pos)    # non-numeric angle
+
+    def test_diameter_no_table_match_errors(self):
+        """An unmatched --diameter hard-errors (exit 1, no GDS) instead of
+        silently validating against a fallback diameter the user did not ask
+        for."""
+        pins_path = _make_pin_list_json([
+            {"name": "Pin1", "center_x_dbu": 0.0, "center_y_dbu": 0.0},
+        ])
+        fd, gds_path = tempfile.mkstemp(suffix=".gds")
+        os.close(fd)
+        os.unlink(gds_path)
+        try:
+            ret = main(['--pins', f'U1={pins_path}', '--position', 'U1=0,0',
+                        '--diameter', '33', '-o', gds_path])
+            assert ret == 1
+            assert not Path(gds_path).exists()
+        finally:
+            for p in (pins_path, gds_path):
+                if Path(p).exists():
+                    os.unlink(p)
+
+    def test_auto_resolve_skips_coincident_but_fixes_others(self):
+        """A coincident pair no longer aborts the whole pass; other resolvable
+        collisions are still shifted (and the coincident overlap is reported)."""
+        from bump_mirror import auto_resolve_collisions
+
+        params = DrcParams()  # min_pitch 80 um
+        bumps = [
+            BumpLocation("U1", "P0", 0.0, 0.0),
+            BumpLocation("U1", "P1", 0.0, 0.0),     # coincident with P0
+            BumpLocation("U1", "P2", 500.0, 0.0),
+            BumpLocation("U1", "P3", 560.0, 0.0),   # 60 um < 80 um -> resolvable
+        ]
+        _, report = auto_resolve_collisions(
+            bumps, params, 40.0, max_displacement_um=20.0)
+        assert report["coincident_skipped"] is True
+        assert report["moved_count"] >= 2           # P2/P3 shifted regardless
+        assert report["converged"] is False         # coincident overlap remains
+
+    def test_auto_resolve_separates_coincident_when_other_moves_allow(self):
+        """A pair that starts coincident but is pushed apart while resolving
+        other pairs must be retried and separated, not excluded forever (the
+        coincident skip is re-evaluated by distance, not pinned to indices)."""
+        from bump_mirror import auto_resolve_collisions
+
+        params = DrcParams()  # min_pitch 80 um
+        bumps = [
+            BumpLocation("U1", "P0", 0.0, 0.0),
+            BumpLocation("U1", "P1", 0.0, 0.0),     # coincident with P0
+            BumpLocation("U1", "P2", 60.0, 0.0),    # near both -> moves split P0/P1
+        ]
+        resolved, report = auto_resolve_collisions(
+            bumps, params, 40.0, max_displacement_um=100.0)
+        d01 = math.hypot(resolved[0].global_x_um - resolved[1].global_x_um,
+                         resolved[0].global_y_um - resolved[1].global_y_um)
+        assert d01 > 1e-6                            # no longer stuck-coincident
+        assert report["coincident_skipped"] is False
+
+    def test_bump3d_signature_contract(self):
+        """The interposer calls bump3d_generator.add_3d_bodies(layout, cell,
+        body_radius_um, bodies=, with_cap=, num_points=) across the repo split.
+        Pin that signature so a rename/reorder in the interconnect repo is
+        caught here instead of silently breaking cu-pillar generation."""
+        import inspect
+        import bump_mirror
+
+        bump3d = bump_mirror._get_bump3d()
+        if bump3d is None:
+            pytest.skip("interconnect PDK not discoverable")
+        params = list(inspect.signature(bump3d.add_3d_bodies).parameters)
+        assert params[:3] == ["layout", "cell", "body_radius_um"]
+        for kw in ("bodies", "with_cap", "num_points"):
+            assert kw in params, kw

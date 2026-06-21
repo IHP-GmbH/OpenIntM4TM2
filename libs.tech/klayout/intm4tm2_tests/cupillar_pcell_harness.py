@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """
 Cu-Pillar PCell test harness.
 
@@ -6,9 +7,9 @@ Generates test GDS layouts for DRC validation of cu-pillar geometry rules
 (Padc.a through Padc.f) and optionally runs DRC to verify results.
 
 Usage:
-    python test_cupillar_pcell.py --generate          # Generate test GDS files
-    python test_cupillar_pcell.py --validate-drc      # Run DRC and check results
-    python test_cupillar_pcell.py --generate --validate-drc  # Both
+    python cupillar_pcell_harness.py --generate          # Generate test GDS files
+    python cupillar_pcell_harness.py --validate-drc      # Run DRC and check results
+    python cupillar_pcell_harness.py --generate --validate-drc  # Both
 """
 
 import argparse
@@ -459,8 +460,8 @@ def validate_drc(files: dict, drc_dir: Path):
 def run_hyp_integration(output_dir: Path, drc_dir: Path):
     """Integration leg: create pin_list JSON, run GDSGenerator cu-pillar placement, DRC.
 
-    Script-harness entry (not a pytest test: takes script args, and the
-    name must not be collected by a host pytest sweep of this directory).
+    Script-harness entry (not a pytest test: takes script args; this file is a
+    CLI harness, not test_-prefixed, so pytest does not collect it).
     """
     print("\nRunning HYP-to-GDS integration test:")
 
