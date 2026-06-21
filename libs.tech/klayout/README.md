@@ -47,8 +47,8 @@ libs.tech/klayout/
 │   └── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
-    ├── test_cupillar_pcell.py       # script harness (--generate / --validate-drc)
-    └── test_lvs_connectivity.py     # script harness (--generate / --validate-lvs)
+    ├── cupillar_pcell_harness.py    # script harness (--generate / --validate-drc)
+    └── lvs_connectivity_harness.py  # script harness (--generate / --validate-lvs)
 ```
 
 ## Technology files
@@ -98,8 +98,9 @@ python tech/lvs/run_lvs.py --layout=<your_layout.gds>                          #
 python tech/lvs/run_lvs.py --layout=<your_layout.gds> --netlist=<ref.spice>    # with schematic compare
 ```
 
-Other options: `--run_dir` (default: pwd), `--topcell`, `--run_mode` (`flat` or
-`deep`; default `deep`), `--no_top_lvl_pins`, `--verbose`.
+Other options: `--run_dir` (default: a timestamped `lvs_run_*` subdir under the
+current directory), `--topcell`, `--run_mode` (`flat` or `deep`; default
+`deep`), `--no_top_lvl_pins`, `--verbose`.
 
 ## Assembly tooling: `python/bump_mirror.py`
 
@@ -122,7 +123,6 @@ Key arguments:
 - `--position REF=X,Y` or `--chiplet FILE` (mutually exclusive, one required):
   device positions in um, or a chiplet YAML that supplies them.
 - `--rotation REF=DEG`: device rotations in degrees.
-- `--tech-json FILE`: path to `interposer_tech_default.json` (auto-detected if omitted).
 - `--diameter UM`, `--enclosure UM`: override the passiv opening and TM2 enclosure.
 - `--validate-only`: run DRC validation only, no GDS.
 - `--auto-resolve` / `--no-auto-resolve`: auto-resolve is ON by default; the
@@ -141,17 +141,17 @@ emitting pads without their bodies.
 ## Tests
 
 In `intm4tm2_tests/`. One pytest suite and two script harnesses; the harnesses are
-intentionally not pytest tests.
+CLI tools (not `test_`-prefixed), so pytest does not collect them.
 
 ```bash
-# pytest suite for bump_mirror (34 tests):
+# pytest suite for bump_mirror:
 pytest intm4tm2_tests/test_bump_mirror.py
 
 # Cu-pillar PCell harness: generate fixtures, then validate with DRC:
-python intm4tm2_tests/test_cupillar_pcell.py --generate
-python intm4tm2_tests/test_cupillar_pcell.py --validate-drc
+python intm4tm2_tests/cupillar_pcell_harness.py --generate
+python intm4tm2_tests/cupillar_pcell_harness.py --validate-drc
 
 # LVS connectivity harness: generate fixtures, then validate with LVS:
-python intm4tm2_tests/test_lvs_connectivity.py --generate
-python intm4tm2_tests/test_lvs_connectivity.py --validate-lvs
+python intm4tm2_tests/lvs_connectivity_harness.py --generate
+python intm4tm2_tests/lvs_connectivity_harness.py --validate-lvs
 ```

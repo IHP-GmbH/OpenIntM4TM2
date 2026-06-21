@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """
 Interposer LVS connectivity test harness.
 
@@ -10,9 +11,9 @@ three connectivity verdicts:
   - short: two labels landing on a bridged net      -> Connectivity SHORT
 
 Usage:
-    python test_lvs_connectivity.py --generate          # Generate fixtures
-    python test_lvs_connectivity.py --validate-lvs      # Run LVS and check verdicts
-    python test_lvs_connectivity.py --generate --validate-lvs  # Both
+    python lvs_connectivity_harness.py --generate          # Generate fixtures
+    python lvs_connectivity_harness.py --validate-lvs      # Run LVS and check verdicts
+    python lvs_connectivity_harness.py --generate --validate-lvs  # Both
 """
 
 import argparse
