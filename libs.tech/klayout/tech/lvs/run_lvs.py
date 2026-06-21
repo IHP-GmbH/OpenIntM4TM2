@@ -43,10 +43,12 @@ Options:
 
 from docopt import docopt
 import os
+import shlex
+import sys
 import logging
 import klayout.db
 from datetime import datetime, timezone
-from subprocess import check_call
+from subprocess import check_call, run as _run
 import time
 
 
@@ -55,26 +57,41 @@ def check_klayout_version():
     Check klayout version and makes sure it would work with the LVS.
     """
     # ======= Checking Klayout version =======
-    klayout_v_ = os.popen("klayout -b -v").read()
-    klayout_v_ = klayout_v_.split("\n")[0]
-    klayout_v_list = []
+    try:
+        klayout_v_ = _run(
+            ["klayout", "-b", "-v"], capture_output=True, text=True
+        ).stdout
+    except Exception as e:
+        logging.error(f"Error while checking KLayout version: {e}")
+        sys.exit(1)
+
+    klayout_v_ = klayout_v_.split("\n")[0].strip()
 
     if klayout_v_ == "":
         logging.error("Klayout is not found. Please make sure klayout is installed.")
-        exit(1)
-    else:
-        klayout_v_list = [int(v) for v in klayout_v_.split(" ")[-1].split(".")]
+        sys.exit(1)
 
-    if len(klayout_v_list) < 1 or len(klayout_v_list) > 3:
+    version_str = klayout_v_.split(" ")[-1]
+    # Tolerate dev/packaging suffixes on each component (e.g. '0.29.11-dev').
+    try:
+        parts = [int(p.split("-")[0]) for p in version_str.split(".")]
+    except (ValueError, IndexError):
+        logging.error(f"Was not able to parse klayout version: '{klayout_v_}'")
+        sys.exit(1)
+
+    if not 1 <= len(parts) <= 3:
         logging.error("Was not able to get klayout version properly.")
-        exit(1)
-    elif len(klayout_v_list) >= 2 or len(klayout_v_list) <= 3:
-        if klayout_v_list[1] < 29:
-            logging.error("Prerequisites at a minimum: KLayout 0.29.0")
-            logging.error(
-                "Using this klayout version has not been assessed. Limits are unknown"
-            )
-            exit(1)
+        sys.exit(1)
+
+    major = parts[0]
+    minor = parts[1] if len(parts) > 1 else 0
+    patch = parts[2] if len(parts) > 2 else 0
+    if (major, minor, patch) < (0, 29, 0):
+        logging.error("Prerequisites at a minimum: KLayout 0.29.0")
+        logging.error(
+            "Using this klayout version has not been assessed. Limits are unknown"
+        )
+        sys.exit(1)
 
     logging.info(f"Your Klayout version is: {klayout_v_}")
 
@@ -98,13 +115,13 @@ def check_layout_type(layout_path):
         logging.error(
             f"GDS file path {layout_path} provided doesn't exist or not a file."
         )
-        exit(1)
+        sys.exit(1)
 
     if ".gds" not in layout_path and ".oas" not in layout_path:
         logging.error(
             f"Layout {layout_path} is not in GDS2 or OASIS format, please recheck."
         )
-        exit(1)
+        sys.exit(1)
 
     return layout_path
 
@@ -157,7 +174,7 @@ def get_run_top_cell_name(arguments, layout_path):
             logging.error(
                 "Layout has multiple topcells. Use --topcell to determine which topcell you want."
             )
-            exit(1)
+            sys.exit(1)
         else:
             topcell = layout_topcells[0]
 
@@ -189,7 +206,7 @@ def generate_klayout_switches(arguments, layout_path, netlist_path):
         run_mode = arguments["--run_mode"]
     else:
         logging.error("Allowed klayout modes are (flat , deep) only")
-        exit(1)
+        sys.exit(1)
 
     switches = {
         "run_mode": run_mode,
@@ -205,16 +222,22 @@ def generate_klayout_switches(arguments, layout_path, netlist_path):
     return switches
 
 
-def build_switches_string(sws: dict):
+def build_switches_args(sws: dict):
     """
-    Build switches string from dictionary.
+    Build the KLayout ``-rd key=value`` argv tokens from a switch dict.
+
+    Returns a flat list (``["-rd", "k=v", ...]``) so each value is a single
+    argv token and no shell quoting is required.
 
     Parameters
     ----------
     sws : dict
         Dictionary that holds the run switches.
     """
-    return " ".join(f"-rd {k}={v}" for k, v in sws.items())
+    args = []
+    for k, v in sws.items():
+        args += ["-rd", f"{k}={v}"]
+    return args
 
 
 def check_lvs_results(results_files: list):
@@ -232,7 +255,7 @@ def check_lvs_results(results_files: list):
         logging.error(
             f"Klayout did not generate the expected results: {missing}. Please check run logs"
         )
-        exit(1)
+        sys.exit(1)
 
 
 def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
@@ -261,7 +284,7 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
         f'Running IntM4TM2 interposer LVS on design {path} on cell {sws["topcell"]}'
     )
 
-    layout_base_name = os.path.basename(path).split(".")[0]
+    layout_base_name = os.path.splitext(os.path.basename(path))[0]
     new_sws = sws.copy()
     report_path = os.path.join(run_dir, f"{layout_base_name}.lvsdb")
     log_path = os.path.join(run_dir, f"{layout_base_name}.log")
@@ -270,10 +293,12 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
     new_sws["log"] = log_path
     new_sws["target_netlist"] = ext_net_path
 
-    sws_str = build_switches_string(new_sws)
-
-    run_str = f"klayout -b -r {lvs_file} {sws_str}"
-    check_call(run_str, shell=True)
+    # Build argv directly (no shell): each `-rd key=value` is one token, so a
+    # spaceful run dir / layout path and the derived report/log/netlist paths
+    # are passed verbatim and cannot be word-split or shell-interpreted.
+    cmd = ["klayout", "-b", "-r", str(lvs_file)] + build_switches_args(new_sws)
+    logging.debug("Command: %s", " ".join(shlex.quote(c) for c in cmd))
+    check_call(cmd)
 
     # The KLayout LVS database is only written when a schematic compare runs;
     # connectivity-only runs produce the extracted netlist.
@@ -307,7 +332,7 @@ def main(lvs_run_dir: str, arguments: dict):
         logging.error(
             f"The input GDS file path {layout_path} doesn't exist, please recheck."
         )
-        exit(1)
+        sys.exit(1)
 
     # Check layout type
     layout_path = check_layout_type(layout_path)
@@ -320,7 +345,7 @@ def main(lvs_run_dir: str, arguments: dict):
             logging.error(
                 f"The input netlist file path {netlist_path} doesn't exist, please recheck."
             )
-            exit(1)
+            sys.exit(1)
     else:
         logging.info("No reference netlist provided - connectivity check only.")
 

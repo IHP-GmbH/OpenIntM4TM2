@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """
 bump_mirror.py -- Standalone Cu-Pillar Generator with DRC Pre-Validation
 
@@ -10,6 +11,7 @@ via --cupillar-gds.
 """
 
 import argparse
+import importlib.util
 import json
 import math
 import os
@@ -22,6 +24,15 @@ try:
     import klayout.db as db
 except ImportError:
     db = None
+
+
+class CliInputError(ValueError):
+    """Malformed user input (bad REF=path / coordinate / diameter).
+
+    Raised by the importable parsers so a caller (test harness, the wider
+    suite, an embedded interpreter) is not killed by a bare sys.exit; main()
+    catches it and returns a non-zero exit code.
+    """
 
 # ---------------------------------------------------------------------------
 # Constants -- mirrored from hyp_to_gds.py GDSGenerator
@@ -67,7 +78,12 @@ DEFAULT_BODY_DIAMETER = 49  # Option 2 (40um opening) -- default for assembly
 # IHP SG13G2: 1 DBU = 1 nm -> 0.001 um
 DBU_TO_UM = 0.001
 
-# Default tech values (Option 2, 40 um opening) -- used when no JSON provided
+# In-code fallback DRC values: Option 2 (40 um opening), matching the
+# DEFAULT_BODY_DIAMETER (49 um) used for cupillar generation; used only when no
+# tech JSON is found. The shipped interposer_tech_default.json carries Option 1
+# (35 um opening) for the fab DRC deck, so DrcParams.load() returns Option 1
+# when that file is present. The two defaults are intentionally distinct: fab
+# deck default (Option 1) vs assembly cupillar default (Option 2).
 DEFAULT_DRC_PARAMS = {
     'Padc_a': 40.0,
     'Padc_b': 40.0,
@@ -94,13 +110,20 @@ def _get_bump3d():
     sibling-checkout walk; a set-but-invalid env falls through to the walk.
     The walk accepts the canonical ecosystem name first, then the upstream
     repository name, so default GitHub clones resolve too.
+
+    Only the filesystem discovery is guarded: if a bump3d_generator.py is found
+    but fails to import (missing dep, syntax error), that error propagates with
+    its real traceback instead of being masked as 'interconnect_pdk not found'.
+    A genuine absence caches a negative result; a failed import is NOT cached,
+    so it can be retried once the environment is fixed.
     """
     global _bump3d_cache
     if _bump3d_cache is not None:
         return _bump3d_cache or None
-    mod = None
+
+    py_subdir = ("libs.tech", "klayout", "python")
+    cand_dir = None
     try:
-        py_subdir = ("libs.tech", "klayout", "python")
         candidates = []
         env = os.environ.get("INTERCONNECT_PDK_ROOT")
         if env:
@@ -111,13 +134,26 @@ def _get_bump3d():
                 candidates.append((base / name).joinpath(*py_subdir))
         for cand in candidates:
             if (cand / "bump3d_generator.py").is_file():
-                if str(cand) not in sys.path:
-                    sys.path.insert(0, str(cand))
-                import bump3d_generator as mod
+                cand_dir = cand
                 break
     except Exception:
-        mod = None
-    _bump3d_cache = mod or False
+        cand_dir = None
+
+    if cand_dir is None:
+        _bump3d_cache = False   # genuinely absent
+        return None
+
+    # Add the dir so the module's own siblings (interconnect_manifest) resolve,
+    # then load the exact discovered file so an unrelated bump3d_generator on
+    # sys.path cannot shadow it. An import error here is intentionally unguarded.
+    if str(cand_dir) not in sys.path:
+        sys.path.insert(0, str(cand_dir))
+    spec = importlib.util.spec_from_file_location(
+        "bump3d_generator", cand_dir / "bump3d_generator.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["bump3d_generator"] = mod
+    spec.loader.exec_module(mod)
+    _bump3d_cache = mod
     return mod
 
 
@@ -127,7 +163,12 @@ def _get_bump3d():
 
 @dataclass
 class DrcParams:
-    """Cu-pillar DRC parameters from interposer_tech_default.json."""
+    """Cu-pillar DRC parameters.
+
+    Field defaults are the Option 2 (40 um opening) fallback, matching
+    DEFAULT_BODY_DIAMETER. ``load()`` overrides these from a tech JSON when one
+    is found (the shipped interposer_tech_default.json carries Option 1).
+    """
     diameter_um: float = 40.0       # Padc_a (Option 2 default)
     min_spacing_um: float = 40.0    # Padc_b (edge-to-edge)
     min_enclosure_um: float = 7.5   # Padc_c (TM2 enclosure around passiv)
@@ -166,9 +207,14 @@ class DrcParams:
                 path = str(candidate)
 
         if path and Path(path).exists():
-            with open(path, 'r') as f:
-                data = json.load(f)
-            rules = data.get('rules', {})
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"Warning: failed to read tech JSON {path}: {e}; "
+                      f"using built-in defaults", file=sys.stderr)
+                return cls()
+            rules = data.get('rules', {}) if isinstance(data, dict) else {}
             return cls(
                 diameter_um=rules.get('Padc_a', DEFAULT_DRC_PARAMS['Padc_a']),
                 min_spacing_um=rules.get('Padc_b', DEFAULT_DRC_PARAMS['Padc_b']),
@@ -266,6 +312,13 @@ class DrcValidator:
 
         Returns:
             ValidationReport with all check results
+
+        Note:
+            This coordinate-only pre-validator covers Padc.a/b/c/e/f. Padc.d
+            (pad-to-EdgeSeal spacing, min_edgeseal_um) is intentionally NOT
+            checked here: it needs EdgeSeal geometry that the bump list does
+            not carry. Padc.d is enforced by the full intm4tm2.drc deck. The
+            field is retained so a loaded tech JSON round-trips its value.
         """
         results: List[ValidationResult] = []
 
@@ -610,14 +663,19 @@ class CuPillarGenerator:
 # Input loading
 # ---------------------------------------------------------------------------
 
-def _add_gds_to_kicad_to_path():
-    """Add gds_to_kicad directory to sys.path for PinList import.
+def _import_pinlist():
+    """Locate the gds_to_kicad sibling and return its PinList class.
 
-    Resolution: $GDS_TO_KICAD_ROOT first, then an upward walk from this
-    file for a sibling checkout named gds_to_kicad/ (canonical) or
-    gds-to-kicad/ (upstream repository name) -- ecosystem discovery
-    convention, no fixed-depth path arithmetic.
+    Resolution: $GDS_TO_KICAD_ROOT first, then an upward walk from this file
+    for a sibling checkout named gds_to_kicad/ (canonical) or gds-to-kicad/
+    (upstream repository name) that actually contains pin_list.py -- ecosystem
+    discovery convention, no fixed-depth path arithmetic. The directory is
+    added to sys.path (idempotently) so pin_list's own imports resolve, and
+    pin_list.py is loaded from that exact file so an unrelated pin_list earlier
+    on sys.path cannot shadow it.
     """
+    if "pin_list" in sys.modules:
+        return sys.modules["pin_list"].PinList
     candidates = []
     env = os.environ.get("GDS_TO_KICAD_ROOT")
     if env:
@@ -626,12 +684,18 @@ def _add_gds_to_kicad_to_path():
     candidates.extend(base / name for base in here.parents
                       for name in ("gds_to_kicad", "gds-to-kicad"))
     for cand in candidates:
-        if cand.is_dir():
-            path_str = str(cand)
-            if path_str not in sys.path:
-                sys.path.insert(0, path_str)
-            return True
-    return False
+        pin_list_py = cand / "pin_list.py"
+        if pin_list_py.is_file():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            spec = importlib.util.spec_from_file_location("pin_list", pin_list_py)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["pin_list"] = mod
+            spec.loader.exec_module(mod)
+            return mod.PinList
+    raise CliInputError(
+        "gds_to_kicad not found: cannot import PinList. Set GDS_TO_KICAD_ROOT "
+        "or clone gds_to_kicad as a sibling checkout.")
 
 
 def load_pin_lists(pin_args: List[str]) -> Dict[str, 'PinList']:
@@ -642,22 +706,22 @@ def load_pin_lists(pin_args: List[str]) -> Dict[str, 'PinList']:
 
     Returns:
         Dict mapping device ref to loaded PinList
+
+    Raises:
+        CliInputError on a malformed REF=path token or a missing pin file.
     """
-    _add_gds_to_kicad_to_path()
-    from pin_list import PinList
+    PinList = _import_pinlist()
 
     result = {}
     for item in pin_args:
         if '=' not in item:
-            print(f"Error: Invalid --pins format: '{item}'. Use REF=FILE.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise CliInputError(
+                f"Invalid --pins format: '{item}'. Use REF=FILE.")
         ref, path = item.split('=', 1)
         ref = ref.strip()
         path = path.strip()
         if not Path(path).exists():
-            print(f"Error: Pin list not found: {path}", file=sys.stderr)
-            sys.exit(1)
+            raise CliInputError(f"Pin list not found: {path}")
         result[ref] = PinList.load(path)
     return result
 
@@ -710,17 +774,37 @@ def _parse_chiplet_simple(path: str) -> Dict[str, dict]:
     return {}
 
 
+def _num(value, default=0.0):
+    """Coerce a YAML scalar to float, tolerating None and non-numeric strings."""
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _extract_positions(data: dict) -> Dict[str, dict]:
     """Extract positions and connection stack info from parsed chiplet data."""
-    connection_stacks = data.get('connection_stacks', {})
+    connection_stacks = data.get('connection_stacks', {}) or {}
 
     positions = {}
     for comp in data.get('components', []):
         if comp.get('type') == 'interposer':
             continue
         cid = comp.get('id', '')
-        pos = comp.get('position', {})
-        rot = comp.get('rotation', {})
+        # A present-but-null field yields None (not the {} default, which only
+        # applies when the key is absent), and hand-written YAML may use a
+        # scalar rotation (`rotation: 90`); coerce both shapes rather than
+        # assuming a dict and crashing with AttributeError.
+        pos = comp.get('position') or {}
+        if not isinstance(pos, dict):
+            pos = {}
+        rot = comp.get('rotation')
+        if isinstance(rot, dict):
+            rotation = _num(rot.get('z', 0.0))
+        else:
+            rotation = _num(rot)   # scalar rotation, or None -> 0.0
 
         # Look up body diameter and cap presence from connection stack
         conn_id = comp.get('connection')
@@ -728,16 +812,17 @@ def _extract_positions(data: dict) -> Dict[str, dict]:
         with_cap = True  # default: with SnAg cap (assembly config)
         if conn_id and conn_id in connection_stacks:
             stack = connection_stacks[conn_id]
-            layers = stack.get('layers', [])
+            layers = stack.get('layers', []) if isinstance(stack, dict) else []
             if layers:
-                body_diameter = float(layers[0].get('diameter', 0))
+                d = _num(layers[0].get('diameter', 0), default=None)
+                body_diameter = d if d else None
             layer_names = [l.get('name', '') for l in layers]
             with_cap = any('SnAg' in n for n in layer_names)
 
         positions[cid] = {
-            'x': float(pos.get('x', 0.0)),
-            'y': float(pos.get('y', 0.0)),
-            'rotation': float(rot.get('z', 0.0)),
+            'x': _num(pos.get('x', 0.0)),
+            'y': _num(pos.get('y', 0.0)),
+            'rotation': rotation,
             'connection': conn_id,
             'body_diameter': body_diameter,
             'with_cap': with_cap,
@@ -854,7 +939,12 @@ def auto_resolve_collisions(
                 dy = work[j].global_y_um - work[i].global_y_um
                 d = math.sqrt(dx * dx + dy * dy)
                 gap = required - d
-                if gap > 0.01 and gap > worst_gap:
+                # A coincident pair (d ~ 0) cannot be split, so it is excluded
+                # from the worst-pair search by DISTANCE (not a permanent index
+                # set): every other violation is still resolved, and if a later
+                # move separates the pair it becomes movable and is resolved in a
+                # subsequent iteration.
+                if gap > 0.01 and d >= 1e-6 and gap > worst_gap:
                     worst_gap = gap
                     worst = (i, j, d, dx, dy)
         if worst is None:
@@ -862,14 +952,6 @@ def auto_resolve_collisions(
             break
 
         i, j, d, dx, dy = worst
-        if d < 1e-6:
-            print(f"Warning: bumps {work[i].device_ref}:{work[i].pin_name} and "
-                  f"{work[j].device_ref}:{work[j].pin_name} are coincident "
-                  f"(overlap in source footprint); auto-resolve cannot split "
-                  f"them. Fix the footprint.", file=sys.stderr)
-            coincident_skipped = True
-            break
-
         ux, uy = dx / d, dy / d
         push_each = worst_gap / 2.0
 
@@ -883,6 +965,20 @@ def auto_resolve_collisions(
             actual = min(push_each, budget)
             work[idx].global_x_um += sign * ux * actual
             work[idx].global_y_um += sign * uy * actual
+
+    # Report pairs STILL coincident after resolution (overlapping source pads
+    # that no move separated); these block convergence and need a footprint fix.
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx = work[j].global_x_um - work[i].global_x_um
+            dy = work[j].global_y_um - work[i].global_y_um
+            d = math.sqrt(dx * dx + dy * dy)
+            if d < 1e-6 and required - d > 0.01:
+                coincident_skipped = True
+                print(f"Warning: bumps {work[i].device_ref}:{work[i].pin_name} "
+                      f"and {work[j].device_ref}:{work[j].pin_name} are "
+                      f"coincident (overlap in source footprint); auto-resolve "
+                      f"cannot split them. Fix the footprint.", file=sys.stderr)
 
     movements = []
     for orig, b in zip(origins, work):
@@ -942,9 +1038,9 @@ Examples:
   # Generate Cu-pillar GDS:
   %(prog)s --pins U1=pins_u1.json --position U1=1000,2000 -o cupillars.gds
 
-  # With explicit rotation and tech JSON:
+  # With explicit rotation:
   %(prog)s --pins U1=pins.json --position U1=100,200 --rotation U1=90 \\
-           --tech-json interposer_tech_default.json -o out.gds
+           -o out.gds
         """
     )
 
@@ -966,10 +1062,6 @@ Examples:
     parser.add_argument(
         '--rotation', nargs='+', metavar='REF=DEG',
         help='Device rotations in degrees (e.g., U1=90)',
-    )
-    parser.add_argument(
-        '--tech-json', metavar='FILE',
-        help='Path to interposer_tech_default.json (auto-detected if omitted)',
     )
     parser.add_argument(
         '--diameter', type=float, metavar='UM',
@@ -1015,24 +1107,27 @@ Examples:
 
 
 def parse_positions(pos_args: List[str]) -> Dict[str, dict]:
-    """Parse --position REF=X,Y arguments."""
+    """Parse --position REF=X,Y arguments.
+
+    Raises:
+        CliInputError on a malformed REF=X,Y token or non-numeric coordinates.
+    """
     positions = {}
     for item in pos_args:
         if '=' not in item:
-            print(f"Error: Invalid --position format: '{item}'. Use REF=X,Y.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise CliInputError(
+                f"Invalid --position format: '{item}'. Use REF=X,Y.")
         ref, coords = item.split('=', 1)
         parts = coords.split(',')
         if len(parts) != 2:
-            print(f"Error: Invalid coordinates for {ref}: '{coords}'. Use X,Y.",
-                  file=sys.stderr)
-            sys.exit(1)
-        positions[ref.strip()] = {
-            'x': float(parts[0]),
-            'y': float(parts[1]),
-            'rotation': 0.0,
-        }
+            raise CliInputError(
+                f"Invalid coordinates for {ref}: '{coords}'. Use X,Y.")
+        try:
+            x, y = float(parts[0]), float(parts[1])
+        except ValueError:
+            raise CliInputError(
+                f"Non-numeric coordinates for {ref}: '{coords}'. Use X,Y.")
+        positions[ref.strip()] = {'x': x, 'y': y, 'rotation': 0.0}
     return positions
 
 
@@ -1043,13 +1138,17 @@ def parse_rotations(rot_args: Optional[List[str]],
         return
     for item in rot_args:
         if '=' not in item:
-            print(f"Error: Invalid --rotation format: '{item}'. Use REF=DEG.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise CliInputError(
+                f"Invalid --rotation format: '{item}'. Use REF=DEG.")
         ref, deg = item.split('=', 1)
         ref = ref.strip()
+        try:
+            angle = float(deg)
+        except ValueError:
+            raise CliInputError(
+                f"Non-numeric rotation for {ref}: '{deg}'. Use REF=DEG.")
         if ref in positions:
-            positions[ref]['rotation'] = float(deg)
+            positions[ref]['rotation'] = angle
         else:
             print(f"Warning: Rotation for unknown device {ref}, ignoring",
                   file=sys.stderr)
@@ -1060,29 +1159,34 @@ def _resolve_body_diameter(positions: Dict[str, dict], ref: str,
     """Determine body diameter for a device.
 
     Priority: CLI override (reverse-lookup) > chiplet connection_stack > default.
+
+    Raises:
+        CliInputError if --diameter does not map to any Table 6.1 passiv
+        opening (silently substituting the default would generate and validate
+        geometry against a diameter the user did not request).
     """
     if cli_diameter is not None:
-        # CLI --diameter is passiv opening; reverse-lookup to body diameter
+        # CLI --diameter is a passiv opening; reverse-lookup to a body diameter.
         for body_diam, opt in CUPILLAR_TABLE_6_1.items():
             if abs(opt['passiv_opening'] - cli_diameter) < 0.01:
                 return float(body_diam)
-        # No match -- warn and use default
-        print(f"Warning: --diameter {cli_diameter} does not match any Table 6.1 "
-              f"passiv opening, using default body diameter {DEFAULT_BODY_DIAMETER}",
-              file=sys.stderr)
-        return float(DEFAULT_BODY_DIAMETER)
+        valid = sorted({opt['passiv_opening']
+                        for opt in CUPILLAR_TABLE_6_1.values()})
+        raise CliInputError(
+            f"--diameter {cli_diameter} um does not match any Table 6.1 "
+            f"passiv opening (valid: {valid}).")
 
     pos_info = positions.get(ref, {})
     body_diam = pos_info.get('body_diameter')
-    if body_diam and body_diam in CUPILLAR_TABLE_6_1:
-        return body_diam
+    if body_diam is not None and body_diam in CUPILLAR_TABLE_6_1:
+        return float(body_diam)
+    if body_diam is not None:
+        print(f"Warning: body diameter {body_diam} for {ref} is not in Table "
+              f"6.1; using default {DEFAULT_BODY_DIAMETER}", file=sys.stderr)
     return float(DEFAULT_BODY_DIAMETER)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
+def _run_main(args) -> int:
     # Load pin lists
     pin_lists = load_pin_lists(args.pins)
 
@@ -1221,6 +1325,15 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"{', '.join(failed_devices)}")
 
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return _run_main(args)
+    except CliInputError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
