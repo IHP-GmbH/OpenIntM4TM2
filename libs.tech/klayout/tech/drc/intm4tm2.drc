@@ -92,6 +92,15 @@ def get_circle(polygon_check)
   maybe_circle2.without_holes.with_area_ratio(1.270, 1.276)
 end
 
+# Function to check for missing interposer key values
+def fetch_rule(rules, key)
+  unless rules.is_a?(Hash) && rules.key?(key) && !rules[key].nil?
+    raise "DRC rule '#{key}' missing in interposer_tech_default.json"
+  end
+  Float(rules[key])
+end
+
+
 #================================================
 # ------------ LOAD LAYER DEFINITIONS -----------
 #================================================
@@ -106,13 +115,13 @@ all_decks = {
   'passiv'       => '5_27_passiv.drc',
   'pad'          => '6_9_pad.drc',
   'copperpillar' => '6_9_copperpillar.drc',
+  'metaln'       => '5_17_metaln.drc',
   'via4'         => '5_20_via4.drc',
   'topvia1'      => '5_21_topvia1.drc',
-  'topvia2'      => '5_24_topvia2.drc',
-  'lbe'          => '9_1_lbe.drc',
   'topmetal1'    => '5_22_topmetal1.drc',
+  'topvia2'      => '5_24_topvia2.drc',
   'topmetal2'    => '5_25_topmetal2.drc',
-  'metaln'       => '5_17_metaln.drc',
+  'lbe'          => '9_1_lbe.drc',
 }
 
 if $deck && !$deck.empty?

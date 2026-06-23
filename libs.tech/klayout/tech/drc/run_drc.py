@@ -22,7 +22,7 @@ import traceback
 from typing import Dict, List, Set, Union, Tuple
 
 # Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
-AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'via4', 'topvia1', 'topvia2', 'lbe', 'topmetal1', 'topmetal2', 'metaln']
+AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'metaln', 'via4', 'topvia1', 'topmetal1', 'topvia2', 'topmetal2', 'lbe']
 
 # Decks that have been moved out of the interposer PDK. Recognised here so
 # that a stale CLI invocation prints a useful redirect instead of "unknown".

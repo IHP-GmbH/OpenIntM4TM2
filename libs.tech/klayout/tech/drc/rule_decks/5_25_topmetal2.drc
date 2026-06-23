@@ -16,6 +16,9 @@
 # limitations under the License.
 #=========================================================================================
 
+# This deck implements only minimum width and minimum spacing/notch checks for TopMetal2.
+# Wide-line and 45-degree spacing rules yet to implement.
+# Recommended and PRECHECK-tier rules are intentionally not implemented here.
 
 if BEOL
   #===============================================
@@ -27,20 +30,20 @@ if BEOL
   # TopMetal2 derivations
   tm2_nseal = topmetal2_drw.not(edgeseal_drw)
 
-  # Rule TM2.a: Min. TopMetal2 width is 2.00 um
+  # Rule TM2.a: Min. TopMetal2 width, value from JSON.
 
   logger.info('Executing rule TM2.a')
-  tm2_a_value = drc_rules['TM2_a'].to_f
-  tm2_a_l = tm2_nseal.width(tm2_a_value.um,euclidian)
-  tm2_a_l.output('TM2.a', "5.25. TM2.a: Min. TopMetal2 width: #{tm2_a_value} μm.")
+  tm2_a_value = fetch_rule(drc_rules, 'TM2_a')
+  tm2_a_l = tm2_nseal.width(tm2_a_value.um, euclidian)
+  tm2_a_l.output('TM2.a', "5.25. TM2.a: Min. TopMetal2 width: #{tm2_a_value} um.")
   tm2_a_l.forget
 
 
-  # Rule TM2.b: Min. TopMetal2 space is 2.00 um
+  # Rule TM2.b: Min. TopMetal2 space, value from JSON.
   logger.info('Executing rule TM2.b')
-  tm2_b_value = drc_rules['TM2_b'].to_f
+  tm2_b_value = fetch_rule(drc_rules, 'TM2_b')
   tm2_b_l = tm2_nseal.space(tm2_b_value.um, euclidian)
-  tm2_b_l.output('TM2.b', "5.25. TM2.b: Min. TopMetal2 space or notch: #{tm2_b_value} μm.")
+  tm2_b_l.output('TM2.b', "5.25. TM2.b: Min. TopMetal2 space or notch: #{tm2_b_value} um.")
   tm2_b_l.forget
 
   tm2_nseal.forget

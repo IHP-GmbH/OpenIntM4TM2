@@ -45,7 +45,7 @@ if BEOL
     # Rule Pad.fR: Min. recommended Metaln exit length is 7.00 um
     metals.each do |metal_lay, met_abbrev|
       logger.info("Executing rule Pad.fR_#{met_abbrev}")
-      pad_fr_value = drc_rules['Pad_fR'].to_f
+      pad_fr_value = fetch_rule(drc_rules, 'Pad_fR')
       pad_fr_l1 = metal_lay.interacting(pad).not(dfpad_drw)
       pad_fr_l2 = pad_fr_l1.edges.and(dfpad_drw)
       pad_fr_l3 = pad_fr_l2.extended(in: pad_fr_value.um)
