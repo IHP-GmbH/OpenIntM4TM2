@@ -42,7 +42,7 @@ if BEOL
 
   # Rule Padc.a: CuPillarPad size is 35 um (default, see Table 6.1 for other options: 40, 45 um)
   logger.info('Executing rule Padc.a')
-  padc_a_value = drc_rules['Padc_a'].to_f
+  padc_a_value = fetch_rule(drc_rules, 'Padc_a')
   padc_a_l1 = cu_pillarpad.width(padc_a_value.um - drc_tole, projection, projection_limits(nil, 10 * drc_tole)).polygons
   padc_a_l2 = cu_pillarpad.with_bbox_width(nil, padc_a_value.um)
   padc_a = padc_a_l1.join(padc_a_l2)
@@ -56,7 +56,7 @@ if BEOL
   # rationale as Padc.c below): a layout drawn exactly at the minimum
   # measures a few nm short of it after 256-point approximation + nm grid.
   logger.info('Executing rule Padc.b')
-  padc_b_value = drc_rules['Padc_b'].to_f
+  padc_b_value = fetch_rule(drc_rules, 'Padc_b')
   padc_b_tol = 0.01  # 10nm tolerance for circle-approximated spacing
   padc_b = cu_pillarpad.space(padc_b_value.um - padc_b_tol, euclidian)
   padc_b.output('Padc.b', "6.9.2. Padc.b : Min. CuPillarPad space is #{padc_b_value} um")
@@ -64,7 +64,7 @@ if BEOL
 
   # Rule Padc.c: Min. TopMetal2 (within dfpad) enclosure of CuPillarPad is 7.5 um
   logger.info('Executing rule Padc.c')
-  padc_c_value = drc_rules['Padc_c'].to_f
+  padc_c_value = fetch_rule(drc_rules, 'Padc_c')
   # Tolerance accounts for polygon discretization of circular shapes (~1nm at 256 points)
   padc_c_tol = 0.01  # 10nm tolerance for circle-approximated enclosure
   padc_c_l1 = cu_pillarpad.enclosed(topmetal2, padc_c_value.um - padc_c_tol, projection).polygons
@@ -77,7 +77,7 @@ if BEOL
 
   # Rule Padc.d: Min. CuPillarPad space to EdgeSeal is 30 um
   logger.info('Executing rule Padc.d')
-  padc_d_value = drc_rules['Padc_d'].to_f
+  padc_d_value = fetch_rule(drc_rules, 'Padc_d')
   padc_d = cu_pillarpad.separation(edgeseal, padc_d_value.um, euclidian)
   padc_d.output('Padc.d', "6.9.2. Padc.d : Min. CuPillarPad space to EdgeSeal is #{padc_d_value} um")
   padc_d.forget
@@ -87,7 +87,7 @@ if BEOL
   # pitch = edge_spacing + pad_size, so min_spacing = min_pitch - min_pad_size.
   # For pads larger than Padc_a, this is conservative (tighter than needed).
   logger.info('Executing rule Padc.e')
-  padc_e_value = drc_rules['Padc_e'].to_f
+  padc_e_value = fetch_rule(drc_rules, 'Padc_e')
   padc_e_tol = 0.01  # 10nm tolerance for circle-approximated spacing (see Padc.b)
   padc_e_min_space = (padc_e_value - padc_a_value).um - padc_e_tol
   padc_e = cu_pillarpad.space(padc_e_min_space, euclidian)
