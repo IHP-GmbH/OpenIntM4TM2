@@ -1,0 +1,53 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+# This deck implements only minimum width and minimum spacing/notch checks for Metal4 and Metal5. 
+# Wide-line and 45-degree spacing rules yet to implement.
+# Recommended and PRECHECK-tier rules are intentionally not implemented here.
+
+if BEOL
+  #===============================================
+  #--------------- 17. metal -----------------
+  #===============================================
+
+  logger.info('Starting 5.17. metal table')
+
+  metals_lay = [metal4_drw, metal5_drw]
+  metal_start_index = 4
+
+  metals_lay.each_with_index do |met_lay, index|
+    met_no = metal_start_index + index
+
+    logger.info("Executing rule M#{met_no}.a")
+
+    met_nseal = met_lay.not(edgeseal_drw)
+
+    mn_a_value = fetch_rule(drc_rules, 'Mn_a')
+    mn_a_l = met_nseal.width(mn_a_value.um, euclidian)
+    mn_a_l.output("M#{met_no}.a", "5.17. M#{met_no}.a: Min. Metal#{met_no} width: #{mn_a_value} um.")
+    mn_a_l.forget
+
+    logger.info("Executing rule M#{met_no}.b")
+    mn_b_value = fetch_rule(drc_rules, 'Mn_b')
+    mn_b_l = met_nseal.space(mn_b_value.um, euclidian)
+    mn_b_l.output("M#{met_no}.b", "5.17. M#{met_no}.b: Min. Metal#{met_no} space or notch: #{mn_b_value} um.")
+    mn_b_l.forget
+
+    met_nseal.forget
+  end
+end

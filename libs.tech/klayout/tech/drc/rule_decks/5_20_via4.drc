@@ -28,7 +28,7 @@ if BEOL
 
   # Rule V4.a: Min. and max. Via4 width is 0.19um
   logger.info('Executing rule V4.a')
-  vn_a_value = drc_rules['Vn_a'].to_f
+  vn_a_value = fetch_rule(drc_rules, 'Vn_a')
   v4_a_l1 = via4_nseal.without_bbox_min(vn_a_value.um)
   v4_a_l2 = via4_nseal.without_bbox_max(vn_a_value.um)
   v4_a_l = v4_a_l1.join(v4_a_l2)
@@ -39,7 +39,7 @@ if BEOL
 
   # Rule V4.b: Min. Via4 space is 0.22um
   logger.info('Executing rule V4.b')
-  vn_b_value = drc_rules['Vn_b'].to_f
+  vn_b_value = fetch_rule(drc_rules, 'Vn_b')
   v4_b_l = via4_nseal.space(vn_b_value.um, euclidian)
   v4_b_l.output('V4.b', "5.20. V4.b : Min. Via4 space: #{vn_b_value} um")
   v4_b_l.forget
@@ -47,7 +47,7 @@ if BEOL
   unless PRECHECK_DRC
     # Rule V4.c: Min. Metal4 enclosure of Via4 is 0.005um
     logger.info('Executing rule V4.c')
-    vn_c_value = drc_rules['Vn_c'].to_f
+    vn_c_value = fetch_rule(drc_rules, 'Vn_c')
     v4_c_l = via4_drw.enclosed(metal4_drw, vn_c_value.um, euclidian)
     v4_c_l.output('V4.c', "5.20. V4.c : Min. Metal4 enclosure of Via4 is #{vn_c_value} um")
     v4_c_l.forget
