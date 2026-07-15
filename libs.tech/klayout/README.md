@@ -35,6 +35,9 @@ libs.tech/klayout/
 │   │       ├── 6_9_copperpillar.drc # deck: copperpillar
 │   │       ├── 9_1_lbe.drc          # deck: lbe
 │   │       └── interposer_tech_default.json  # tech params (diameters, enclosures)
+│   │   └── testing/                 # DRC unit tests (IHP testcases/ convention)
+│   │       ├── run_regression.py    # runner: deck vs golden expectation per top cell
+│   │       └── testcases/unit/      # via4.gds (+ gen_via4_testcase.py generator)
 │   ├── lvs/                         # Layout vs Schematic
 │   │   ├── intm4tm2.lvs             # Top runset; loads the two rule decks
 │   │   ├── run_lvs.py               # CLI driver
@@ -150,6 +153,12 @@ pytest intm4tm2_tests/test_bump_mirror.py
 # Cu-pillar PCell harness: generate fixtures, then validate with DRC:
 python intm4tm2_tests/cupillar_pcell_harness.py --generate
 python intm4tm2_tests/cupillar_pcell_harness.py --validate-drc
+
+# DRC rule-deck unit tests (IHP testcases/ convention): run the regression on the
+# committed testcase GDS. Exercises V4.b1 (large-array spacing) and V4.c1/M5.c1
+# (endcap enclosure). Regenerate a testcase with its gen_*.py before editing it.
+python tech/drc/testing/run_regression.py           # all tables
+python tech/drc/testing/run_regression.py --table via4
 
 # LVS connectivity harness: generate fixtures, then validate with LVS:
 python intm4tm2_tests/lvs_connectivity_harness.py --generate
