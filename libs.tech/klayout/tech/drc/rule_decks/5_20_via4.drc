@@ -44,6 +44,53 @@ if BEOL
   v4_b_l.output('V4.b', "5.20. V4.b : Min. Via4 space: #{vn_b_value} um")
   v4_b_l.forget
 
+  # Rule V4.b1: Min. Via4 space in large arrays (more than Vn_b1_nr x Vn_b1_nr cuts) is 0.29um.
+  # Directional: 0.29 is required in ONE axis only; the other axis needs only V4.b.
+  # Ported from sg13g2_maximal.drc. NOTE: uses the universal-DRC .drc(if_all(...)) selector, which
+  # requires flat/deep run mode (the interposer deck currently runs flat); it would produce tile-border
+  # artefacts under a genuine tiled engine.
+  logger.info('Executing rule V4.b1')
+  vn_b1_value = fetch_rule(drc_rules, 'Vn_b1')
+  vn_b1_nr_value = fetch_rule(drc_rules, 'Vn_b1_nr')
+
+  # CLOSE radius Vn_b1/2 (=0.145): merge cuts separated by <= Vn_b1 into solid blobs.
+  v4_b1_close = via4_nseal.sized((vn_b1_value / 2).um, acute_limit).sized(-(vn_b1_value / 2).um, acute_limit)
+
+  # OPEN radius ((Vn_b1_nr+1)*Vn_a + Vn_b1_nr*Vn_b - 0.05)/2 (=0.685 for nr=3): keep only blobs whose
+  # span reaches an array LARGER than Vn_b1_nr x Vn_b1_nr in both axes. The 0.05 is a detection margin;
+  # it numerically equals Vn_c1 but is NOT semantically Vn_c1 -- keep literal.
+  v4_b1_open_r = (((vn_b1_nr_value + 1) * vn_a_value + vn_b1_nr_value * vn_b_value) - 0.05) / 2
+  v4_b1_array = v4_b1_close.sized(-v4_b1_open_r.um, acute_limit).sized(v4_b1_open_r.um, acute_limit)
+
+  # Individual cuts inside those large-array blobs.
+  v4_b1_in = via4_nseal.inside(v4_b1_array)
+
+  # Bridge in-array cuts. 0.143 is DELIBERATELY below Vn_b1/2 (0.145): 2*0.143=0.286 < 0.29, so a legal
+  # 0.29 gap does NOT bridge (~0.004um dead-zone). Do NOT replace with Vn_b1/2 -- that would flag legal
+  # 0.29 arrays. Kept literal for bit-for-bit fidelity with the reference deck.
+  v4_b1_bigarray = v4_b1_in.sized(0.143.um, acute_limit).sized(-0.143.um, acute_limit)
+
+  # Bridge material = the sub-Vn_b1 separations between in-array cuts.
+  v4_b1_sep_err1 = v4_b1_bigarray.not(v4_b1_in)
+
+  # Directional filter: strip purely rectangular bridges. A legal-in-one-axis (0.29) array bridges only
+  # as straight strips (removed); a full mesh (both axes < Vn_b1) survives = error.
+  v4_b1_sep_err2 = v4_b1_sep_err1.not(v4_b1_sep_err1.rectangles)
+
+  # Report surviving bridge errors PLUS the in-array cuts whose edge abuts them.
+  v4_b1_touch = v4_b1_in.drc(if_all(outside(v4_b1_sep_err2), (primary.edges & secondary(v4_b1_sep_err2)).count > 0))
+  v4_b1_l = v4_b1_sep_err2.join(v4_b1_touch)
+  v4_b1_l.output('V4.b1', "5.20. V4.b1 : Min. Via4 space in arrays larger than #{vn_b1_nr_value.to_i}x#{vn_b1_nr_value.to_i}: #{vn_b1_value} um")
+
+  v4_b1_close.forget
+  v4_b1_array.forget
+  v4_b1_in.forget
+  v4_b1_bigarray.forget
+  v4_b1_sep_err1.forget
+  v4_b1_sep_err2.forget
+  v4_b1_touch.forget
+  v4_b1_l.forget
+
   unless PRECHECK_DRC
     # Rule V4.c: Min. Metal4 enclosure of Via4 is 0.005um
     logger.info('Executing rule V4.c')
@@ -52,10 +99,47 @@ if BEOL
     v4_c_l.output('V4.c', "5.20. V4.c : Min. Metal4 enclosure of Via4 is #{vn_c_value} um")
     v4_c_l.forget
 
+    # Rule V4.c1: Min. Metal4 endcap enclosure of Via4 is 0.05um.
+    # At a Via4 on a Metal4 corner at least one side is an endcap enclosed by Vn_c1; the other sides
+    # may use the flat V4.c. Ported from sg13g2_maximal.drc in the deck-idiomatic layer-method form
+    # (not the verbatim universal-DRC form) for consistency with V4.c/V4.c2 and flat/deep robustness.
+    logger.info('Executing rule V4.c1')
+    vn_c1_value = fetch_rule(drc_rules, 'Vn_c1')
+    metal4_nseal = metal4_drw.not(edgeseal_drw)
+    # (a) insufficient endcap enclosure; a deficiency on one side or two opposite sides is allowed
+    #     (the endcap side-relaxation policy carried verbatim from the reference deck).
+    v4_c1_enc = via4_nseal.enclosed(metal4_nseal, vn_c1_value.um,
+                                    projection, whole_edges,
+                                    one_side_allowed, two_opposite_sides_allowed)
+    v4_c1_enc.output('V4.c1', "5.20. V4.c1 : Min. Metal4 endcap enclosure of Via4 is #{vn_c1_value} um")
+    # (b) via area with NO Metal4 landing -- enclosed() is blind to total non-overlap; this reproduces
+    #     the reference's `primary - secondary(Metal4)` catch (V4.c shares the same blind spot).
+    v4_c1_miss = via4_nseal.not(metal4_nseal)
+    v4_c1_miss.output('V4.c1', "5.20. V4.c1 : Min. Metal4 endcap enclosure of Via4 is #{vn_c1_value} um")
+    v4_c1_enc.forget
+    v4_c1_miss.forget
+    metal4_nseal.forget
+
     # Rule V4.c2: Min. Metal5 enclosure of Via4 is 0.005um
     logger.info('Executing rule V4.c2')
     v4_c2_l = via4_drw.enclosed(metal5_drw, vn_c_value.um, euclidian)
     v4_c2_l.output('V4.c2', "5.20. V4.c2 : Min. Metal5 enclosure of Via4 is #{vn_c_value} um")
     v4_c2_l.forget
+
+    # Rule M5.c1: Min. Metal5 endcap enclosure of Via4 is 0.05um.
+    # Complementary to V4.c2 (flat 0.005 all-around): M5.c1 is the endcap enclosure (Vn_c1, projection
+    # metric + one/two-opposite-side relaxation) plus the no-Metal5-landing catch. Reuses vn_c1_value
+    # from V4.c1 (same linear scope, matching the deck's reuse of vn_a_value/vn_b_value).
+    logger.info('Executing rule M5.c1')
+    metal5_nseal = metal5_drw.not(edgeseal_drw)
+    m5_c1_enc = via4_nseal.enclosed(metal5_nseal, vn_c1_value.um,
+                                    projection, whole_edges,
+                                    one_side_allowed, two_opposite_sides_allowed)
+    m5_c1_enc.output('M5.c1', "5.20. M5.c1 : Min. Metal5 endcap enclosure of Via4 is #{vn_c1_value} um")
+    m5_c1_miss = via4_nseal.not(metal5_nseal)
+    m5_c1_miss.output('M5.c1', "5.20. M5.c1 : Min. Metal5 endcap enclosure of Via4 is #{vn_c1_value} um")
+    m5_c1_enc.forget
+    m5_c1_miss.forget
+    metal5_nseal.forget
   end
 end

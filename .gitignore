@@ -43,3 +43,9 @@ ENV/
 
 # Reference example layouts are tracked despite the global *.gds ignore
 !libs.ref/**/*.gds
+
+# DRC unit-test layouts are tracked despite the global *.gds ignore
+!libs.tech/klayout/tech/drc/testing/testcases/**/*.gds
+
+# DRC regression run artifacts
+libs.tech/klayout/tech/drc/testing/regression_run/
