@@ -1,6 +1,7 @@
 # Project documentation (internal use only)
 CLAUDE.md
 SESSION_LOG.md
+LAYER_PARITY_AUDIT.md
 
 # GDS files
 *.gds

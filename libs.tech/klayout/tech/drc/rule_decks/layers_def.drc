@@ -17,7 +17,7 @@
 #==================================
 
 # Boundary layer
-prboundary = polygons(189, 0)
+prboundary = polygons(235, 0)
 
 # MIM capacitor layers
 mim = polygons(36, 0)
@@ -86,10 +86,9 @@ topmetal2_res = polygons(134, 29)
 topmetal2_iprobe = polygons(134, 33)
 topmetal2_diffprb = polygons(134, 34)
 
-# MEMS and special layers
-memvia = polygons(145, 0)
+# Thin-film resistor and fill-exclusion layers
 thinfilmres = polygons(146, 0)
-rfmem = polygons(147, 0)
+nometfiller = polygons(160, 0)
 
 # Passivation layers
 passiv = polygons(9, 0)
@@ -156,6 +155,7 @@ passiv_drw = passiv
 edgeseal_drw = edgeseal
 lbe_drw = lbe
 prboundary_drw = prboundary
+nometfiller_drw = nometfiller
 
 # CHIP extent (bounding box of the design)
 CHIP = extent.sized(0.0)
