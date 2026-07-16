@@ -25,10 +25,6 @@ connect(topvia1, topmetal1)
 connect(topmetal1, topvia2)
 connect(topvia2, topmetal2)
 
-# MEMS via connectivity
-connect(metal5, memvia)
-connect(memvia, topmetal1)
-
 # Attach net names from text labels
 connect(metal4, metal4_text)
 connect(metal5, metal5_text)

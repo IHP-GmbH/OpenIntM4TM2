@@ -105,9 +105,6 @@
 	TopMetal2_filler = source.input("134/22")
 	TopMetal2_nofill = source.input("134/23")
 	TopMetal2_slit = source.input("134/24")
-	ColWind = source.input("139/0")
-	RFMEM = source.input("147/0")
-	DeepVia = source.input("152/0")
 	LBE = source.input("157/0")
 	NoMetFiller = source.input("160/0")
 

@@ -22,6 +22,7 @@ libs.tech/klayout/
 │   ├── intm4tm2.lyp                 # Layer properties (colors, patterns, GDS layer/datatype)
 │   ├── intm4tm2.lyt                 # Technology file (metal-stack connectivity)
 │   ├── intm4tm2.map                 # EDI/stream layer mapping
+│   ├── intm4tm2_layers.txt          # Canonical layer list (parity golden for tests)
 │   ├── drc/                         # Design Rule Check
 │   │   ├── intm4tm2.drc             # Top runset; loads layers_def + selected decks
 │   │   ├── run_drc.py               # CLI driver (deck selection, parallel runs)
@@ -50,6 +51,7 @@ libs.tech/klayout/
 │   └── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
+    ├── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
     ├── cupillar_pcell_harness.py    # script harness (--generate / --validate-drc)
     └── lvs_connectivity_harness.py  # script harness (--generate / --validate-lvs)
 ```
@@ -60,9 +62,10 @@ Core files KLayout reads to display, route, and stream the interposer.
 
 | File            | Purpose                                                                 |
 | --------------- | ----------------------------------------------------------------------- |
-| `intm4tm2.lyp`  | Layer properties: colors, fill patterns, and the GDS layer/datatype map. Defines 98 layer entries (Metal4/5, TopMetal1/2, Via4, TopVia1/2, MIM, Passiv, dfpad, Recog, EdgeSeal, LBE, ThinFilmRes, plus probe/fill/text variants). |
+| `intm4tm2.lyp`  | Layer properties: colors, fill patterns, and the GDS layer/datatype map. Defines the 158 layer entries of the IHP IntM4TM2 module layer map (Metal4/5, TopMetal1/2, Via4, TopVia1/2, MIM, Passiv, dfpad, Recog, EdgeSeal, LBE, ThinFilmRes, NoMetFiller, NoRCX, BackMetal1, BackPassiv, IC, prBoundary, Exchange0-4, instance, plus probe/fill/text variants). |
+| `intm4tm2_layers.txt` | The canonical layer list (`name purpose layer datatype`, one row per entry). `intm4tm2_tests/test_layer_parity.py` asserts the `.lyp` matches it exactly; update both together when the layer set changes. |
 | `intm4tm2.lyt`  | Technology file. Declares the metal-stack connectivity used for net tracing: `Metal4-Via4-Metal5`, `Metal5-TopVia1-TopMetal1`, `TopMetal1-TopVia2-TopMetal2`. Tech name `intm4tm2`, dbu 0.001. |
-| `intm4tm2.map`  | EDI stream layer mapping for the IHP-derived interposer backend. Covers Metal4/5 and TopMetal1/2 routing plus the via and pad/recog layers. |
+| `intm4tm2.map`  | EDI stream layer mapping for the IHP-derived interposer backend. Covers Metal4/5 and TopMetal1/2 routing plus the via and pad/recog layers. `COMP`/`DIEAREA` stream on prBoundary (235/0, 235/4). |
 
 ## Design verification
 
@@ -143,12 +146,13 @@ emitting pads without their bodies.
 
 ## Tests
 
-In `intm4tm2_tests/`. One pytest suite and two script harnesses; the harnesses are
+In `intm4tm2_tests/`. Two pytest suites and two script harnesses; the harnesses are
 CLI tools (not `test_`-prefixed), so pytest does not collect them.
 
 ```bash
-# pytest suite for bump_mirror:
+# pytest suites (bump_mirror + layer-map parity):
 pytest intm4tm2_tests/test_bump_mirror.py
+pytest intm4tm2_tests/test_layer_parity.py
 
 # Cu-pillar PCell harness: generate fixtures, then validate with DRC:
 python intm4tm2_tests/cupillar_pcell_harness.py --generate

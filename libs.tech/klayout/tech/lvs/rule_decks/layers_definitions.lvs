@@ -17,7 +17,7 @@
 #==================================
 
 # Boundary layer
-prboundary = input(189, 0)
+prboundary = input(235, 0)
 
 # MIM capacitor layers
 mim = input(36, 0)
@@ -56,10 +56,8 @@ topmetal2_pin = input(134, 2)
 topmetal2_text = labels(134, 25)
 topmetal2_res = input(134, 29)
 
-# MEMS and special layers
-memvia = input(145, 0)
+# Thin-film resistor layer
 thinfilmres = input(146, 0)
-rfmem = input(147, 0)
 
 # Passivation layers
 passiv_drawing = input(9, 0)
