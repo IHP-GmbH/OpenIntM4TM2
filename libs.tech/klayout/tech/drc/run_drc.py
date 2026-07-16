@@ -22,7 +22,21 @@ import traceback
 from typing import Dict, List, Set, Union, Tuple
 
 # Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
-AVAILABLE_DECKS = ['passiv', 'pad', 'copperpillar', 'metaln', 'via4', 'topvia1', 'topmetal1', 'topvia2', 'topmetal2', 'lbe']
+AVAILABLE_DECKS = [
+    'offgrid', 'angle',
+    'metaln', 'metalnfiller',
+    'via4', 'topvia1',
+    'topmetal1', 'topmetal1filler',
+    'topvia2', 'topmetal2', 'topmetal2filler',
+    'passiv', 'pad', 'copperpillar', 'solderbump',
+    'sealring', 'mim', 'metalslits', 'lbe',
+    'density',
+]
+
+# Decks excluded from the default "all" run (must match intm4tm2.drc).
+# Density carries global minimum-density rules that fail on partial layouts;
+# opt in with --density or an explicit --deck density.
+DEFAULT_SKIP_DECKS = {'density'}
 
 # Decks that have been moved out of the interposer PDK. Recognised here so
 # that a stale CLI invocation prints a useful redirect instead of "unknown".
@@ -250,8 +264,12 @@ def get_run_top_cell_name(topcell_arg: str, layout_path: str) -> str:
 
 def run_deck(drc_script: str, deck_name: str, layout_path: str,
              topcell: str, run_dir: Path, threads: int = 4,
-             run_mode: str = "tiling") -> str:
+             run_mode: str = "tiling",
+             extra_defines: Dict[str, str] = None) -> str:
     """Run a single DRC deck (or all) via klayout -b.
+
+    extra_defines are forwarded as additional `-rd key=value` pairs
+    (e.g. {"density_sanity": "true"}).
 
     Returns path to the generated .lyrdb report.
     """
@@ -271,6 +289,8 @@ def run_deck(drc_script: str, deck_name: str, layout_path: str,
     ]
     if deck_name != "all":
         cmd += ["-rd", f"deck={deck_name}"]
+    for key, value in (extra_defines or {}).items():
+        cmd += ["-rd", f"{key}={value}"]
 
     logging.info(f"Running deck '{deck_name}' on {Path(layout_path).name} (topcell: {topcell})")
     logging.debug("Command: %s", " ".join(shlex.quote(c) for c in cmd))
@@ -372,6 +392,15 @@ Examples:
         default="tiling",
         help="KLayout execution mode (default: tiling).",
     )
+    parser.add_argument(
+        "--density", action="store_true",
+        help="Also run the density deck (skipped by default: its global "
+             "minimum-density rules only make sense on full-chip layouts).",
+    )
+    parser.add_argument(
+        "--density_sanity", action="store_true",
+        help="Enable the DEN.BND.* boundary sanity rules of the density deck.",
+    )
 
     return parser.parse_args()
 
@@ -424,21 +453,37 @@ def main():
             logging.error(f"Unknown deck '{d}'. Available: {', '.join(AVAILABLE_DECKS)}")
             sys.exit(1)
 
+    # Defines forwarded to every deck invocation
+    extra_defines = {}
+    if args.density_sanity:
+        extra_defines["density_sanity"] = "true"
+
     # Execution strategy
     report_files = []
 
     if not decks_to_run:
-        # No specific decks: single invocation runs all
+        # No specific decks: single invocation runs all default decks
+        # (the runset itself skips DEFAULT_SKIP_DECKS in its "all" path).
         if args.mp > 1:
             # Parallel: one invocation per deck
-            decks_to_run = AVAILABLE_DECKS
+            decks_to_run = [d for d in AVAILABLE_DECKS if d not in DEFAULT_SKIP_DECKS]
+            if args.density:
+                decks_to_run.append('density')
             logging.info(f"Parallel execution: {len(decks_to_run)} decks, {args.mp} workers")
         else:
-            # Single invocation, all decks
-            logging.info("Running all decks in single invocation")
+            # Single invocation, all default decks
+            logging.info("Running all default decks in single invocation")
             report = run_deck(drc_script, "all", layout_path, topcell,
-                              run_dir, args.threads, args.run_mode)
+                              run_dir, args.threads, args.run_mode,
+                              extra_defines)
             report_files.append(report)
+            if args.density:
+                report = run_deck(drc_script, "density", layout_path, topcell,
+                                  run_dir, args.threads, args.run_mode,
+                                  extra_defines)
+                report_files.append(report)
+    elif args.density and 'density' not in decks_to_run:
+        decks_to_run.append('density')
 
     if decks_to_run and not report_files:
         if args.mp > 1 and len(decks_to_run) > 1:
@@ -447,7 +492,7 @@ def main():
                 futures = {
                     executor.submit(
                         run_deck, drc_script, deck, layout_path, topcell,
-                        run_dir, args.threads, args.run_mode
+                        run_dir, args.threads, args.run_mode, extra_defines
                     ): deck
                     for deck in decks_to_run
                 }
@@ -462,7 +507,8 @@ def main():
             # Sequential execution
             for deck in decks_to_run:
                 report = run_deck(drc_script, deck, layout_path, topcell,
-                                  run_dir, args.threads, args.run_mode)
+                                  run_dir, args.threads, args.run_mode,
+                                  extra_defines)
                 report_files.append(report)
 
     # Check results
