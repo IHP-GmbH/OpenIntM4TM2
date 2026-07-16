@@ -200,8 +200,10 @@ python intm4tm2_tests/cupillar_pcell_harness.py --generate
 python intm4tm2_tests/cupillar_pcell_harness.py --validate-drc
 
 # DRC rule-deck unit tests (IHP testcases/ convention): run the regression on the
-# committed testcase GDS. Exercises V4.b1 (large-array spacing) and V4.c1/M5.c1
-# (endcap enclosure). Regenerate a testcase with its gen_*.py before editing it.
+# committed testcase GDS. One table per rule deck (via4, metaln, mim, solderbump,
+# sealring, fillers, metalslits, lbe, pad, offgrid, angle, density, ...); each
+# table has a <table>_viol and a <table>_clean top cell compared against the
+# GOLDEN expectations. Regenerate a testcase with its gen_*.py before editing it.
 python tech/drc/testing/run_regression.py           # all tables
 python tech/drc/testing/run_regression.py --table via4
 

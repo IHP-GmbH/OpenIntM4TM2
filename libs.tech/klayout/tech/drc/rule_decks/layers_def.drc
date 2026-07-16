@@ -159,6 +159,7 @@ lbe_drw = lbe
 ind_drw = ind
 prboundary_drw = prboundary
 nometfiller_drw = nometfiller
+thinfilmres_drw = thinfilmres
 
 # CHIP extent (bounding box of the design)
 CHIP = extent.sized(0.0)

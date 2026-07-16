@@ -1,0 +1,57 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #----------------- 5.18 Metaln:filler -----------
+  #================================================
+
+  logger.info('Starting 5.18 Metaln:filler table')
+
+  # Metaln:filler derivations
+  #
+  # DEVIATION: the sg13g2 source iterates over Metal1..Metal5 fillers. The
+  # interposer metal stack exposes only Metal4 and Metal5 (see layers_def.drc),
+  # so this port covers exactly those two metals. The rule construction is
+  # otherwise identical to the reference. The en_tiles/setup_run_mode blocks of
+  # the source are stripped (the interposer engine runs flat).
+  metalnfil_sets = [
+    [metal4_filler, metal4_drw, 4],
+    [metal5_filler, metal5_drw, 5],
+  ]
+
+  metalnfil_sets.each do |metalnfil_filler, metalnfil_metal, metalnfil_no|
+    # Rule MFil.c: Min. Metal(n):filler space to Metal(n) is 0.42 um
+    logger.info("Executing rule M#{metalnfil_no}Fil.c")
+    metalnfil_c_val = fetch_rule(drc_rules, 'MFil_c')
+    metalnfil_c_l = metalnfil_metal.sep(metalnfil_filler, metalnfil_c_val.um, euclidian)
+    metalnfil_c_l.output("M#{metalnfil_no}Fil.c",
+                         "5.18. M#{metalnfil_no}Fil.c : Min. Metal#{metalnfil_no}:filler space to Metal#{metalnfil_no} is #{metalnfil_c_val} um")
+    metalnfil_c_l.forget
+
+    next if PRECHECK_DRC
+
+    # Rule MFil.a2: Max. Metal(n):filler width is 5.00 um
+    logger.info("Executing rule M#{metalnfil_no}Fil.a2")
+    metalnfil_a2_val = fetch_rule(drc_rules, 'MFil_a2')
+    metalnfil_a2_l = metalnfil_filler.with_bbox_max(metalnfil_a2_val.um + 0.001.um, nil)
+    metalnfil_a2_l.output("M#{metalnfil_no}Fil.a2",
+                          "5.18. M#{metalnfil_no}Fil.a2 : Max. Metal#{metalnfil_no}:filler width is #{metalnfil_a2_val} um")
+    metalnfil_a2_l.forget
+  end
+end

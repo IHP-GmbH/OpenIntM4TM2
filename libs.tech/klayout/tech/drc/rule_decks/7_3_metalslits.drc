@@ -1,0 +1,182 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #--------------- 7.3 Metal Slits ----------------
+  #================================================
+
+  logger.info('Starting 7.3 Metal Slits table')
+
+  # The whole table is gated by PRECHECK_DRC (including the simple width rules
+  # Slt.a/Slt.b): slit rules are chip-finishing requirements tied to the final
+  # fill/stress-relief state of the metal masks and are meaningless during an
+  # early precheck of a partial layout.
+  unless PRECHECK_DRC
+    # Rule values
+    slt_a_value = fetch_rule(drc_rules, 'Slt_a')
+    slt_b_value = fetch_rule(drc_rules, 'Slt_b')
+    slt_c_value = fetch_rule(drc_rules, 'Slt_c')
+    slt_f_value = fetch_rule(drc_rules, 'Slt_f')
+    slt_g_value = fetch_rule(drc_rules, 'Slt_g')
+    slt_h2_value = fetch_rule(drc_rules, 'Slt_h2')
+    slt_h3_value = fetch_rule(drc_rules, 'Slt_h3')
+    # Slt_h4 has no upstream JSON key; its value (1.0) mirrors Slt_h3, matching
+    # the fixed limit printed by the reference deck ("... space to TopVia2 = 1.00").
+    slt_h4_value = fetch_rule(drc_rules, 'Slt_h4')
+
+    # Shared derivations (unique slt_ prefix; decks share one eval binding)
+    slt_dfpad_all = dfpad_drw.join(dfpad_pillar).join(dfpad_sbump)
+
+    # Pad region as derived in the source deck: whole dfpad polygons that are not
+    # entirely outside Passiv. Intentionally different from the layers_def 'pad'
+    # variable (passiv AND dfpad AND topmetal2): slit exemptions apply to the
+    # full dfpad polygon, not just the passivation opening.
+    slt_pad = dfpad_drw.not_outside(passiv_drw)
+
+    # Slit-requirement exemption regions for Slt.c:
+    #   M4 / TM2 : Recog + dfpad(+pillar/sbump)
+    #   M5 / TM1 : MIM + Recog + dfpad(+pillar/sbump) (MIM plates carry no slits, Slt.e1)
+    slt_recog_all = recog.join(slt_dfpad_all)
+    slt_recog_mim_all = mim_drw.join(recog).join(slt_dfpad_all)
+    slt_dfpad_all.forget
+
+    # Half-width of the maximum unslitted metal width; used by the Slt.c morphology.
+    slt_c_half = slt_c_value / 2
+
+    # NOTE on rule ids: the source mixes dot and underscore metal suffixes
+    # (Slt.a.M4 vs Slt.e1_M4); ids are normalized here to the underscore style
+    # (Slt.a_M4). Slt.h3 / Slt.h4 keep their bare ids as in the source.
+    #
+    # NOTE: rule Slt.h1 (Metal1:slit space to Cont/Via1) is NOT ported: Metal1,
+    # Cont and Via1 do not exist in the interposer stack (Metal4..TopMetal2 only).
+    #
+    # Per-metal configuration:
+    #   [abbrev, metal layer, slit layer, Slt.c exemption, Slt.g applies,
+    #    [[sep rule id, via layer, via name, sep value], ...]]
+    # Slt.h2_M4 in the source checks Via3 AND Via4; Via3 does not exist here, so
+    # only the Via4 branch survives. Slt.h2_M5 keeps both outputs (Via4, TopVia1)
+    # under the same rule id, as in the source.
+    slt_metal_cfg = [
+      ['M4', metal4_drw, metal4_slit, slt_recog_all, false,
+       [['Slt.h2_M4', via4_drw, 'Via4', slt_h2_value]]],
+      ['M5', metal5_drw, metal5_slit, slt_recog_mim_all, true,
+       [['Slt.h2_M5', via4_drw, 'Via4', slt_h2_value],
+        ['Slt.h2_M5', topvia1_drw, 'TopVia1', slt_h2_value]]],
+      ['TM1', topmetal1_drw, topmetal1_slit, slt_recog_mim_all, true,
+       [['Slt.h3', topvia1_drw, 'TopVia1', slt_h3_value]]],
+      ['TM2', topmetal2_drw, topmetal2_slit, slt_recog_all, false,
+       [['Slt.h4', topvia2_drw, 'TopVia2', slt_h4_value]]]
+    ]
+
+    slt_metal_cfg.each do |slt_abbrev, slt_met, slt_met_slit, slt_exempt, slt_g_applies, slt_sep_rules|
+      # Slits on pads are exempt from the width/length/enclosure/space checks
+      slt_np = slt_met_slit.not(slt_pad)
+
+      # Rule Slt.a_{met}: Min. slit width is 2.8um
+      logger.info("Executing rule Slt.a_#{slt_abbrev}")
+      slt_a_l = slt_np.width(slt_a_value.um, euclidian)
+      slt_a_l.output("Slt.a_#{slt_abbrev}",
+                     "7.3. Slt.a_#{slt_abbrev} : Min. #{slt_abbrev}:slit width: #{slt_a_value} um")
+      slt_a_l.forget
+
+      # Rule Slt.b_{met}: Max. slit edge length is 20um.
+      # Source idiom: select slit edges longer than Slt_b (strict >, one dbu
+      # increment) and report the slit polygons carrying such an edge.
+      logger.info("Executing rule Slt.b_#{slt_abbrev}")
+      slt_b_long = slt_np.edges.with_length((slt_b_value + 0.001).um, nil)
+      slt_b_l = slt_met_slit.interacting(slt_b_long)
+      slt_b_l.output("Slt.b_#{slt_abbrev}",
+                     "7.3. Slt.b_#{slt_abbrev} : Max. #{slt_abbrev}:slit edge length: #{slt_b_value} um")
+      slt_b_long.forget
+      slt_b_l.forget
+
+      # Rule Slt.c_{met}: Max. metal width without requiring a slit is 30um.
+      # Morphology carried from the source: erode by 3 then by 12, then dilate
+      # by 15 (3 + 12 = 15 = Slt_c / 2). The 3um pre-erosion removes sub-6um
+      # necks before the deep erosion, exactly as in the source split.
+      logger.info("Executing rule Slt.c_#{slt_abbrev}")
+      slt_c_noslit = slt_met.not(slt_exempt).not(slt_met_slit)
+      slt_c_l1 = slt_c_noslit.sized(-3.um, acute_limit)
+      slt_c_l2 = slt_c_l1.sized(-(slt_c_half - 3).um, acute_limit)
+      slt_c_l = slt_c_l2.sized(slt_c_half.um, acute_limit)
+      slt_c_l.output("Slt.c_#{slt_abbrev}",
+                     "7.3. Slt.c_#{slt_abbrev} : Max. #{slt_abbrev} width without requiring a slit: #{slt_c_value} um")
+      slt_c_noslit.forget
+      slt_c_l1.forget
+      slt_c_l2.forget
+      slt_c_l.forget
+
+      # Rule Slt.e_{met}: No slits required (allowed) on pads
+      logger.info("Executing rule Slt.e_#{slt_abbrev}")
+      slt_e_l = slt_met_slit.and(slt_pad)
+      slt_e_l.output("Slt.e_#{slt_abbrev}",
+                     "7.3. Slt.e_#{slt_abbrev} : No #{slt_abbrev}:slit required on pads")
+      slt_e_l.forget
+
+      # Rule Slt.e1_{met}: No slits required (allowed) on MIM
+      logger.info("Executing rule Slt.e1_#{slt_abbrev}")
+      slt_e1_l = mim_drw.and(slt_met_slit)
+      slt_e1_l.output("Slt.e1_#{slt_abbrev}",
+                      "7.3. Slt.e1_#{slt_abbrev} : No #{slt_abbrev}:slit required on MIM")
+      slt_e1_l.forget
+
+      # Rule Slt.f_{met}: Min. metal enclosure of slit is 1.0um.
+      # Deviation: euclidian metric per deck house style; the source's
+      # ext_enclosed force-overrides its metric to projection. Euclidian is
+      # stricter only for diagonal geometry (identical on rectilinear layouts).
+      logger.info("Executing rule Slt.f_#{slt_abbrev}")
+      slt_f_l = slt_np.enclosed(slt_met, slt_f_value.um, euclidian)
+      slt_f_l.output("Slt.f_#{slt_abbrev}",
+                     "7.3. Slt.f_#{slt_abbrev} : Min. #{slt_abbrev} enclosure of #{slt_abbrev}:slit: #{slt_f_value} um")
+      slt_f_l.forget
+
+      # Rule Slt.g_{met}: Min. slit space to MIM is 0.6um (M5 and TM1 only).
+      # Semantic-preserving simplification of the source tmp1/tmp3/tmp5 chain:
+      # the separation check (polygon output) covers the true sub-0.6 spacings
+      # and the touching case, and the and() branch covers slits overlapping MIM
+      # (which the source caught via its coincident-edges tmp2/tmp3 detour).
+      # Uses the raw slit layer (pad slits included), as in the source.
+      if slt_g_applies
+        logger.info("Executing rule Slt.g_#{slt_abbrev}")
+        slt_g_sep = slt_met_slit.sep(mim_drw, slt_g_value.um, euclidian).polygons
+        slt_g_l = slt_g_sep.join(slt_met_slit.and(mim_drw))
+        slt_g_l.output("Slt.g_#{slt_abbrev}",
+                       "7.3. Slt.g_#{slt_abbrev} : Min. #{slt_abbrev}:slit space to MIM: #{slt_g_value} um")
+        slt_g_sep.forget
+        slt_g_l.forget
+      end
+
+      # Rules Slt.h2_M4 / Slt.h2_M5 / Slt.h3 / Slt.h4: min. slit space to the
+      # via levels adjacent to the metal (0.3um for M4/M5, 1.0um for TM1/TM2)
+      slt_sep_rules.each do |slt_h_id, slt_via_lay, slt_via_name, slt_h_value|
+        logger.info("Executing rule #{slt_h_id} (#{slt_abbrev}:slit to #{slt_via_name})")
+        slt_h_l = slt_np.sep(slt_via_lay, slt_h_value.um, euclidian)
+        slt_h_l.output(slt_h_id,
+                       "7.3. #{slt_h_id} : Min. #{slt_abbrev}:slit space to #{slt_via_name}: #{slt_h_value} um")
+        slt_h_l.forget
+      end
+
+      slt_np.forget
+    end
+
+    slt_pad.forget
+    slt_recog_all.forget
+    slt_recog_mim_all.forget
+  end
+end

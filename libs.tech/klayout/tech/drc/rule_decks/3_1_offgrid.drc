@@ -1,0 +1,145 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #-------------- 3.1. OFFGRID CHECKS -------------
+  #================================================
+
+  logger.info('Starting 3.1. offgrid table')
+
+  # Manufacturing grid: 5 nm => 0.005 um. Every vertex of a checked layer must
+  # sit on this grid. Defined only here (the angle deck does not need it).
+  #
+  # DEVIATION from sg13g2 geometry/3_1_offgrid.drc: the TABLES/OFFGRID guard is
+  # replaced by a plain "if BEOL"; the interposer runs the geometry checks
+  # unconditionally on the backend layers. The sg13g2 layer set is pruned to the
+  # interposer backend layers only (metal4/via4/metal5, topvia/topmetal stacks,
+  # mim/vmim, thinfilmres, passiv family, lbe). Excluded per the PDK note and the
+  # interposer scope: dfpad*, edgeseal*, ind*, recog*, nometfiller, prboundary and
+  # all text label layers.
+  GRID = 5.nm
+
+  # Checked layers as name -> polygon layer. The <name> is the layers_def.drc
+  # variable name so the emitted rule id is "<name>_Offgrid".
+  offgrid_scope = {
+    # MIM capacitor
+    'mim_drw'  => mim_drw,
+    'vmim_drw' => vmim_drw,
+
+    # Metal4
+    'metal4_drw'     => metal4_drw,
+    'metal4_pin'     => metal4_pin,
+    'metal4_mask'    => metal4_mask,
+    'metal4_filler'  => metal4_filler,
+    'metal4_nofill'  => metal4_nofill,
+    'metal4_slit'    => metal4_slit,
+    'metal4_opc'     => metal4_opc,
+    'metal4_noqrc'   => metal4_noqrc,
+    'metal4_res'     => metal4_res,
+    'metal4_iprobe'  => metal4_iprobe,
+    'metal4_diffprb' => metal4_diffprb,
+
+    # Via4
+    'via4_drw' => via4_drw,
+
+    # Metal5
+    'metal5_drw'     => metal5_drw,
+    'metal5_pin'     => metal5_pin,
+    'metal5_mask'    => metal5_mask,
+    'metal5_filler'  => metal5_filler,
+    'metal5_nofill'  => metal5_nofill,
+    'metal5_slit'    => metal5_slit,
+    'metal5_opc'     => metal5_opc,
+    'metal5_noqrc'   => metal5_noqrc,
+    'metal5_res'     => metal5_res,
+    'metal5_iprobe'  => metal5_iprobe,
+    'metal5_diffprb' => metal5_diffprb,
+
+    # TopVia1 / TopMetal1 (no _opc datatype in layers_def)
+    'topvia1_drw'       => topvia1_drw,
+    'topmetal1_drw'     => topmetal1_drw,
+    'topmetal1_pin'     => topmetal1_pin,
+    'topmetal1_mask'    => topmetal1_mask,
+    'topmetal1_filler'  => topmetal1_filler,
+    'topmetal1_nofill'  => topmetal1_nofill,
+    'topmetal1_slit'    => topmetal1_slit,
+    'topmetal1_noqrc'   => topmetal1_noqrc,
+    'topmetal1_res'     => topmetal1_res,
+    'topmetal1_iprobe'  => topmetal1_iprobe,
+    'topmetal1_diffprb' => topmetal1_diffprb,
+
+    # TopVia2 / TopMetal2 (no _opc datatype in layers_def)
+    'topvia2_drw'       => topvia2_drw,
+    'topmetal2_drw'     => topmetal2_drw,
+    'topmetal2_pin'     => topmetal2_pin,
+    'topmetal2_mask'    => topmetal2_mask,
+    'topmetal2_filler'  => topmetal2_filler,
+    'topmetal2_nofill'  => topmetal2_nofill,
+    'topmetal2_slit'    => topmetal2_slit,
+    'topmetal2_noqrc'   => topmetal2_noqrc,
+    'topmetal2_res'     => topmetal2_res,
+    'topmetal2_iprobe'  => topmetal2_iprobe,
+    'topmetal2_diffprb' => topmetal2_diffprb,
+
+    # Thin-film resistor
+    'thinfilmres_drw' => thinfilmres_drw,
+
+    # Passivation family
+    'passiv_drw'    => passiv_drw,
+    'passiv_pin'    => passiv_pin,
+    'passiv_pillar' => passiv_pillar,
+    'passiv_sbump'  => passiv_sbump,
+    'passiv_pdl'    => passiv_pdl,
+
+    # Localized backside etch
+    'lbe_drw' => lbe_drw,
+  }
+
+  offgrid_scope.each do |offgrid_name, offgrid_layer|
+    logger.info("Executing rule #{offgrid_name}_Offgrid")
+
+    # Circular polygons (Cu pillar / solder-bump openings, MIM rounds) are
+    # approximated by many short segments and would otherwise generate noisy
+    # offgrid markers; they are intentionally excluded via get_circle.
+    #
+    # DEVIATION from the sg13g2 source: the exemption is evaluated on the RAW
+    # (as-drawn) polygons, not on the merged region. On this interposer the
+    # standard bump/pillar pattern is a circular TopMetal2 pad merged with its
+    # routing bar; the merged polygon is no longer a circle, so the source's
+    # merged-level exemption misses it and every legal pad would flag offgrid.
+    # Raw-level checking is otherwise equal or stricter (a drawn off-grid vertex
+    # hidden by a merge is still reported).
+    #
+    # raw/clean toggle a mode flag on the SHARED layer object (raw returns
+    # self, not a copy), so the base layer must be restored with clean and
+    # must NOT be forgotten here - other decks in the same run still use it.
+    offgrid_layer.raw
+    offgrid_nc = offgrid_layer.not_in(get_circle(offgrid_layer))
+    offgrid_nc.ongrid(GRID).output(
+      "#{offgrid_name}_Offgrid",
+      "3.1 #{offgrid_name}_Offgrid: #{offgrid_name} layer is offgrid (drawing grid is 5 nm)"
+    )
+    offgrid_layer.clean
+    offgrid_nc.forget
+  end
+end
+
+# =====================================================
+# -------------------- END OF FILE --------------------
+# =====================================================
