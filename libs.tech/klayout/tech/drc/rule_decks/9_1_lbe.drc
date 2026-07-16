@@ -67,4 +67,36 @@ if BEOL
   lbeh_l1.output('LBE.h', '9.1. LBE.h: No LBE ring allowed.')
   lbeh_l1.forget
 
+  # Rule LBE.b2: Min. LBE area (µm²) is 30000.00
+  # DEVIATION: the sg13g2_maximal.drc source literal is 250000 (ext_with_area([["<", 250000.0.um2]])),
+  # but that value duplicates LBE.b1's max-area bound (250000) and its OWN output message states 30000.
+  # We implement the message value (LBE_b2 = 30000) as a minimum-area check pending spec confirmation.
+  logger.info('Executing rule LBE.b2')
+  lbe_b2_value = fetch_rule(drc_rules, 'LBE_b2')
+  lbeb2_l1 = lbe_drw.with_area(nil, lbe_b2_value.um)
+  lbeb2_l1.output('LBE.b2', "9.1. LBE.b2: Min. LBE area (µm²): #{lbe_b2_value}")
+  lbeb2_l1.forget
+
+  # Rule LBE.e.dfPad: Min. LBE space to dfpad is 50.00µm
+  # DEVIATION: the source uses ext_separation(dfpad, 50, consider_intersecting_edges: false,
+  # ignore_non_axis_aligned_edges: true). Those two options have no single-call DSL equivalent, so we
+  # use a plain euclidian sep. That is slightly STRICTER than the source (it also counts intersecting
+  # and non-axis-aligned edge pairs the source would suppress); acceptable for a min-space check.
+  logger.info('Executing rule LBE.e.dfPad')
+  lbe_e_value = fetch_rule(drc_rules, 'LBE_e')
+  lbe_e_df_l = lbe_drw.sep(dfpad_drw, lbe_e_value.um, euclidian)
+  lbe_e_df_l.output('LBE.e.dfPad', "9.1. LBE.e.dfPad: Min. LBE space to dfpad: #{lbe_e_value} µm")
+  lbe_e_df_l.forget
+
+  # Rule LBE.e.Passiv: Min. LBE space to Passiv is 50.00µm
+  # DEVIATION: same as LBE.e.dfPad -- plain euclidian sep is slightly stricter than the source's
+  # consider_intersecting_edges:false / ignore_non_axis_aligned_edges:true options.
+  logger.info('Executing rule LBE.e.Passiv')
+  lbe_e_pas_l = lbe_drw.sep(passiv_drw, lbe_e_value.um, euclidian)
+  lbe_e_pas_l.output('LBE.e.Passiv', "9.1. LBE.e.Passiv: Min. LBE space to Passiv: #{lbe_e_value} µm")
+  lbe_e_pas_l.forget
+
+  # Rule LBE.f (Min. LBE space to Activ = 30µm) is DROPPED: it requires the Activ (front-end diffusion)
+  # layer, which does not exist in the interposer BEOL-only layer set. No interposer-side equivalent.
+
 end

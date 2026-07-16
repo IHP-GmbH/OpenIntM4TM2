@@ -26,7 +26,125 @@ import klayout.db as db
 # Reference expectations: table -> {deck, cells: {top_cell: expected_violated_rule_set}}.
 # A clean cell must yield an empty set (also guards against false positives on the
 # other rules of that deck); a violation cell must yield exactly its rule set.
+# The optional 'defines' key maps a top cell to extra `-rd key=value` defines for
+# its run (e.g. density_sanity=true for the DEN.BND.* boundary sanity rules).
 GOLDEN = {
+    'angle': {
+        'deck': 'angle',
+        'cells': {
+            'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute'},
+            'angle_clean': set(),
+        },
+    },
+    'density': {
+        'deck': 'density',
+        'cells': {
+            'density_viol': {'M4.j', 'M4Fil.h', 'M5.k', 'M5Fil.k', 'TM1.c', 'TM2.d',
+                             'LBE.i', 'Slt.i_M4'},
+            'density_clean': set(),
+            'density_sanity_viol': {'DEN.BND.1', 'DEN.BND.2', 'DEN.BND.3'},
+            'density_sanity_clean': set(),
+        },
+        'defines': {
+            'density_sanity_viol': {'density_sanity': 'true'},
+            'density_sanity_clean': {'density_sanity': 'true'},
+        },
+    },
+    'lbe': {
+        'deck': 'lbe',
+        'cells': {
+            'lbe_viol':  {'LBE.b2', 'LBE.e.dfPad', 'LBE.e.Passiv'},
+            'lbe_clean': set(),
+        },
+    },
+    'metaln': {
+        'deck': 'metaln',
+        'cells': {
+            'metaln_viol':  {'M4.e', 'M4.f', 'M4.g', 'M4.i',
+                             'M5.e', 'M5.f', 'M5.g', 'M5.i'},
+            'metaln_clean': set(),
+        },
+    },
+    'metalnfiller': {
+        'deck': 'metalnfiller',
+        'cells': {
+            'metalnfiller_viol':  {'M4Fil.c', 'M4Fil.a2', 'M5Fil.c', 'M5Fil.a2'},
+            'metalnfiller_clean': set(),
+        },
+    },
+    'metalslits': {
+        'deck': 'metalslits',
+        'cells': {
+            'metalslits_viol': {
+                'Slt.a_M4', 'Slt.a_M5', 'Slt.a_TM1', 'Slt.a_TM2',
+                'Slt.b_M4', 'Slt.b_M5', 'Slt.b_TM1', 'Slt.b_TM2',
+                'Slt.c_M4', 'Slt.c_M5', 'Slt.c_TM1', 'Slt.c_TM2',
+                'Slt.e_M4', 'Slt.e_M5', 'Slt.e_TM1', 'Slt.e_TM2',
+                'Slt.e1_M4', 'Slt.e1_M5', 'Slt.e1_TM1', 'Slt.e1_TM2',
+                'Slt.f_M4', 'Slt.f_M5', 'Slt.f_TM1', 'Slt.f_TM2',
+                'Slt.g_M5', 'Slt.g_TM1',
+                'Slt.h2_M4', 'Slt.h2_M5', 'Slt.h3', 'Slt.h4',
+            },
+            'metalslits_clean': set(),
+        },
+    },
+    'mim': {
+        'deck': 'mim',
+        'cells': {
+            'mim_viol':  {'MIM.c', 'MIM.d', 'MIM.gR'},
+            'mim_clean': set(),
+        },
+    },
+    'offgrid': {
+        'deck': 'offgrid',
+        'cells': {
+            'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid'},
+            'offgrid_clean': set(),
+        },
+    },
+    'pad': {
+        'deck': 'pad',
+        'cells': {
+            'pad_viol':  {'Pad.dR'},
+            'pad_clean': set(),
+        },
+    },
+    'sealring': {
+        'deck': 'sealring',
+        'cells': {
+            'sealring_viol':  {'Seal.k', 'Seal.l', 'Seal.m', 'Seal.n'},
+            'sealring_clean': set(),
+        },
+    },
+    'solderbump': {
+        'deck': 'solderbump',
+        'cells': {
+            'solderbump_viol':  {'Padb.a', 'Padb.b', 'Padb.c', 'Padb.d',
+                                 'Padb.e', 'Padb.f'},
+            'solderbump_clean': set(),
+        },
+    },
+    'topmetal1filler': {
+        'deck': 'topmetal1filler',
+        'cells': {
+            'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1'},
+            'topmetal1filler_clean': set(),
+        },
+    },
+    'topmetal2': {
+        'deck': 'topmetal2',
+        'cells': {
+            'topmetal2_viol':  {'TM2.bR'},
+            'topmetal2_clean': set(),
+        },
+    },
+    'topmetal2filler': {
+        'deck': 'topmetal2filler',
+        'cells': {
+            'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1'},
+            'topmetal2filler_clean': set(),
+        },
+    },
     'via4': {
         'deck': 'via4',
         'cells': {
@@ -54,8 +172,10 @@ def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
             print(f"  FAIL {table}/{cell}: top cell missing from {gds.name}")
             ok = False
             continue
+        extra_defines = spec.get('defines', {}).get(cell)
         report = run_deck(drc_script, spec['deck'], str(gds), cell,
-                          run_dir, threads=2, run_mode="flat")
+                          run_dir, threads=2, run_mode="flat",
+                          extra_defines=extra_defines)
         violated = get_rules_with_violations(report)
         if violated == expected:
             print(f"  PASS {table}/{cell}: {sorted(expected) if expected else 'clean'}")

@@ -1,0 +1,106 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+#===============================================
+# ------------------ 6.10 Sealring -------------
+#===============================================
+#
+# Only four EdgeSeal rules survive the interposer backend-only layer subset:
+#   Seal.l, Seal.n, Seal.k and Seal.m.
+#
+# DEVIATION: the entire Seal.b family (Min. Activ space to EdgeSeal-Activ,
+# EdgeSeal-pSD, EdgeSeal-Metal1..5, EdgeSeal-TopMetal1, EdgeSeal-TopMetal2) is
+# DROPPED. Its primary layer is Activ, which -- together with pSD and
+# Metal1..3 -- does not exist in this backend-only (Metal4..TopMetal2) stack.
+# Without Activ there is nothing to measure the EdgeSeal spacing against, so the
+# rule is meaningless here rather than merely relaxed, and no Seal_b key is
+# provided in interposer_tech_default.json.
+#
+# DEVIATION: the source deck wraps Seal.l in an en_tiles/setup_run_mode block;
+# that wrapper is stripped here like in the filler decks (the interposer engine
+# runs flat and never defines en_tiles). No effect on rule semantics.
+if BEOL
+
+  logger.info('Starting 6.10 Sealring table')
+
+  # Seal.l helper: scan the interposer layer-definition file and, for every drawn
+  # polygon layer, output the portion that falls outside the sealring boundary.
+  # Ported from the sg13g2 sealring deck with three adaptations:
+  #   (1) the interposer layers_def.drc declares layers as "name = polygons(L, D)"
+  #       (sg13g2 used "get_polygons(L, D)"); the scan regex is adjusted.
+  #   (2) the "undefined variable" branch does NOT call logger.warn: a Ruby `def`
+  #       method does not capture the surrounding eval-binding locals, so `logger`
+  #       is out of scope here. Every name the regex captures is by construction a
+  #       local defined in layers_def.drc, so that branch is dead in practice; it
+  #       simply drops the name (filter_map removes nil) instead of risking a
+  #       NameError. DRC behaviour is identical to the source.
+  #   (3) the method name is uniquely prefixed because all rule decks share one
+  #       eval binding (top-level `def` lands on Object).
+  def seal_l_structures_outside(layer_def_file, binding_context, boundary)
+    seal_l_names = []
+    File.readlines(layer_def_file).each do |line|
+      next unless line.strip =~ /^(\w+)\s*=\s*polygons\s*\(\s*\d+\s*,\s*\d+\s*\)/
+
+      seal_l_names << Regexp.last_match(1)
+    end
+
+    seal_l_layers = seal_l_names.filter_map do |name|
+      binding_context.local_variable_get(name.to_sym) if binding_context.local_variable_defined?(name.to_sym)
+    end
+
+    seal_l_layers.each do |layer|
+      seal_l_out = layer.not(boundary)
+      seal_l_out.output('Seal.l', '6.10. Seal.l : No structures outside sealring boundary allowed')
+      seal_l_out.forget
+    end
+  end
+
+  # Rule Seal.l : No structures outside sealring boundary allowed
+  logger.info('Executing rule Seal.l')
+  seal_l_layers_def = File.join(rule_deck_path, 'layers_def.drc')
+  seal_l_bound = edgeseal_boundary.interacting(CHIP)
+  seal_l_structures_outside(seal_l_layers_def, binding, seal_l_bound) unless seal_l_bound.is_empty?
+  seal_l_bound.forget
+
+  # Rule Seal.n : Sealring must be enclosed by an unbroken Passiv ring
+  logger.info('Executing rule Seal.n')
+  seal_n_holes = passiv_drw.not(edgeseal_drw).holes
+  seal_n_l = edgeseal_drw.not(seal_n_holes)
+  seal_n_l.output('Seal.n', '6.10. Seal.n : Sealring must be enclosed by an unbroken Passiv ring')
+  seal_n_holes.forget
+  seal_n_l.forget
+
+  unless PRECHECK_DRC
+    # Rule Seal.k : Min. EdgeSeal 45-degree corner length is 21.00 um
+    logger.info('Executing rule Seal.k')
+    seal_k_value = fetch_rule(drc_rules, 'Seal_k')
+    seal_k_edges = edgeseal_drw.edges.with_angle(45, absolute)
+    seal_k_l = seal_k_edges.with_length(nil, seal_k_value.um)
+    seal_k_l.output('Seal.k', "6.10. Seal.k : Min. EdgeSeal 45-degree corner length is #{seal_k_value} um")
+    seal_k_edges.forget
+    seal_k_l.forget
+
+    # Rule Seal.m : Only one sealring per chip allowed
+    logger.info('Executing rule Seal.m')
+    seal_m_chip = CHIP.interacting(edgeseal_drw, 2)
+    seal_m_l = edgeseal_drw.and(seal_m_chip)
+    seal_m_l.output('Seal.m', '6.10. Seal.m : Only one sealring per chip allowed')
+    seal_m_chip.forget
+    seal_m_l.forget
+  end
+end
