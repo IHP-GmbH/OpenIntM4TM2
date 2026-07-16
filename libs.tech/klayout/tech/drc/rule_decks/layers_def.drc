@@ -143,6 +143,8 @@ recog_sbump = polygons(99, 36)
 #==================================
 # Aliases with _drw suffix for compatibility with rule decks
 
+mim_drw = mim
+vmim_drw = vmim
 metal4_drw = metal4
 metal5_drw = metal5
 topmetal1_drw = topmetal1
@@ -154,8 +156,10 @@ dfpad_drw = dfpad
 passiv_drw = passiv
 edgeseal_drw = edgeseal
 lbe_drw = lbe
+ind_drw = ind
 prboundary_drw = prboundary
 nometfiller_drw = nometfiller
+thinfilmres_drw = thinfilmres
 
 # CHIP extent (bounding box of the design)
 CHIP = extent.sized(0.0)

@@ -1,0 +1,138 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+# Interposer Solder Bump DRC Rules
+# Based on IHP SG13G2 Layout Rules Rev 2.1, Section 6.9 (Solder Bump)
+#
+# Device recognition: SBumpPad = Passiv:sbump AND dfpad:sbump (per layers_def.drc:
+#   sbumppad = passiv_sbump.and(dfpad_sbump)).
+#
+# Ported from the sg13g2 deck rule_decks/beol/6_9_solderbump.drc, adapted to the
+# interposer conventions: fetch_rule(...) instead of drc_rules[...].to_f, uniquely
+# prefixed locals, .forget on every intermediate layer, and the recommended rules
+# implemented unconditionally (the interposer engine runs flat, so the source
+# TABLES.include? guard is stripped and replaced by the plain BEOL gate).
+#
+# Rule values (interposer_tech_default.json):
+#   Padb_a = 60 um  (SBumpPad size)
+#   Padb_b = 70 um  (min. SBumpPad space)
+#   Padb_c = 10 um  (min. TopMetal2 enclosure of SBumpPad)
+#   Padb_d = 50 um  (min. SBumpPad space to EdgeSeal)
+#   Padb_e = 130 um (min. SBumpPad pitch; interposer-only key, see Padb.e note)
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #------------------ 6.9. Solder Bump ------------
+  #================================================
+
+  logger.info('Starting 6.9. Solder Bump table')
+
+  # Rule Padb.a: SBumpPad size is 60 um.
+  # Ported verbatim from the sg13g2 source (same idiom as copperpillar Padc.a):
+  # the width(projection + projection_limits) branch catches narrow necks/spikes,
+  # the with_bbox_width branch catches an overall-undersized opening.
+  # DEVIATION (deliberately stricter than source): the "- drc_tole" margin below is
+  # the source expression reused verbatim, but here drc_tole = 1e-6 um (0.001 nm),
+  # whereas the sg13g2 source defines drc_tole = 0.005 um (5 nm). The subtracted
+  # margin is therefore ~5000x tighter, so the size threshold is effectively exact
+  # (60 um). This is an intentional stricter-than-source deviation. Note it is NOT
+  # the tolerance used in Padb.b: Padb.b carries an explicit 10 nm
+  # circle-discretization tolerance, while here the near-zero drc_tole leaves the
+  # size threshold at its exact nominal value.
+  logger.info('Executing rule Padb.a')
+  padb_a_value = fetch_rule(drc_rules, 'Padb_a')
+  padb_a_l1 = sbumppad.width(padb_a_value.um - drc_tole, projection, projection_limits(nil, 10 * drc_tole)).polygons
+  padb_a_l2 = sbumppad.with_bbox_width(nil, padb_a_value.um)
+  padb_a_l = padb_a_l1.join(padb_a_l2)
+  padb_a_l.output('Padb.a', "6.9. Padb.a : SBumpPad size is #{padb_a_value} um")
+  padb_a_l1.forget
+  padb_a_l2.forget
+  padb_a_l.forget
+
+  # Rule Padb.b: Min. SBumpPad space is 70 um.
+  # Deviation from sg13g2 source: the source uses space(value) with no tolerance.
+  # A 10 nm circle-discretization tolerance is subtracted here (same rationale and
+  # value as copperpillar Padc.b): a circular/octagonal opening drawn exactly at the
+  # minimum can measure a few nm short after polygon approximation + nm grid snapping.
+  logger.info('Executing rule Padb.b')
+  padb_b_value = fetch_rule(drc_rules, 'Padb_b')
+  padb_b_tol = 0.01  # 10 nm tolerance for circle-approximated spacing
+  padb_b_l = sbumppad.space(padb_b_value.um - padb_b_tol, euclidian)
+  padb_b_l.output('Padb.b', "6.9. Padb.b : Min. SBumpPad space is #{padb_b_value} um")
+  padb_b_l.forget
+
+  # Rule Padb.e: Min. SBumpPad pitch is 130 um.
+  # Deviation from sg13g2 source: this rule is NOT present in the sg13g2 source deck;
+  # it is an interposer-only key. Implemented like Padc.e in the copper-pillar deck:
+  # DRCLayer#pitch is unavailable, so pitch is converted to an edge-to-edge spacing
+  # check via  min_spacing = min_pitch - pad_size = Padb_e - Padb_a.
+  # NOTE: Padb_e - Padb_a = 130 - 60 = 70 um, arithmetically identical to the Padb.b
+  # minimum space (70 um), so on nominal-size openings Padb.e is redundant with Padb.b.
+  # The 130 um pitch value needs spec confirmation.
+  logger.info('Executing rule Padb.e')
+  padb_e_value = fetch_rule(drc_rules, 'Padb_e')
+  padb_e_tol = 0.01  # 10 nm tolerance for circle-approximated spacing (see Padb.b)
+  padb_e_min_space = (padb_e_value - padb_a_value).um - padb_e_tol
+  padb_e_l = sbumppad.space(padb_e_min_space, euclidian)
+  padb_e_l.output('Padb.e', "6.9. Padb.e : Min. SBumpPad pitch is #{padb_e_value} um")
+  padb_e_l.forget
+
+  # Rule Padb.c: Min. TopMetal2 (within dfpad) enclosure of SBumpPad is 10 um.
+  # enclosed() catches insufficient enclosure; the miss branch catches SBumpPad area
+  # with NO TopMetal2 landing at all (enclosed() is blind to total non-overlap, the
+  # same catch pattern the via decks use). Ported from the sg13g2 source, including
+  # its -2*drc_tole enclosure margin.
+  # DEVIATION (deliberately stricter than source): as in Padb.a, the "- 2 * drc_tole"
+  # margin below is the source expression reused verbatim, but here drc_tole = 1e-6 um
+  # (0.001 nm) versus 0.005 um (5 nm) in the sg13g2 source, so 2 * drc_tole = 2e-6 um
+  # is ~5000x tighter and the enclosure threshold is effectively exact (10 um). This
+  # is an intentional stricter-than-source deviation, and is intentionally different
+  # from Padb.b, which instead carries an explicit 10 nm circle-discretization
+  # tolerance.
+  logger.info('Executing rule Padb.c')
+  padb_c_value = fetch_rule(drc_rules, 'Padb_c')
+  padb_c_l1 = sbumppad.enclosed(topmetal2_drw, padb_c_value.um - 2 * drc_tole, projection).polygons
+  padb_c_l2 = dfpad_sbump.and(passiv_sbump).not(topmetal2_drw)
+  padb_c_l = padb_c_l1.join(padb_c_l2)
+  padb_c_l.output('Padb.c', "6.9. Padb.c : Min. TopMetal2 (within dfpad) enclosure of SBumpPad is #{padb_c_value} um")
+  padb_c_l1.forget
+  padb_c_l2.forget
+  padb_c_l.forget
+
+  # Rule Padb.f: Allowed passivation opening shape is Octagon or Circle.
+  # Deviation from sg13g2 source: the source emits the rule id in lowercase ('padb.f').
+  # Normalized here to 'Padb.f' for consistency with the other Padb.* rule ids.
+  logger.info('Executing rule Padb.f')
+  padb_f_l1 = get_circle(sbumppad)
+  padb_f_l2 = get_octagon(sbumppad)
+  padb_f_l = sbumppad.not(padb_f_l1).not(padb_f_l2)
+  padb_f_l.output('Padb.f', '6.9. Padb.f: Allowed passivation opening shape Octagon , Circle')
+  padb_f_l1.forget
+  padb_f_l2.forget
+  padb_f_l.forget
+
+  unless PRECHECK_DRC
+    # Rule Padb.d: Min. SBumpPad space to EdgeSeal is 50 um.
+    # Kept inside the unless-PRECHECK_DRC guard as in the sg13g2 source.
+    logger.info('Executing rule Padb.d')
+    padb_d_value = fetch_rule(drc_rules, 'Padb_d')
+    padb_d_l = sbumppad.sep(edgeseal_drw, padb_d_value.um, euclidian)
+    padb_d_l.output('Padb.d', "6.9. Padb.d : Min. SBumpPad space to EdgeSeal is #{padb_d_value} um")
+    padb_d_l.forget
+  end
+end

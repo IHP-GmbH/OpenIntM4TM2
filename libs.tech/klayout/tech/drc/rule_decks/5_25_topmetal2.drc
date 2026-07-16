@@ -16,9 +16,9 @@
 # limitations under the License.
 #=========================================================================================
 
-# This deck implements only minimum width and minimum spacing/notch checks for TopMetal2.
-# Wide-line and 45-degree spacing rules yet to implement.
-# Recommended and PRECHECK-tier rules are intentionally not implemented here.
+# This deck implements minimum width/space (TM2.a/TM2.b) and the recommended wide-line
+# spacing check (TM2.bR) for TopMetal2. Remaining 45-degree spacing and PRECHECK-tier
+# rules are not implemented here.
 
 if BEOL
   #===============================================
@@ -47,4 +47,37 @@ if BEOL
   tm2_b_l.forget
 
   tm2_nseal.forget
+
+  unless PRECHECK_DRC
+    # Rule TM2.bR: Min. space of TopMetal2 lines if at least one line is wider than
+    # TM2_bR_w and the parallel run of the two lines is more than TM2_bR_cr.
+    # sg13g2 guards this behind RECOMMENDED; that guard is stripped here and the rule is
+    # implemented unconditionally, since the interposer engine runs flat and evaluates
+    # recommended checks directly.
+    # INTERPOSER DEVIATION: the seed and the checked layer are built from the
+    # seal-excluded metal (topmetal2_drw.not(edgeseal_drw)) to match this deck's style
+    # (TM2.a/TM2.b also work on seal-excluded TopMetal2). The .not(ind_drw) inductor
+    # exclusion is preserved from the sg13g2 source so inductor windings are not flagged.
+    logger.info('Executing rule TM2.bR')
+    tm2_br_value = fetch_rule(drc_rules, 'TM2_bR')
+    tm2_br_w_value = fetch_rule(drc_rules, 'TM2_bR_w')
+    tm2_br_cr_value = fetch_rule(drc_rules, 'TM2_bR_cr')
+    tm2_br_half = tm2_br_w_value / 2
+    # Seal-excluded TopMetal2 acts as both the primary of the separation check and the
+    # base for the wide-line seed.
+    tm2_br_metal = topmetal2_drw.not(edgeseal_drw)
+    # Seed: shrink then grow by TM2_bR_w/2 to keep only material strictly wider
+    # than TM2_bR_w (a line exactly TM2_bR_w wide collapses to nothing on the
+    # shrink), i.e. the "wide" lines that trigger the enlarged spacing requirement.
+    tm2_br_seed = tm2_br_metal.not(ind_drw).sized(-tm2_br_half.um).sized(tm2_br_half.um)
+    # Flag separations below TM2_bR only where the parallel run exceeds TM2_bR_cr
+    # (the +0.001 um keeps runs of exactly TM2_bR_cr legal).
+    tm2_br_l = tm2_br_metal.sep(tm2_br_seed, tm2_br_value.um,
+                                projection_limits(tm2_br_cr_value.um + 0.001.um, nil))
+    tm2_br_l.output('TM2.bR',
+                    "5.25. TM2.bR : Min. space of TopMetal2 lines if at least one line is wider than #{tm2_br_w_value} um and the parallel run is more than #{tm2_br_cr_value} um is #{tm2_br_value} um")
+    tm2_br_metal.forget
+    tm2_br_seed.forget
+    tm2_br_l.forget
+  end
 end

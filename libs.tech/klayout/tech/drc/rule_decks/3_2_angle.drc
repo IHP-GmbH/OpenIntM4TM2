@@ -1,0 +1,195 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #--------------- 3.2. ANGLE CHECKS --------------
+  #================================================
+
+  logger.info('Starting 3.2. angle table')
+
+  # Rule intent (ported from sg13g2 geometry/3_2_angle.drc):
+  # 1) Acute corners < 87 degree are not allowed on any checked layer.
+  # 2) Orthogonal-only layers accept only 0/90 degree edges.
+  # 3) 0/45/90 layers accept only 0/45/90 degree edges.
+  #
+  # DEVIATION from sg13g2 geometry/3_2_angle.drc: the TABLES/ANGLE guard is
+  # replaced by a plain "if BEOL"; the checks run unconditionally on the backend
+  # layers. The layer set is pruned to the interposer backend layers only (same
+  # scope as the offgrid deck). Excluded per the PDK note and the interposer
+  # scope: dfpad*, edgeseal*, ind*, recog*, nometfiller, prboundary and all text
+  # label layers. The sg13g2 helper methods (offgrid_check/acute_angle_check/...)
+  # and the object_id circle cache are inlined here as plain loops; this is a
+  # structural change only (identical geometry semantics, no functional effect) so
+  # that all decks can share the single eval binding without leaking method names.
+  ang_acute_limit = 87.0
+
+  # Acute-angle scope: every checked polygon layer. <name> is the layers_def.drc
+  # variable name so the emitted rule id is "<name>_Acute".
+  ang_acute_scope = {
+    # MIM capacitor
+    'mim_drw'  => mim_drw,
+    'vmim_drw' => vmim_drw,
+
+    # Metal4
+    'metal4_drw'     => metal4_drw,
+    'metal4_pin'     => metal4_pin,
+    'metal4_mask'    => metal4_mask,
+    'metal4_filler'  => metal4_filler,
+    'metal4_nofill'  => metal4_nofill,
+    'metal4_slit'    => metal4_slit,
+    'metal4_opc'     => metal4_opc,
+    'metal4_noqrc'   => metal4_noqrc,
+    'metal4_res'     => metal4_res,
+    'metal4_iprobe'  => metal4_iprobe,
+    'metal4_diffprb' => metal4_diffprb,
+
+    # Via4
+    'via4_drw' => via4_drw,
+
+    # Metal5
+    'metal5_drw'     => metal5_drw,
+    'metal5_pin'     => metal5_pin,
+    'metal5_mask'    => metal5_mask,
+    'metal5_filler'  => metal5_filler,
+    'metal5_nofill'  => metal5_nofill,
+    'metal5_slit'    => metal5_slit,
+    'metal5_opc'     => metal5_opc,
+    'metal5_noqrc'   => metal5_noqrc,
+    'metal5_res'     => metal5_res,
+    'metal5_iprobe'  => metal5_iprobe,
+    'metal5_diffprb' => metal5_diffprb,
+
+    # TopVia1 / TopMetal1 (no _opc datatype in layers_def)
+    'topvia1_drw'       => topvia1_drw,
+    'topmetal1_drw'     => topmetal1_drw,
+    'topmetal1_pin'     => topmetal1_pin,
+    'topmetal1_mask'    => topmetal1_mask,
+    'topmetal1_filler'  => topmetal1_filler,
+    'topmetal1_nofill'  => topmetal1_nofill,
+    'topmetal1_slit'    => topmetal1_slit,
+    'topmetal1_noqrc'   => topmetal1_noqrc,
+    'topmetal1_res'     => topmetal1_res,
+    'topmetal1_iprobe'  => topmetal1_iprobe,
+    'topmetal1_diffprb' => topmetal1_diffprb,
+
+    # TopVia2 / TopMetal2 (no _opc datatype in layers_def)
+    'topvia2_drw'       => topvia2_drw,
+    'topmetal2_drw'     => topmetal2_drw,
+    'topmetal2_pin'     => topmetal2_pin,
+    'topmetal2_mask'    => topmetal2_mask,
+    'topmetal2_filler'  => topmetal2_filler,
+    'topmetal2_nofill'  => topmetal2_nofill,
+    'topmetal2_slit'    => topmetal2_slit,
+    'topmetal2_noqrc'   => topmetal2_noqrc,
+    'topmetal2_res'     => topmetal2_res,
+    'topmetal2_iprobe'  => topmetal2_iprobe,
+    'topmetal2_diffprb' => topmetal2_diffprb,
+
+    # Thin-film resistor
+    'thinfilmres_drw' => thinfilmres_drw,
+
+    # Passivation family
+    'passiv_drw'    => passiv_drw,
+    'passiv_pin'    => passiv_pin,
+    'passiv_pillar' => passiv_pillar,
+    'passiv_sbump'  => passiv_sbump,
+    'passiv_pdl'    => passiv_pdl,
+
+    # Localized backside etch
+    'lbe_drw' => lbe_drw,
+  }
+
+  # Layers constrained to orthogonal (0/90) edges only.
+  ang_ortho_only = {
+    'via4_drw'    => via4_drw,
+    'vmim_drw'    => vmim_drw,
+    'topvia1_drw' => topvia1_drw,
+    'topvia2_drw' => topvia2_drw,
+  }
+
+  # Layers constrained to 0/45/90 edges.
+  ang_ortho_45 = {
+    'metal4_drw'    => metal4_drw,
+    'metal5_drw'    => metal5_drw,
+    'topmetal1_drw' => topmetal1_drw,
+    'topmetal2_drw' => topmetal2_drw,
+  }
+
+  # Circle exemption, DEVIATION from the sg13g2 source: evaluated on the RAW
+  # (as-drawn) polygons, not on the merged region. On this interposer the
+  # standard bump/pillar pattern is a circular TopMetal2 pad merged with its
+  # routing bar; the merged polygon is no longer a circle, so the source's
+  # merged-level exemption misses it and every legal pad would flag Angle45.
+  # Raw-level checking is otherwise equal or stricter (drawn edges hidden by a
+  # merge are still checked). Same deviation as in 3_1_offgrid.drc.
+  #
+  # raw/clean toggle a mode flag on the SHARED layer object (raw returns self,
+  # not a copy), so each base layer must be restored with clean and must NOT be
+  # forgotten here - other decks in the same run still use it.
+
+  # 1) Acute-angle check on every checked layer. Circular polygons are excluded
+  #    (their many short segments meet at near-straight, not acute, corners, but
+  #    get_circle keeps them out of scope for consistency with offgrid).
+  #    with_angle(0, limit) returns the corners whose inner angle is below limit.
+  ang_acute_scope.each do |ang_name, ang_layer|
+    logger.info("Executing rule #{ang_name}_Acute")
+    ang_layer.raw
+    ang_acute_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_acute_nc.with_angle(0.0, ang_acute_limit).output(
+      "#{ang_name}_Acute",
+      "3.2 #{ang_name}_Acute: acute corner below #{ang_acute_limit} degree is not allowed"
+    )
+    ang_layer.clean
+    ang_acute_nc.forget
+  end
+
+  # 2) Orthogonal-only layers: any edge that is neither 0 nor 90 degree (absolute).
+  ang_ortho_only.each do |ang_name, ang_layer|
+    logger.info("Executing rule #{ang_name}_Angle90")
+    ang_layer.raw
+    ang_o90_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_o90_edges = ang_o90_nc.edges.without_angle(0, absolute).without_angle(90, absolute)
+    ang_o90_edges.output(
+      "#{ang_name}_Angle90",
+      "3.2 #{ang_name}_Angle90: only orthogonal edges (0/90 degree) are allowed"
+    )
+    ang_o90_edges.forget
+    ang_layer.clean
+    ang_o90_nc.forget
+  end
+
+  # 3) 0/45/90 layers: any edge that is not 0, 45 or 90 degree (absolute).
+  ang_ortho_45.each do |ang_name, ang_layer|
+    logger.info("Executing rule #{ang_name}_Angle45")
+    ang_layer.raw
+    ang_o45_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_o45_edges = ang_o45_nc.edges.without_angle(0, absolute).without_angle(45, absolute).without_angle(90, absolute)
+    ang_o45_edges.output(
+      "#{ang_name}_Angle45",
+      "3.2 #{ang_name}_Angle45: only 0/45/90 degree edges are allowed"
+    )
+    ang_o45_edges.forget
+    ang_layer.clean
+    ang_o45_nc.forget
+  end
+end
+
+# =====================================================
+# -------------------- END OF FILE --------------------
+# =====================================================
