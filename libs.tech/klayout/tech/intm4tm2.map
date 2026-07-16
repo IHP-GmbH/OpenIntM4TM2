@@ -69,11 +69,11 @@ TopMetal2        LEFOBS                       134                4
 
 NAME             TopMetal2/PIN                134                25
 
-COMP             ALL                          189                0
+COMP             ALL                          235                0
 
 NAME             COMP                         63                 0
 
-DIEAREA          ALL                          189                4
+DIEAREA          ALL                          235                4
 
 # Passivation layers
 Passiv           NET,SPNET,PIN,LEFPIN         9                  0
