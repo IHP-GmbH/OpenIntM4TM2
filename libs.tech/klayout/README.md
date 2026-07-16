@@ -28,13 +28,26 @@ libs.tech/klayout/
 │   │   ├── run_drc.py               # CLI driver (deck selection, parallel runs)
 │   │   └── rule_decks/
 │   │       ├── layers_def.drc       # Layer definitions (always loaded first)
+│   │       ├── 3_1_offgrid.drc      # deck: offgrid
+│   │       ├── 3_2_angle.drc        # deck: angle
+│   │       ├── 5_17_metaln.drc      # deck: metaln
+│   │       ├── 5_18_metalnfiller.drc      # deck: metalnfiller
 │   │       ├── 5_20_via4.drc        # deck: via4
 │   │       ├── 5_21_topvia1.drc     # deck: topvia1
+│   │       ├── 5_22_topmetal1.drc   # deck: topmetal1
+│   │       ├── 5_23_topmetal1filler.drc   # deck: topmetal1filler
 │   │       ├── 5_24_topvia2.drc     # deck: topvia2
+│   │       ├── 5_25_topmetal2.drc   # deck: topmetal2
+│   │       ├── 5_26_topmetal2filler.drc   # deck: topmetal2filler
 │   │       ├── 5_27_passiv.drc      # deck: passiv
 │   │       ├── 6_9_pad.drc          # deck: pad
 │   │       ├── 6_9_copperpillar.drc # deck: copperpillar
+│   │       ├── 6_9_solderbump.drc   # deck: solderbump
+│   │       ├── 6_10_sealring.drc    # deck: sealring
+│   │       ├── 6_11_mim.drc         # deck: mim
+│   │       ├── 7_3_metalslits.drc   # deck: metalslits
 │   │       ├── 9_1_lbe.drc          # deck: lbe
+│   │       ├── density.drc          # deck: density (opt-in, full-chip only)
 │   │       └── interposer_tech_default.json  # tech params (diameters, enclosures)
 │   │   └── testing/                 # DRC unit tests (IHP testcases/ convention)
 │   │       ├── run_regression.py    # runner: deck vs golden expectation per top cell
@@ -74,15 +87,43 @@ invoking the `.drc`/`.lvs` decks directly.
 
 ### DRC
 
-`intm4tm2.drc` loads `layers_def.drc` first, then the requested decks. The seven
-available decks are `passiv`, `pad`, `copperpillar`, `via4`, `topvia1`, `topvia2`,
-`lbe`. With no `--deck`, all of them run.
+`intm4tm2.drc` loads `layers_def.drc` first, then the requested decks. The
+available decks and what they check:
+
+| Deck | Rule table | Checks |
+| --- | --- | --- |
+| `offgrid` | 3.1 | Vertices on the 5 nm manufacturing grid (circles exempt) |
+| `angle` | 3.2 | Allowed edge angles (vias: 90; metals: 45/90) and acute corners |
+| `metaln` | 5.17 | Metal4/Metal5 width, space, wide-line space, 45-degree bends |
+| `metalnfiller` | 5.18 | Metal4/Metal5 filler width and space to drawn metal |
+| `via4` | 5.20 | Via4 size, spacing, array spacing, metal enclosure/endcap |
+| `topvia1` | 5.21 | TopVia1 size, spacing, enclosures |
+| `topmetal1` | 5.22 | TopMetal1 width and space |
+| `topmetal1filler` | 5.23 | TopMetal1 filler width and space |
+| `topvia2` | 5.24 | TopVia2 size, spacing, enclosures |
+| `topmetal2` | 5.25 | TopMetal2 width, space, wide-line recommended space |
+| `topmetal2filler` | 5.26 | TopMetal2 filler width and space |
+| `passiv` | 5.27 | Passivation opening width, space, enclosure |
+| `pad` | 6.9 | Pad recognition consistency, pad-to-sealring distance |
+| `copperpillar` | 6.9.2 | Cu-pillar opening size, pitch, enclosure, shape |
+| `solderbump` | 6.9.1 | Solder-bump opening size, pitch, enclosure, shape |
+| `sealring` | 6.10 | Seal ring integrity, corners, uniqueness, outside structures |
+| `mim` | 6.11 | MIM capacitor enclosures and total area |
+| `metalslits` | 7.3 | Slit size/coverage on wide metal plates |
+| `lbe` | 9.1 | Local back etch size, spacing, keep-outs |
+| `density` | - | Global/local metal, slit and LBE density (opt-in) |
+
+With no `--deck`, all decks except `density` run. Density carries global
+minimum-density rules that only make sense on a finished full-chip layout, so
+it is opt-in via `--density` (or an explicit `--deck density`); its DEN.BND.*
+boundary sanity rules are enabled with `--density_sanity`.
 
 ```bash
-python tech/drc/run_drc.py --path <your_layout.gds>                       # all decks
+python tech/drc/run_drc.py --path <your_layout.gds>                       # all default decks
 python tech/drc/run_drc.py --path <your_layout.gds> --deck pad            # pad only
 python tech/drc/run_drc.py --path <your_layout.gds> --deck lbe --deck pad # two decks, merged
 python tech/drc/run_drc.py --path <your_layout.gds> --mp 5                # parallel, one worker per deck
+python tech/drc/run_drc.py --path <your_layout.gds> --density --density_sanity  # full chip sign-off
 ```
 
 Other flags: `--topcell` (auto-detected if omitted), `--run_dir` (default: a
@@ -159,8 +200,10 @@ python intm4tm2_tests/cupillar_pcell_harness.py --generate
 python intm4tm2_tests/cupillar_pcell_harness.py --validate-drc
 
 # DRC rule-deck unit tests (IHP testcases/ convention): run the regression on the
-# committed testcase GDS. Exercises V4.b1 (large-array spacing) and V4.c1/M5.c1
-# (endcap enclosure). Regenerate a testcase with its gen_*.py before editing it.
+# committed testcase GDS. One table per rule deck (via4, metaln, mim, solderbump,
+# sealring, fillers, metalslits, lbe, pad, offgrid, angle, density, ...); each
+# table has a <table>_viol and a <table>_clean top cell compared against the
+# GOLDEN expectations. Regenerate a testcase with its gen_*.py before editing it.
 python tech/drc/testing/run_regression.py           # all tables
 python tech/drc/testing/run_regression.py --table via4
 

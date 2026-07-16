@@ -92,6 +92,18 @@ def get_circle(polygon_check)
   maybe_circle2.without_holes.with_area_ratio(1.270, 1.276)
 end
 
+# Function to detect octagonal shapes (required for solder-bump opening validation)
+def get_octagon(polygon_check)
+  maybe_oct1 = polygon_check.with_bbox_aspect_ratio(1)
+  maybe_oct2 = maybe_oct1.select { |polygon| polygon.num_points == 8 }
+  h_edges_check = maybe_oct2.edges.with_angle(0, absolute)
+  maybe_oct3 = maybe_oct2.interacting(h_edges_check, 2, 2)
+  v_edges_check = maybe_oct3.edges.with_angle(90, absolute)
+  maybe_oct4 = maybe_oct3.interacting(v_edges_check, 2, 2)
+  diag_edges_check = maybe_oct4.edges.with_angle(44.5, 45.5, absolute)
+  maybe_oct4.interacting(diag_edges_check, 4, 4)
+end
+
 # Function to check for missing interposer key values
 def fetch_rule(rules, key)
   unless rules.is_a?(Hash) && rules.key?(key) && !rules[key].nil?
@@ -112,17 +124,32 @@ end
 # Deck selection: pass -rd deck=<name>[,<name>...] to run specific decks only.
 # Without $deck, all decks are loaded (backward compatible).
 all_decks = {
-  'passiv'       => '5_27_passiv.drc',
-  'pad'          => '6_9_pad.drc',
-  'copperpillar' => '6_9_copperpillar.drc',
-  'metaln'       => '5_17_metaln.drc',
-  'via4'         => '5_20_via4.drc',
-  'topvia1'      => '5_21_topvia1.drc',
-  'topmetal1'    => '5_22_topmetal1.drc',
-  'topvia2'      => '5_24_topvia2.drc',
-  'topmetal2'    => '5_25_topmetal2.drc',
-  'lbe'          => '9_1_lbe.drc',
+  'offgrid'         => '3_1_offgrid.drc',
+  'angle'           => '3_2_angle.drc',
+  'metaln'          => '5_17_metaln.drc',
+  'metalnfiller'    => '5_18_metalnfiller.drc',
+  'via4'            => '5_20_via4.drc',
+  'topvia1'         => '5_21_topvia1.drc',
+  'topmetal1'       => '5_22_topmetal1.drc',
+  'topmetal1filler' => '5_23_topmetal1filler.drc',
+  'topvia2'         => '5_24_topvia2.drc',
+  'topmetal2'       => '5_25_topmetal2.drc',
+  'topmetal2filler' => '5_26_topmetal2filler.drc',
+  'passiv'          => '5_27_passiv.drc',
+  'pad'             => '6_9_pad.drc',
+  'copperpillar'    => '6_9_copperpillar.drc',
+  'solderbump'      => '6_9_solderbump.drc',
+  'sealring'        => '6_10_sealring.drc',
+  'mim'             => '6_11_mim.drc',
+  'metalslits'      => '7_3_metalslits.drc',
+  'lbe'             => '9_1_lbe.drc',
+  'density'         => 'density.drc',
 }
+
+# Decks skipped by the default "all" run. Density carries global MINIMUM
+# density rules that are meaningless on partial layouts and unit fixtures;
+# select it explicitly with -rd deck=density (CLI: --density / --deck density).
+DEFAULT_SKIP_DECKS = ['density']
 
 if $deck && !$deck.empty?
   selected = $deck.split(',')
@@ -136,7 +163,8 @@ if $deck && !$deck.empty?
     end
   }
 else
-  drc_files = ['layers_def.drc'] + all_decks.values
+  drc_files = ['layers_def.drc'] +
+              all_decks.reject { |name, _| DEFAULT_SKIP_DECKS.include?(name) }.values
 end
 
 drc_source = drc_files.map { |f|

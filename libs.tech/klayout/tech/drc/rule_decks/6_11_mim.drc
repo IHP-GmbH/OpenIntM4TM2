@@ -1,0 +1,67 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+# DEVIATION: the sg13g2 source guards the table with `TABLES.include?('mim') || BEOL`.
+# The interposer engine has no TABLES selector, so this is reduced to `if BEOL`
+# (deck selection is handled by the runset's all_decks map).
+if BEOL
+  #================================================
+  #--------------------- 6.11 MIM -----------------
+  #================================================
+
+  logger.info('Starting 6.11 MIM table')
+
+  # MIM derivations
+
+  unless PRECHECK_DRC
+    # Rule MIM.c: Min. Metal5 enclosure of MIM is 0.60 um
+    logger.info('Executing rule MIM.c')
+    mim_c_value = fetch_rule(drc_rules, 'Mim_c')
+    # enclosed(): parts of the MIM edge with < Mim_c Metal5 enclosure.
+    mim_c_l1 = mim_drw.enclosed(metal5_drw, mim_c_value.um, euclidian).polygons
+    # No-landing miss branch: MIM area with no Metal5 above it at all
+    # (enclosed() is blind to full non-overlap).
+    mim_c_l2 = mim_drw.not(metal5_drw)
+    mim_c_l = mim_c_l1.join(mim_c_l2)
+    mim_c_l.output('MIM.c', "6.11. MIM.c : Min. Metal5 enclosure of MIM is #{mim_c_value} um")
+    mim_c_l1.forget
+    mim_c_l2.forget
+    mim_c_l.forget
+
+    # Rule MIM.d: Min. MIM enclosure of TopVia1 is 0.36 um
+    logger.info('Executing rule MIM.d')
+    mim_d_value = fetch_rule(drc_rules, 'Mim_d')
+    mim_d_l = topvia1_drw.enclosed(mim_drw, mim_d_value.um, euclidian)
+    mim_d_l.output('MIM.d', "6.11. MIM.d : Min. MIM enclosure of TopVia1 is #{mim_d_value} um")
+    mim_d_l.forget
+
+    # Rule MIM.gR: Max. recommended total MIM area per chip is 174800.00 um2
+    # DEVIATION: the sg13g2 source wraps this in `if RECOMMENDED`. Per interposer
+    # policy the recommended rule is implemented unconditionally.
+    logger.info('Executing rule MIM.gR')
+    mim_gr_value = fetch_rule(drc_rules, 'Mim_gR')
+    mim_gr_area = mim_drw.area
+    # UNIT QUIRK (inherited from source): mim_drw.area is a total area in um2, but the
+    # threshold is written `mim_gr_value.um` (a LENGTH unit). This is numerically correct
+    # only because `.um` is the identity conversion for the default DRC unit, so the
+    # comparison reduces to (area_in_um2 > 174800.0). Kept verbatim for source fidelity.
+    if mim_gr_area > mim_gr_value.um
+      mim_drw.output('MIM.gR', "6.11. MIM.gR : Max. recommended total MIM area per chip is #{mim_gr_value} um2, total used MIM area is #{mim_gr_area} um2")
+    end
+  end
+end

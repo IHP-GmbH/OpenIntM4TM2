@@ -63,5 +63,22 @@ if BEOL
     pad_i_l = dfpad_drw.not(topmetal2_drw)
     pad_i_l.output('Pad.i', '6.9. Pad.i : dfpad without TopMetal2 not allowed')
     pad_i_l.forget
+
+    # Rule Pad.dR: Min. recommended Pad to EdgeSeal space is 25.00 um
+    # INTERPOSER ADAPTATION: the sg13g2 source (sg13g2_maximal.drc, Pad.dR) checks the
+    # separation of Passiv-and-dfpad to the Activ component of the sealring minus the
+    # recognition layer: Act_EdgeSeal_not_HRACT = (Activ AND EdgeSeal) NOT Recog. The
+    # interposer stack has NO Activ layer, so the metal sealring (edgeseal_drw) is
+    # substituted for the seal Activ component; the recognition layer (recog, 99/0) is
+    # still subtracted to mirror the source's HRACT (recognition) exclusion.
+    logger.info('Executing rule Pad.dR')
+    pad_dr_value = fetch_rule(drc_rules, 'Pad_dR')
+    pad_dr_pad = passiv_drw.and(dfpad_drw)
+    pad_dr_seal = edgeseal_drw.not(recog)
+    pad_dr_l = pad_dr_pad.separation(pad_dr_seal, pad_dr_value.um, euclidian)
+    pad_dr_l.output('Pad.dR', "6.9. Pad.dR : Min. recommended Pad to EdgeSeal space is #{pad_dr_value} um")
+    pad_dr_pad.forget
+    pad_dr_seal.forget
+    pad_dr_l.forget
   end
 end
