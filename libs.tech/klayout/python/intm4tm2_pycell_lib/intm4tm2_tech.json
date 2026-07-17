@@ -1,0 +1,21 @@
+{
+    "techParams": {
+        "techName": "intm4tm2",
+        "libName": "IntM4TM2",
+        "vendorName": "IHP Microelectronics GmbH",
+        "CDFVersion": "9",
+        "epsilon1": 0.001,
+        "epsilon2": 1e-09,
+        "grid": 0.005
+    },
+    "Layers": {
+        "TopMetal2.drawing": "134, 0",
+        "TopMetal2.nofill": "134, 23",
+        "TopMetal1.nofill": "126, 23",
+        "Metal5.nofill": "67, 23",
+        "Metal4.nofill": "50, 23",
+        "Passiv.pillar": "9, 35",
+        "dfpad.pillar": "41, 35",
+        "Recog.pillar": "99, 35"
+    }
+}

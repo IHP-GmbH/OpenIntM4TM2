@@ -149,6 +149,43 @@ Other options: `--run_dir` (default: a timestamped `lvs_run_*` subdir under the
 current directory), `--topcell`, `--run_mode` (`flat` or `deep`; default
 `deep`), `--no_top_lvl_pins`, `--verbose`.
 
+## PCell library: `python/intm4tm2_pycell_lib`
+
+KLayout PCell library for the interposer, served the same way the SG13G2 open
+PDK serves its pycell library: the technology macro `tech/pymacros/autorun.lym`
+bootstraps `sys.path` (including the vendored `python/pycell4klayout-api` shim
+and `python/pypreprocessor`) and imports `intm4tm2_pycell_lib`, which registers
+the `pya.Library` named `IntM4TM2` bound to the `intm4tm2` technology. The
+vendored trees carry their own upstream licenses (`pycell4klayout-api`
+GPL-3.0, `pypreprocessor` MIT), exactly as the SG13G2 PDK ships them.
+
+Cells:
+
+| Cell | Parameters | Output |
+|---|---|---|
+| `CuPillarPad` | `diameter` (Passiv opening, default `35u` = Table 6.1 Option 1), `passEncl` (TopMetal2 enclosure, default `7.5u`), `addFillerEx` (`nil`/`t`) | TopMetal2 134/0, dfpad:pillar 41/35 and Recog:pillar 99/35 at pad size; Passiv:pillar 9/35 at the opening; optional nofill circles on the interposer metal stack. 256-point circles, the discretization the assembly flow and the copperpillar DRC tolerances assume. |
+
+Programmatic use (headless):
+
+```python
+import pya
+tech = pya.Technology.create_technology('intm4tm2')
+tech.load('tech/intm4tm2.lyt')
+# with python/ and python/pycell4klayout-api/source/python on sys.path:
+import intm4tm2_pycell_lib
+layout = pya.Layout()
+layout.technology_name = 'intm4tm2'
+cell = layout.create_cell('CuPillarPad', 'IntM4TM2',
+                          {'diameter': '35u', 'passEncl': '7.5u'})
+```
+
+The PCell is the reference implementation of the Cu-pillar pad geometry.
+Until `bump_mirror.CuPillarGenerator` is refactored into a thin placer that
+instantiates it, both implementations coexist and
+`intm4tm2_tests/test_cupillar_pcell_parity.py` pins them together (per-layer
+XOR empty for every Table 6.1 option); parameter values keep coming from the
+interconnect PDK manifest in the assembly flow.
+
 ## Assembly tooling: `python/bump_mirror.py`
 
 Cu-pillar GDS generator with DRC pre-validation. It places and mirrors Cu pillars
