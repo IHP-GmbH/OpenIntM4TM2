@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+ Copyright 2026 IHP PDK Authors
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     https://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<klayout-macro>
+ <description/>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>
+# This file only serves to bootstrap intm4tm2_pycell_lib.
+# Everything else is done inside this module's __init__.py.
+import sys
+import os
+import pkgutil
+import importlib
+
+def append_if_exists(path):
+    path = os.path.abspath(path)
+    if os.path.isdir(path) and path not in sys.path:
+        sys.path.append(path)
+
+base_dir = os.path.dirname(__file__)
+append_if_exists(os.path.join(base_dir, '..', '..', 'python'))
+append_if_exists(os.path.join(base_dir, '..', '..', 'python', 'pycell4klayout-api', 'source', 'python'))
+
+for finder, name, ispkg in pkgutil.iter_modules():
+    if name.startswith("intm4tm2"):
+        importlib.import_module(name)
+</text>
+</klayout-macro>
