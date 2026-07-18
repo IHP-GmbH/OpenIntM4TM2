@@ -18,9 +18,20 @@
 
     "moduleList": [
         "parameters.tcl",
-        "util.tcl"
+        "util.tcl",
+        "cap_cb.tcl"
     ],
     "callbackDefinition": {
-        "callbackList": []
+        "callbackList": [
+            {
+                "devices": ["cmim"],
+                "callbacks": [
+                    {
+                        "callback": "CbCap",
+                        "pcellParameters": ["C", "w", "l"]
+                    }
+                ]
+            }
+        ]
     }
 }

@@ -6,7 +6,20 @@
         "CDFVersion": "9",
         "epsilon1": 0.001,
         "epsilon2": 1e-09,
-        "grid": 0.005
+        "grid": 0.005,
+        "TV1_a": 0.42,
+        "TV1_d": 0.42,
+        "Mim_c": 0.6,
+        "Mim_d": 0.36,
+        "cmim_model": "cap_cmim",
+        "cmim_caspec": "1.5m",
+        "cmim_cpspec": "40p",
+        "cmim_lwd": "0.01u",
+        "cmim_defLW": "6.99u",
+        "cmim_minLW": "1.14u",
+        "cmim_maxLW": "1m",
+        "cmim_minC": "1f",
+        "cmim_maxC": "8p"
     },
     "Layers": {
         "TopMetal2.drawing": "134, 0",

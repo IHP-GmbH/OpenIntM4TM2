@@ -38,7 +38,8 @@ import tempfile
 import traceback
 
 moduleNames = [
-        'CuPillarPad_code'
+        'CuPillarPad_code',
+        'cmim_code'
 ]
 
 def getProcessNames():
