@@ -157,6 +157,79 @@ def _get_bump3d():
     return mod
 
 
+def _ensure_pcell_lib():
+    """Register the IntM4TM2 PCell library in-process (lazy, idempotent).
+
+    The fabrication pad geometry is owned by the CuPillarPad PCell in
+    intm4tm2_pycell_lib. That library binds to the 'intm4tm2' technology,
+    so registration is two steps: register the technology from the repo
+    .lyt (skipped when the session already has it, e.g. a layout session
+    with the interposer tech installed), then import the library package,
+    whose import side effect registers the pya.Library. All paths resolve
+    relative to this file, so a plain checkout works without environment
+    setup, both under the plain python interpreter and inside the layout
+    tool's batch interpreter.
+
+    Returns immediately when a library named 'IntM4TM2' is already
+    registered (an autorun/session may have done it first).
+
+    Raises:
+        ImportError: when the library cannot be registered; the message
+            names the failing precondition and how to fix it.
+    """
+    import pya
+
+    if 'IntM4TM2' in pya.Library.library_names():
+        return
+
+    here = Path(__file__).resolve().parent        # libs.tech/klayout/python
+    klayout_root = here.parent                    # libs.tech/klayout
+
+    if 'intm4tm2' not in pya.Technology.technology_names():
+        lyt_path = klayout_root / 'tech' / 'intm4tm2.lyt'
+        if not lyt_path.is_file():
+            raise ImportError(
+                f"intm4tm2 technology file not found: {lyt_path}. "
+                f"bump_mirror.py must live in libs.tech/klayout/python of an "
+                f"intact interposer PDK checkout (tech/intm4tm2.lyt is "
+                f"resolved relative to it).")
+        tech = pya.Technology.create_technology('intm4tm2')
+        tech.load(str(lyt_path))
+
+    api_dir = here / 'pycell4klayout-api' / 'source' / 'python'
+    for path in (here, api_dir):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+
+    # The library's tech class honors KLAYOUT_LYP_FILE as a layer-table
+    # override. A foreign .lyp (any non-interposer flow) would silently
+    # retag or drop the fabrication layers, so it must not reach the
+    # registration of a library whose layer table is a contract here.
+    saved_lyp = os.environ.pop('KLAYOUT_LYP_FILE', None)
+    try:
+        import intm4tm2_pycell_lib  # noqa: F401  (import registers the library)
+    except Exception as exc:
+        raise ImportError(
+            "cannot import intm4tm2_pycell_lib to register the IntM4TM2 "
+            "PCell library. Check that libs.tech/klayout/python (including "
+            "the vendored pycell4klayout-api and pypreprocessor) is intact: "
+            f"{exc}") from exc
+    finally:
+        if saved_lyp is not None:
+            os.environ['KLAYOUT_LYP_FILE'] = saved_lyp
+
+    if 'IntM4TM2' not in pya.Library.library_names():
+        raise ImportError(
+            "intm4tm2_pycell_lib imported but the IntM4TM2 library is not "
+            "registered; the package import normally registers it as a side "
+            "effect. Check intm4tm2_pycell_lib/__init__.py.")
+
+
+def _um_str(value: float) -> str:
+    """Format a micron value in the PCell string-parameter form (e.g. '35u')."""
+    return f"{value:g}u"
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -510,7 +583,17 @@ class DrcValidator:
 # ---------------------------------------------------------------------------
 
 class CuPillarGenerator:
-    """Generate Cu-pillar pad GDS from bump locations.
+    """Place Cu-pillar pad instances and their 3D bodies.
+
+    This is a thin placer: the fabrication circles (TopMetal2, the pillar
+    purposes of Passiv/dfpad/Recog) are owned by the CuPillarPad PCell in
+    the IntM4TM2 library -- the single source of Cu-pillar pad geometry.
+    The generator instantiates that PCell per body diameter, flattens the
+    variant to static geometry (no library/PCell metadata survives into
+    the output), and adds the 3D interconnect bodies on top.
+
+    The PCell draws its circles at a fixed 256-point discretization; the
+    num_points parameter only affects the 3D bodies.
 
     Supports per-device body diameters via Table 6.1 lookup.
     Caches pillar cells by body diameter so mixed-option assemblies
@@ -523,7 +606,9 @@ class CuPillarGenerator:
         """
         Args:
             enclosure_um: TM2 enclosure around the passiv opening.
-            num_points:   circle discretization.
+            num_points:   circle discretization of the 3D bodies only; the
+                          fabrication circles are PCell-defined at a fixed
+                          256 points.
             bodies:       3D body layers as (name, gds_layer, gds_datatype)
                           tuples, normally interconnect_manifest.layers_3d()
                           for the active method. None = the interconnect
@@ -545,21 +630,13 @@ class CuPillarGenerator:
         self.top_cell = self.layout.create_cell("TOP")
         self._pillar_cells: Dict[Tuple[float, bool], db.Cell] = {}
 
-    def _make_circle(self, radius: float) -> List:
-        """Generate circle polygon points."""
-        points = []
-        for i in range(self.num_points):
-            angle = 2 * math.pi * i / self.num_points
-            points.append(db.DPoint(radius * math.cos(angle),
-                                    radius * math.sin(angle)))
-        return points
-
     def _get_pillar_cell(self, body_diameter_um: float,
                          with_cap: bool = True) -> 'db.Cell':
         """Get or create Cu-pillar cell for a given body diameter.
 
-        Uses Table 6.1 to derive passiv opening and TM2 radii from
-        the body diameter. Cells are cached by (body_diameter, with_cap).
+        Uses Table 6.1 to derive the passiv opening from the body
+        diameter; the fabrication circles themselves come from the
+        CuPillarPad PCell. Cells are cached by (body_diameter, with_cap).
 
         Args:
             body_diameter_um: Cu-pillar body diameter from Table 6.1
@@ -584,8 +661,6 @@ class CuPillarGenerator:
                 f"or construct the generator with passiv_opening_um for "
                 f"manifest-defined methods.")
 
-        passiv_radius = option['passiv_opening'] / 2.0
-        tm2_radius = passiv_radius + self.enclosure_um
         body_radius = body_diameter_um / 2.0
 
         cap_suffix = "" if with_cap else "_nocap"
@@ -594,11 +669,45 @@ class CuPillarGenerator:
         cell = self.layout.create_cell(
             f"CUPILLAR_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
 
-        # Fabrication layers: Passiv uses passiv_radius, rest use tm2_radius
-        for layer_name, (layer_num, datatype) in CUPILLAR_FAB_LAYERS.items():
-            layer_idx = self.layout.layer(layer_num, datatype)
-            r = passiv_radius if layer_name == 'Passiv:pillar' else tm2_radius
-            cell.shapes(layer_idx).insert(db.DPolygon(self._make_circle(r)))
+        # Fabrication layers (CUPILLAR_FAB_LAYERS) come from the CuPillarPad
+        # PCell -- the single source of Cu-pillar pad geometry. The variant
+        # is flattened, its shapes copied into the static cell, and the
+        # leftover proxy pruned, so the output layout carries plain static
+        # polygons with no library or PCell metadata.
+        _ensure_pcell_lib()
+        self.layout.technology_name = 'intm4tm2'
+        variant = self.layout.create_cell(
+            'CuPillarPad', 'IntM4TM2',
+            {'diameter': _um_str(option['passiv_opening']),
+             'passEncl': _um_str(self.enclosure_um),
+             'addFillerEx': 'nil'})
+        if variant is None:
+            raise RuntimeError(
+                "IntM4TM2/CuPillarPad PCell variant could not be created "
+                "(layout.create_cell returned None; library or technology "
+                "did not resolve)")
+        variant.flatten(-1, True)
+        cell.copy_shapes(variant)
+        self.layout.prune_cell(variant.cell_index(), -1)
+
+        # Contract check: the PCell must have produced exactly the four
+        # fabrication layers. A poisoned layer table (e.g. a stale
+        # KLAYOUT_LYP_FILE honored by an earlier registration of the
+        # library) would otherwise retag or drop pad geometry while the
+        # run still exits cleanly.
+        drawn = set()
+        for idx in self.layout.layer_indexes():
+            if not cell.bbox_per_layer(idx).empty():
+                info = self.layout.get_info(idx)
+                drawn.add((info.layer, info.datatype))
+        expected = set(CUPILLAR_FAB_LAYERS.values())
+        if drawn != expected:
+            raise RuntimeError(
+                f"CuPillarPad PCell produced layers {sorted(drawn)} instead "
+                f"of the fabrication set {sorted(expected)}. The IntM4TM2 "
+                f"library layer table is wrong -- check for a foreign "
+                f"KLAYOUT_LYP_FILE in the environment of whatever process "
+                f"first registered the library.")
 
         # 3D body layers (pillar body always, cap optional). Owned by the
         # interconnect PDK; no silent fallback -- pads without their bodies
@@ -655,8 +764,15 @@ class CuPillarGenerator:
         return total
 
     def write(self, output_path: str):
-        """Write GDS file."""
-        self.layout.write(output_path)
+        """Write GDS file.
+
+        Context info is suppressed so no library/PCell metadata reaches the
+        output; the pillar cells hold flattened static geometry only.
+        """
+        save_opts = db.SaveLayoutOptions()
+        save_opts.set_format_from_filename(output_path)
+        save_opts.write_context_info = False
+        self.layout.write(output_path, save_opts)
 
 
 # ---------------------------------------------------------------------------
