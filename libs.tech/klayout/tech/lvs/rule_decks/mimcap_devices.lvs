@@ -1,0 +1,303 @@
+# frozen_string_literal: true
+
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#================================================
+# --------- MIM CAPACITOR DEVICE CLASSES --------
+#================================================
+# Custom device class, device combiner, device extractor and SPICE
+# schematic reader for the cap_cmim MIM capacitor. Ported from the
+# IHP-Open-PDK (SG13G2 open PDK) KLayout LVS runset and reduced to the
+# 2-terminal cap_cmim device used in the interposer backend stack
+# (the upstream 3-terminal RF variant needs FEOL layers that do not
+# exist here).
+
+# Globals for use inside class methods (locals are not visible there)
+$logger = logger
+$unit = dbu
+
+# Combines parallel MIM capacitors with equal w/l on the same nets by
+# summing up the 'm' multiplier. Only active when device combining is
+# requested on the netlist (see connectivity deck).
+class MIMCAPNDeviceCombiner < RBA::GenericDeviceCombiner
+  def combine_devices(a, b)
+    # Require top/bottom net equality
+    return false unless same_net(a, b, 'mim_top') && same_net(a, b, 'mim_btm')
+
+    # Check if parameters are the same
+    return false unless same_parameter(a, b, 'w') && same_parameter(a, b, 'l')
+
+    # Combine by summing up 'm' parameter
+    a.set_parameter('m', a.parameter('m') + b.parameter('m'))
+
+    # Disconnect the second device and let the system clean it up
+    b.disconnect_terminal('mim_top')
+    b.disconnect_terminal('mim_btm')
+
+    true
+  end
+
+  private
+
+  # A helper function to check whether two nets are the same
+  def same_net(a, b, name)
+    a_net = a.net_for_terminal(name)
+    b_net = b.net_for_terminal(name)
+
+    same_po = a_net.expanded_name == b_net.expanded_name if a_net && b_net
+    a_net && b_net && same_po
+  end
+
+  # A helper function to check whether two parameters have approximately
+  # the same value
+  def same_parameter(a, b, name)
+    (a.parameter(name) - b.parameter(name)).abs < 1e-9
+  end
+end
+
+# MIM capacitor device class: terminals mim_top/mim_btm and parameters
+# w/l (informational) plus A/P/m (compared). A and P are compared instead
+# of w and l so a device rotated by 90 degrees still matches.
+class DeviceCustomMIM < RBA::DeviceClassCapacitor
+  def initialize(name)
+    # clear terminals and parameters of the capacitor base class
+    clear_parameters
+    clear_terminals
+    clear_equivalent_terminal_ids
+
+    # Adding params
+    add_parameter(RBA::DeviceParameterDefinition.new('w', 'width', 0, false))
+    add_parameter(RBA::DeviceParameterDefinition.new('l', 'length', 0, false))
+    add_parameter(RBA::DeviceParameterDefinition.new('A', 'area', 0, true))
+    add_parameter(RBA::DeviceParameterDefinition.new('P', 'perimeter', 0, true))
+    add_parameter(RBA::DeviceParameterDefinition.new('m', 'multiplier', 1, true))
+
+    # Adding terminals
+    ter1 = add_terminal(RBA::DeviceTerminalDefinition.new('mim_top'))
+    ter2 = add_terminal(RBA::DeviceTerminalDefinition.new('mim_btm'))
+    ter1.name = 'mim_top'
+    ter2.name = 'mim_btm'
+
+    # Compare A/P with a small relative tolerance: layout and schematic
+    # values are computed through different floating-point paths and may
+    # differ in the last bits.
+    equal_cap_parameters = RBA::EqualDeviceParameters.new(parameter_id('A'), 0.0, 1e-6)
+    equal_cap_parameters += RBA::EqualDeviceParameters.new(parameter_id('P'), 0.0, 1e-6)
+    equal_cap_parameters += RBA::EqualDeviceParameters.new(parameter_id('m'), 0.0, 0.0)
+    self.equal_parameters = equal_cap_parameters
+
+    # Enable the MIM combiner for this class
+    self.combiner = MIMCAPNDeviceCombiner.new
+  end
+end
+
+# === MIMCAPExtractor ===
+class MIMCAPExtractor < RBA::GenericDeviceExtractor
+  # Extraction of the 2-terminal MIM capacitor device
+
+  def initialize(name)
+    self.name = name
+    @name = name
+  end
+
+  def setup
+    # Set up layers and register device class for extraction.
+    define_layers
+    @reg_dev = DeviceCustomMIM.new(name)
+    register_device_class(@reg_dev)
+  end
+
+  def get_connectivity(_layout, layers)
+    # Establish connectivity between the device forming layers.
+    dev = layers[0]
+    top_mim = layers[1]
+    btm_mim = layers[2]
+    dev_mk = layers[3]
+    meas_mk = layers[4]
+
+    conn = RBA::Connectivity.new
+    conn.connect(dev, dev)
+    conn.connect(dev, dev_mk)
+    conn.connect(dev, meas_mk)
+    conn.connect(top_mim, dev_mk)
+    conn.connect(btm_mim, dev_mk)
+
+    conn
+  end
+
+  def extract_devices(layer_geometry)
+    # Extract devices based on layer geometry.
+    dev, top_mim, btm_mim, dev_mk, _meas_mk = layer_geometry
+
+    dev_mk.merged.each do |_region|
+      if top_mim.size != 1
+        $logger.info("No. of ports for #{@name} top plate is #{top_mim.size}, should be 1")
+      elsif btm_mim.size != 1
+        $logger.info("No. of ports for #{@name} bottom plate is #{btm_mim.size}, should be 1")
+      else
+        device = create_device
+        set_device_parameters(device, dev)
+        define_terminals(device, top_mim, btm_mim)
+      end
+    end
+  end
+
+  private
+
+  def define_layers
+    define_layer('core', 'core Layer')
+    define_layer('top_mim', 'Connect Terminal for top mim')
+    define_layer('btm_mim', 'Connect Terminal for btm mim')
+    define_layer('dev_mk', 'Device Marker')
+    define_layer('meas_mk', 'Measuring parameters marker')
+  end
+
+  def set_device_parameters(device, dev)
+    # Set w/l from the MIM plate geometry plus derived area/perimeter.
+    width, length = calc_cmim_params(dev)
+
+    device.set_parameter('w', width * $unit)
+    device.set_parameter('l', length * $unit)
+    device.set_parameter('A', width * length * $unit * $unit)
+    device.set_parameter('P', (width + length) * 2 * $unit)
+  end
+
+  def calc_cmim_params(dev)
+    # Width from the horizontal edges, length from the rest
+    dev_edges = dev.edges
+    width_edges = dev_edges.with_angle(0, false)
+    len_edges = dev_edges.not(width_edges)
+    width = get_uniq_length(width_edges)
+    length = get_uniq_length(len_edges)
+
+    # Default values
+    width ||= 0
+    length ||= 0
+
+    [width, length]
+  end
+
+  def define_terminals(device, top_mim, btm_mim)
+    define_terminal(device, @reg_dev.terminal_id('mim_top'), 1, top_mim[0])
+    define_terminal(device, @reg_dev.terminal_id('mim_btm'), 2, btm_mim[0])
+  end
+
+  def get_uniq_length(sel_edges)
+    # Extract unique length value for some selected edges
+    lengths = []
+    sel_edges.each do |edge|
+      lengths << edge.length
+    end
+    lengths.uniq!
+    lengths.size == 1 ? lengths[0] : 0.0
+  end
+end
+
+#=========== SCHEMATIC READER ===========
+
+# Minimal SPICE reader delegate for reference netlists containing
+# cap_cmim devices. Accepted capacitor forms (2-terminal):
+# - C1 PLUS MINUS cap_cmim w=6.99u l=6.99u m=1
+# - C1 PLUS MINUS 74.620f $[cap_cmim] w=6.99u l=6.99u m=1
+# Other elements fall through to the default reader behavior.
+class MIMCAPReader < RBA::NetlistSpiceReaderDelegate
+  def parse_element(line, element)
+    # Remove $[...] around the device type
+    line = line.gsub(/\$\[([^\]]+)\]/, '\1')
+    line = clean_cap_line(line) if element == 'C'
+    super
+  end
+
+  # Normalize a capacitor line to: node node model key=value ...
+  # Note: parse_element receives the line WITHOUT the leading element
+  # name ("PLUS MINUS cap_cmim w=..."), so the model sits at index 2
+  # (value-before-model form: value at 2, model at 3).
+  def clean_cap_line(line)
+    valid_params = line.scan(/\b\w+\s*=\s*\S+\b/)
+    fields = line.split
+    return line if fields.size < 3
+
+    # 2T value-before-model form:
+    # PLUS MINUS 74.620f cap_cmim w=6.99u l=6.99u m=1
+    # Normalize to explicit C=<value> and model-first.
+    if fields.size >= 4 && value_field?(fields[2]) && mim_model_field?(fields[3])
+      cap_value = fields[2]
+      valid_params << "C=#{cap_value}" unless valid_params.any? { |p| p.upcase.start_with?('C=') }
+      return ([fields[0], fields[1], canonical_model(fields[3])] + valid_params).join(' ')
+    end
+
+    # Not a cap_cmim line: leave it to the default reader behavior
+    return line unless mim_model_field?(fields[2])
+
+    # The base SPICE parser insists on a value for C elements; add a
+    # dummy one when the line carries none (it is ignored for cap_cmim).
+    valid_params << 'C=1e-18' unless valid_params.any? { |p| p.upcase.start_with?('C=') }
+    ([fields[0], fields[1], canonical_model(fields[2])] + valid_params).join(' ')
+  end
+
+  # Build cap_cmim devices from parsed capacitor elements
+  def element(circuit, ele, name, model, value, nets, params)
+    mdl = model.to_s.downcase
+    return super unless ele == 'C' && mdl == 'cap_cmim'
+
+    raise ArgumentError, 'cap_cmim should have 2 nodes, please recheck' unless nets.size == 2
+
+    # device_class_by_name is not populated while the reader is still
+    # building the netlist, so cache created classes per netlist to avoid
+    # registering a duplicate 'cap_cmim' class for every element line.
+    @cls_cache ||= {}
+    cache_key = [circuit.netlist.object_id, mdl]
+    cls = @cls_cache[cache_key]
+    unless cls
+      cls = DeviceCustomMIM.new(mdl)
+      cls.name = mdl
+      circuit.netlist.add(cls)
+      @cls_cache[cache_key] = cls
+    end
+
+    device = circuit.create_device(cls, name)
+    device.connect_terminal('mim_top', nets[0])
+    device.connect_terminal('mim_btm', nets[1])
+
+    w = params['W'] || 0.0
+    l = params['L'] || 0.0
+    device.set_parameter('w', w * 1e6)
+    device.set_parameter('l', l * 1e6)
+    device.set_parameter('m', params['M'] || params['MF'] || 1.0)
+    device.set_parameter('A', (params['A'] || (w * l)) * 1e12)
+    device.set_parameter('P', (params['P'] || ((w + l) * 2)) * 1e6)
+
+    true
+  end
+
+  private
+
+  def value_field?(field)
+    !!(field && field.match?(/\A[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?[a-zA-Z]*\z/))
+  end
+
+  def canonical_model(field)
+    return '' if field.nil?
+
+    field.to_s.delete_prefix('$').sub(/\A\[(.+)\]\z/, '\1').downcase
+  end
+
+  def mim_model_field?(field)
+    canonical_model(field) == 'cap_cmim'
+  end
+end
+
+# Reader instance used by the connectivity deck for schematic parsing
+mim_spice_reader = RBA::NetlistSpiceReader.new(MIMCAPReader.new)

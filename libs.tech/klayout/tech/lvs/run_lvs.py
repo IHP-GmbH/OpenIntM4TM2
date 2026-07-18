@@ -17,16 +17,19 @@
 
 """Run IntM4TM2 interposer LVS (KLayout).
 
-The interposer is a passive backend stack (no devices), so the LVS deck
-extracts metal-stack connectivity, names nets from text labels, and checks
-label consistency (opens/shorts). A reference netlist is optional: when
-provided, KLayout's netlist compare runs in addition to the label checks.
+The LVS deck extracts metal-stack connectivity, MIM capacitor devices
+(cap_cmim, from the MIM/Vmim layers between Metal5 and TopMetal1), names
+nets from text labels, and checks label consistency (opens/shorts). A
+reference netlist is optional: when provided, KLayout's netlist compare
+runs in addition to the label checks. Reference netlists carry cap_cmim
+devices as 'C1 <top> <btm> cap_cmim w=.. l=.. m=..' (the value-first
+'C1 <top> <btm> <value> $[cap_cmim] w=.. l=..' form is accepted too).
 
 Usage:
     run_lvs.py (--help| -h)
     run_lvs.py (--layout=<layout_path>) [--netlist=<netlist_path>]
     [--run_dir=<run_dir_path>] [--topcell=<topcell_name>] [--run_mode=<run_mode>]
-    [--no_top_lvl_pins] [--verbose]
+    [--no_top_lvl_pins] [--combine_devices] [--verbose]
 
 Options:
     --help -h                           Displays this help message.
@@ -38,6 +41,8 @@ Options:
     --run_mode=<run_mode>               Selects the allowed KLayout mode. (flat, deep). [default: deep]
     --no_top_lvl_pins                   Do not create pins for named top-level nets in the
                                         extracted netlist.
+    --combine_devices                   Combine parallel devices before compare (e.g. two
+                                        equal cap_cmim in parallel become one with m=2).
     --verbose                           Enables detailed rule execution logs for debugging purposes.
 """
 
@@ -211,6 +216,7 @@ def generate_klayout_switches(arguments, layout_path, netlist_path):
     switches = {
         "run_mode": run_mode,
         "top_lvl_pins": "false" if arguments.get("--no_top_lvl_pins") else "true",
+        "combine_devices": "true" if arguments.get("--combine_devices") else "false",
         "verbose": "true" if arguments.get("--verbose") else "false",
         "topcell": get_run_top_cell_name(arguments, layout_path),
         "input": os.path.abspath(layout_path),

@@ -77,7 +77,12 @@ threads($threads)
 # logger) are shared across all rule decks. Ruby's load() runs in main
 # scope and separate eval() calls don't share locals.
 rule_deck_path = File.join(File.dirname(__FILE__), "rule_decks")
-lvs_files = ['layers_definitions.lvs', 'connectivity.lvs']
+lvs_files = [
+  'layers_definitions.lvs',   # layer inputs
+  'mimcap_devices.lvs',       # cap_cmim device class / extractor / reader
+  'mimcap_extraction.lvs',    # cap_cmim derivations + device extraction
+  'connectivity.lvs'          # metal stack connectivity, checks, compare
+]
 
 lvs_source = lvs_files.map { |f|
   path = File.join(rule_deck_path, f)

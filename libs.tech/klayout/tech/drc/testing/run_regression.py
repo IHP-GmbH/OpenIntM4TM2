@@ -91,7 +91,8 @@ GOLDEN = {
     'mim': {
         'deck': 'mim',
         'cells': {
-            'mim_viol':  {'MIM.c', 'MIM.d', 'MIM.gR'},
+            'mim_viol':  {'MIM.a', 'MIM.b', 'MIM.c', 'MIM.d', 'MIM.e',
+                          'MIM.f', 'MIM.g', 'MIM.h', 'MIM.gR'},
             'mim_clean': set(),
         },
     },

@@ -18,10 +18,13 @@
 
 # Define connectivity for backend metal stack
 # Metal4 -> Via4 -> Metal5 -> TopVia1 -> TopMetal1 -> TopVia2 -> TopMetal2
+# TopVia1 participates without its MIM via portion (topvia1_n_cap, see
+# the MIM capacitor deck) so vias over the MIM plate do not short the
+# capacitor plates. For MIM-free layouts topvia1_n_cap equals topvia1.
 connect(metal4, via4)
 connect(via4, metal5)
-connect(metal5, topvia1)
-connect(topvia1, topmetal1)
+connect(metal5, topvia1_n_cap)
+connect(topvia1_n_cap, topmetal1)
 connect(topmetal1, topvia2)
 connect(topvia2, topmetal2)
 
@@ -34,10 +37,16 @@ connect(topmetal2, topmetal2_text)
 # Extract netlist from layout
 netlist
 
+# Combine parallel MIM capacitors (equal w/l on the same nets) into a
+# single device with summed 'm' when requested.
+if $combine_devices.to_s == "true"
+  netlist.combine_devices
+end
+
 # Create pins for named top-level nets so the extracted SPICE netlist
 # exposes interface nets. Netlist#make_top_level_pins skips nets without
-# device terminals, and a passive interposer has no devices - so pins
-# are created explicitly here.
+# device terminals, and interposer nets away from MIM capacitors carry
+# no device terminals - so pins are created explicitly here.
 if $top_lvl_pins.to_s == "true"
   top_circuit = netlist.top_circuit
   top_circuit.each_net do |net|
@@ -48,9 +57,10 @@ if $top_lvl_pins.to_s == "true"
 end
 
 # Label-consistency connectivity checks (no schematic needed).
-# KLayout's device-graph compare tolerates unmatched floating nets, and a
-# passive interposer has no devices - opens/shorts in labeled nets would
-# pass silently. Check label topology explicitly instead:
+# KLayout's device-graph compare tolerates unmatched floating nets, and
+# away from MIM capacitors the interposer nets carry no devices -
+# opens/shorts in labeled nets would pass silently. Check label topology
+# explicitly instead:
 #  - one net carrying two different labels -> short
 #  - one label split across several nets  -> open
 all_nets = []
@@ -74,10 +84,18 @@ label_nets.each do |lbl, nets|
   end
 end
 
-# Compare with reference schematic (if provided)
+# Compare with reference schematic (if provided). The schematic is read
+# with the MIM-aware SPICE reader (see mimcap_devices.lvs) so cap_cmim
+# devices in the reference netlist map to the extracted device class.
+# Align first: it flattens circuits present on only one side (e.g. the
+# PCell subcell holding a MIM capacitor in deep mode).
 if $schematic
-  schematic($schematic)
-  if compare
+  schematic($schematic, mim_spice_reader)
+  align
+  # Strict port mode: a device terminal landing on a floating net (e.g. a
+  # MIM cap drawn without its via) must not silently match a schematic
+  # that connects it.
+  if compare && flag_missing_ports
     logger.info("LVS netlists match")
   else
     logger.error("LVS netlists do NOT match - see report database")
@@ -86,4 +104,4 @@ else
   logger.info("No schematic provided - connectivity check only")
 end
 
-logger.info("LVS check complete for interposer backend layers")
+logger.info("LVS check complete for interposer backend layers and MIM capacitors")

@@ -1,0 +1,54 @@
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#==================================
+# ---- MIM CAPACITOR EXTRACTION ---
+#==================================
+# cap_cmim layer derivations, device connectivity and extraction, ported
+# from the IHP-Open-PDK (SG13G2 open PDK) KLayout LVS runset and adapted
+# to the interposer layer set.
+
+logger.info('Deriving cap_cmim layers')
+
+# === MIMCAP derivations ===
+mim_top = mim.overlapping(topmetal1)
+mim_btm = mim.and(metal5)
+mim_via = vmim.join(topvia1).and(mim)
+# TopVia1 outside the MIM via region: the metal stack connectivity uses
+# this layer so a TopVia1 drawn over the MIM plate does not short the
+# capacitor plates (it acts as a MIM via instead).
+topvia1_n_cap = topvia1.not(mim_via)
+
+# === cap_cmim ===
+# Upstream subtracts pwell_block (FEOL-only, absent here -- dropped) and
+# the inductor recognition marker. The inductor exclusion is kept: MIM
+# under an IND region is inductor detail, not a cap_cmim device.
+cmim_top = mim_top.not(ind)
+cmim_btm = mim_btm.covering(cmim_top)
+cmim_dev = mim.covering(cmim_top).and(cmim_btm)
+
+# === cap_cmim connectivity ===
+connect(cmim_btm, metal5)
+connect(cmim_top, mim_via)
+connect(mim_via, topmetal1)
+
+# === cap_cmim extraction ===
+logger.info('Extracting cap_cmim devices')
+extract_devices(MIMCAPExtractor.new('cap_cmim'), {
+                  'core' => cmim_top,
+                  'top_mim' => cmim_top,
+                  'btm_mim' => cmim_btm,
+                  'meas_mk' => cmim_dev,
+                  'dev_mk' => cmim_dev
+                })
