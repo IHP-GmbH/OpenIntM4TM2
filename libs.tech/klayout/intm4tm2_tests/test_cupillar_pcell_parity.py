@@ -71,7 +71,11 @@ PCELL_BATCH_SCRIPT = textwrap.dedent("""\
 
     # The library binds to the 'intm4tm2' technology; register it from the
     # repo .lyt so the batch session resolves the library and its layers.
-    tech = pya.Technology.create_technology('intm4tm2')
+    # The technology may already exist if user-level search paths leak in.
+    if 'intm4tm2' in pya.Technology.technology_names():
+        tech = pya.Technology.technology_by_name('intm4tm2')
+    else:
+        tech = pya.Technology.create_technology('intm4tm2')
     tech.load({lyt_path!r})
 
     sys.path.insert(0, {python_dir!r})
@@ -128,8 +132,11 @@ def _run_pcell_batch(out_dir, cases):
     empty_home.mkdir()
     env = dict(os.environ, KLAYOUT_HOME=str(empty_home))
     # A stale KLAYOUT_LYP_FILE would replace the layer table with another
-    # PDK's; the tech class honors it, so keep it out of the batch.
+    # PDK's; the tech class honors it, so keep it out of the batch. The
+    # same goes for KLAYOUT_PATH, which would preload user technologies
+    # (auto-registering 'intm4tm2') and collide with create_technology.
     env.pop("KLAYOUT_LYP_FILE", None)
+    env.pop("KLAYOUT_PATH", None)
     result = subprocess.run(
         [KLAYOUT_BIN, "-zz", "-rx", "-r", str(script)],
         capture_output=True, text=True, env=env, timeout=300)
