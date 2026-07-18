@@ -108,7 +108,7 @@ available decks and what they check:
 | `copperpillar` | 6.9.2 | Cu-pillar opening size, pitch, enclosure, shape |
 | `solderbump` | 6.9.1 | Solder-bump opening size, pitch, enclosure, shape |
 | `sealring` | 6.10 | Seal ring integrity, corners, uniqueness, outside structures |
-| `mim` | 6.11 | MIM capacitor enclosures and total area |
+| `mim` | 6.11 | MIM capacitor: width, space, enclosures, per-device min/max area, via coverage, total area |
 | `metalslits` | 7.3 | Slit size/coverage on wide metal plates |
 | `lbe` | 9.1 | Local back etch size, spacing, keep-outs |
 | `density` | - | Global/local metal, slit and LBE density (opt-in) |
@@ -135,10 +135,17 @@ the ADK assembly DRC (`adk/klayout/drc/run_drc.py --interposer-adapter <name>`).
 
 ### LVS
 
-The interposer is a passive backend stack, so LVS extracts metal-stack
-connectivity, names nets from text labels, and checks label consistency
-(opens/shorts). A reference netlist is optional; when given, KLayout's netlist
-compare runs in addition to the label checks.
+LVS extracts metal-stack connectivity, names nets from text labels, and checks
+label consistency (opens/shorts). MIM capacitors are extracted as `cap_cmim`
+devices: bottom plate on Metal5, top plate on TopMetal1 through the Vmim via
+array, parameters `w`/`l`/`A`/`P` and parallel multiplicity `m` (a TopVia1
+drawn over the MIM plate counts as a MIM via and does not short the plates; MIM
+under an IND recognition region is not extracted as a device). A reference
+netlist is optional; when given, KLayout's netlist compare runs in strict port
+mode in addition to the label checks -- a device terminal left on a floating
+net (e.g. a cap without its via) fails the compare. Reference netlists may
+write the device as `C1 PLUS MINUS cap_cmim w=10u l=5u m=1` or in the
+value-first form `C1 PLUS MINUS 75f $[cap_cmim] w=10u l=5u m=1`.
 
 ```bash
 python tech/lvs/run_lvs.py --layout=<your_layout.gds>                          # connectivity-only
@@ -147,7 +154,8 @@ python tech/lvs/run_lvs.py --layout=<your_layout.gds> --netlist=<ref.spice>    #
 
 Other options: `--run_dir` (default: a timestamped `lvs_run_*` subdir under the
 current directory), `--topcell`, `--run_mode` (`flat` or `deep`; default
-`deep`), `--no_top_lvl_pins`, `--verbose`.
+`deep`), `--no_top_lvl_pins`, `--combine_devices` (merge parallel devices into
+one with summed `m` before compare), `--verbose`.
 
 ## PCell library: `python/intm4tm2_pycell_lib`
 
@@ -165,6 +173,12 @@ Cells:
 |---|---|---|
 | `CuPillarPad` | `diameter` (Passiv opening, default `35u` = Table 6.1 Option 1), `passEncl` (TopMetal2 enclosure, default `7.5u`), `addFillerEx` (`nil`/`t`) | TopMetal2 134/0, dfpad:pillar 41/35 and Recog:pillar 99/35 at pad size; Passiv:pillar 9/35 at the opening; optional nofill circles on the interposer metal stack. 256-point circles, the discretization the assembly flow and the copperpillar DRC tolerances assume. |
 | `cmim` | `w`, `l` (plate size, default `6.99u`), `C`/`Calculate` (capacitance-driven sizing via the `CbCap` callback; the default `Calculate='w&l'` recomputes `w`/`l` from `C` -- pass `Calculate='C'` to pin `w`/`l`) | MIM 36/0 plate of `w` x `l`; Metal5 67/0 bottom plate (Mim.c enclosure 0.6); TopMetal1 126/0 top plate; Vmim 129/0 via array (0.42 vias, 0.84 spacing, Mim.d enclosure 0.36); TEXT 63/0 labels. Ported from the SG13G2 open PDK `cmim`; `intm4tm2_tests/test_cmim_pcell.py` pins it XOR-identical to the upstream cell (`PDK_ROOT`-gated oracle) and the `mim` DRC deck runs clean on its output. |
+
+The cmim device is supported across the full stack: ngspice simulation model
+with corners (`../ngspice/models/`, subckt `cap_cmim`), xschem symbol
+(`../xschem/intm4tm2_pr/cap_cmim.sym`, KiCad counterpart specified in
+`../kicad/symbols/README.md`), LVS device extraction (`cap_cmim`, see LVS
+above) and the complete MIM rule table in the `mim` DRC deck.
 
 Programmatic use (headless):
 
