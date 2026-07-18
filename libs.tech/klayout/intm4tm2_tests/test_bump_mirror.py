@@ -5,6 +5,7 @@
 import json
 import math
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -465,6 +466,131 @@ class TestCuPillarGenerator:
             assert (500, 35) not in layer_pairs
             assert (501, 35) not in layer_pairs
             assert {(134, 0), (9, 35), (41, 35), (99, 35)} <= layer_pairs
+        finally:
+            os.unlink(path)
+
+    def test_written_gds_rereads_static_without_library_context(self):
+        """Written GDS re-reads in a fresh Layout with no library context.
+
+        The pillar cells are placed from the CuPillarPad PCell but must be
+        written as plain static geometry: no proxy cells (names starting
+        with '$'), no leftover 'CuPillarPad' cell, and the fab-layer
+        polygons present under the top cell."""
+        import klayout.db as kdb
+
+        gen = CuPillarGenerator()
+        gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
+
+        fd, path = tempfile.mkstemp(suffix=".gds")
+        os.close(fd)
+        try:
+            gen.write(path)
+            layout = kdb.Layout()
+            layout.read(path)
+
+            names = [c.name for c in layout.each_cell()]
+            assert not any(n.startswith("$") for n in names), names
+            assert "CuPillarPad" not in names, names
+
+            top = layout.top_cell()
+            assert top.name == "TOP"
+            for layer, datatype in [(134, 0), (9, 35), (41, 35), (99, 35)]:
+                idx = layout.layer(layer, datatype)
+                region = kdb.Region(top.begin_shapes_rec(idx))
+                assert not region.is_empty(), (
+                    f"no geometry on {layer}/{datatype} after re-read")
+        finally:
+            os.unlink(path)
+
+    def test_foreign_lyp_env_cannot_poison_fab_layers(self):
+        """KLAYOUT_LYP_FILE must not reach the PCell library registration.
+
+        The library's tech class honors that env var as a layer-table
+        override; a foreign .lyp would silently retag the fabrication
+        layers. The bootstrap strips it during import (and restores it
+        afterwards), so a fresh process generating with a hostile value
+        must still emit the canonical fab layer set."""
+        import klayout.db as kdb
+
+        foreign_lyp = "\n".join(
+            ['<?xml version="1.0" encoding="utf-8"?>',
+             '<layer-properties>'] +
+            [f' <properties>\n  <source>{src}</source>\n'
+             f'  <name>{name}</name>\n </properties>'
+             for name, src in [("TopMetal2.drawing", "777/0"),
+                               ("Passiv.pillar", "888/88"),
+                               ("dfpad.pillar", "889/88"),
+                               ("Recog.pillar", "890/88")]] +
+            ['</layer-properties>'])
+
+        python_dir = Path(__file__).resolve().parents[1] / "python"
+        with tempfile.TemporaryDirectory() as tmp:
+            lyp_path = Path(tmp) / "foreign.lyp"
+            lyp_path.write_text(foreign_lyp)
+            out_gds = Path(tmp) / "out.gds"
+            script = Path(tmp) / "gen.py"
+            script.write_text(
+                "import os, sys\n"
+                f"sys.path.insert(0, {str(python_dir)!r})\n"
+                "from bump_mirror import BumpLocation, CuPillarGenerator\n"
+                "gen = CuPillarGenerator()\n"
+                "gen.add_bumps([BumpLocation('U1', 'P1', 0.0, 0.0)])\n"
+                f"gen.write({str(out_gds)!r})\n"
+                "assert os.environ.get('KLAYOUT_LYP_FILE'), "
+                "'env var must be restored after registration'\n")
+
+            env = dict(os.environ, KLAYOUT_LYP_FILE=str(lyp_path))
+            result = subprocess.run([sys.executable, str(script)],
+                                    capture_output=True, text=True, env=env,
+                                    timeout=120)
+            assert result.returncode == 0, (
+                f"generation failed under foreign KLAYOUT_LYP_FILE:\n"
+                f"{result.stdout}\n{result.stderr}")
+
+            layout = kdb.Layout()
+            layout.read(str(out_gds))
+            top = layout.top_cell()
+            drawn = set()
+            for idx in layout.layer_indexes():
+                info = layout.get_info(idx)
+                region = kdb.Region(top.begin_shapes_rec(idx))
+                if not region.is_empty():
+                    drawn.add((info.layer, info.datatype))
+            fab = {(134, 0), (9, 35), (41, 35), (99, 35)}
+            assert fab <= drawn, (
+                f"fab layers missing or retagged under foreign "
+                f"KLAYOUT_LYP_FILE: drawn {sorted(drawn)}")
+            assert not any(l in (777, 888, 889, 890) for l, _ in drawn), (
+                f"foreign layer numbers leaked into the output: "
+                f"{sorted(drawn)}")
+
+    def test_fab_layer_contract_guard(self, monkeypatch):
+        """A wrong library layer table cannot pass silently: the drawn
+        set is checked against CUPILLAR_FAB_LAYERS after PCell flatten."""
+        import bump_mirror
+
+        monkeypatch.setattr(
+            bump_mirror, "CUPILLAR_FAB_LAYERS",
+            {"TopMetal2": (777, 0), "Passiv:pillar": (888, 88),
+             "dfpad:pillar": (889, 88), "Recog:pillar": (890, 88)})
+        gen = CuPillarGenerator()
+        with pytest.raises(RuntimeError, match="instead of the fabrication"):
+            gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
+
+    def test_write_infers_format_from_suffix(self):
+        """write() keeps stream-format inference from the file suffix
+        (an .oas path must produce OASIS bytes, not GDS2)."""
+        gen = CuPillarGenerator()
+        gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
+
+        fd, path = tempfile.mkstemp(suffix=".oas")
+        os.close(fd)
+        try:
+            gen.write(path)
+            with open(path, "rb") as f:
+                magic = f.read(11)
+            assert magic == b"%SEMI-OASIS", (
+                f"expected OASIS magic for .oas suffix, got {magic!r}")
         finally:
             os.unlink(path)
 

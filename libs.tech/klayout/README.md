@@ -180,11 +180,13 @@ cell = layout.create_cell('CuPillarPad', 'IntM4TM2',
                           {'diameter': '35u', 'passEncl': '7.5u'})
 ```
 
-The PCell is the reference implementation of the Cu-pillar pad geometry.
-Until `bump_mirror.CuPillarGenerator` is refactored into a thin placer that
-instantiates it, both implementations coexist and
-`intm4tm2_tests/test_cupillar_pcell_parity.py` pins them together (per-layer
-XOR empty for every Table 6.1 option); parameter values keep coming from the
+The PCell is the single source of the Cu-pillar pad fabrication geometry:
+`bump_mirror.CuPillarGenerator` is a thin placer that instantiates
+`CuPillarPad` (flattened to static geometry in the output GDS) and only adds
+the 3D interconnect bodies itself.
+`intm4tm2_tests/test_cupillar_pcell_parity.py` remains as the regression that
+pins the placed output to a directly-instantiated PCell (per-layer XOR empty
+for every Table 6.1 option); parameter values keep coming from the
 interconnect PDK manifest in the assembly flow.
 
 ## Assembly tooling: `python/bump_mirror.py`
