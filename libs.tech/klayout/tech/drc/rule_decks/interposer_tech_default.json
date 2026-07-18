@@ -1,6 +1,6 @@
 {
     "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95. LBE_b2, Slt_h4 and Padb_e have no upstream JSON key; see the corresponding rule decks for their derivation notes.",
-    "version": "1.3",
+    "version": "1.4",
     "based_on": "IHP SG13G2 Layout Rules Rev 2.1 (2024-12-19)",
     "rules": {
         "Pad_aR": 30.00,
@@ -90,8 +90,13 @@
         "Slt_i": 0.06,
         "Slt_i_w": 35.0,
         "Seal_k": 21.0,
+        "Mim_a": 1.14,
+        "Mim_b": 0.6,
         "Mim_c": 0.60,
         "Mim_d": 0.36,
+        "Mim_e": 0.6,
+        "Mim_f": 1.3,
+        "Mim_g": 5625.0,
         "Mim_gR": 174800.00
     }
 }

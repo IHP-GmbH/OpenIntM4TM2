@@ -28,6 +28,45 @@ if BEOL
 
   # MIM derivations
 
+  # Rule MIM.a: Min. MIM width is 1.14 um
+  # DEVIATION: the source suppresses intersecting-edge (distance 0) width pairs
+  # (consider_intersecting_edges: false). The plain width check used here is
+  # slightly stricter at kissing-corner / self-intersecting MIM geometry;
+  # acceptable for a minimum-width check.
+  logger.info('Executing rule MIM.a')
+  mim_a_value = fetch_rule(drc_rules, 'Mim_a')
+  mim_a_l = mim_drw.width(mim_a_value.um, euclidian)
+  mim_a_l.output('MIM.a', "6.11. MIM.a : Min. MIM width is #{mim_a_value} um")
+  mim_a_l.forget
+
+  # Rule MIM.b: Min. MIM space is 0.60 um
+  logger.info('Executing rule MIM.b')
+  mim_b_value = fetch_rule(drc_rules, 'Mim_b')
+  mim_b_l = mim_drw.space(mim_b_value.um, euclidian)
+  mim_b_l.output('MIM.b', "6.11. MIM.b : Min. MIM space is #{mim_b_value} um")
+  mim_b_l.forget
+
+  # Rule MIM.f: Min. MIM area per MIM device is 1.30 um2
+  # The source uses a strict "<" area constraint; with_area's upper bound is
+  # exclusive, so a device of exactly Mim_f um2 is legal, matching the source.
+  # UNIT QUIRK (same as MIM.gR below): `.um` is the identity conversion for the
+  # default DRC unit, so the um2 threshold passes through numerically unchanged.
+  logger.info('Executing rule MIM.f')
+  mim_f_value = fetch_rule(drc_rules, 'Mim_f')
+  mim_f_l = mim_drw.with_area(nil, mim_f_value.um)
+  mim_f_l.output('MIM.f', "6.11. MIM.f : Min. MIM area per MIM device is #{mim_f_value} um2")
+  mim_f_l.forget
+
+  # Rule MIM.g: Max. MIM area per MIM device is 5625.00 um2
+  # The source uses a strict ">" constraint (value plus one square
+  # database unit, 1 nm x 1 nm = 1e-6 um2); with_area's lower bound is
+  # inclusive, so add exactly that quantum.
+  logger.info('Executing rule MIM.g')
+  mim_g_value = fetch_rule(drc_rules, 'Mim_g')
+  mim_g_l = mim_drw.with_area(mim_g_value.um + 0.000001, nil)
+  mim_g_l.output('MIM.g', "6.11. MIM.g : Max. MIM area per MIM device is #{mim_g_value} um2")
+  mim_g_l.forget
+
   unless PRECHECK_DRC
     # Rule MIM.c: Min. Metal5 enclosure of MIM is 0.60 um
     logger.info('Executing rule MIM.c')
@@ -49,6 +88,29 @@ if BEOL
     mim_d_l = topvia1_drw.enclosed(mim_drw, mim_d_value.um, euclidian)
     mim_d_l.output('MIM.d', "6.11. MIM.d : Min. MIM enclosure of TopVia1 is #{mim_d_value} um")
     mim_d_l.forget
+
+    # Rule MIM.e: Min. TopMetal1 space to MIM is 0.60 um
+    # A TopMetal1 top plate drawn fully inside the MIM plate (the MIM device's
+    # own plate connection) produces no separation edge pairs and is therefore
+    # not flagged; only outside TopMetal1 closer than Mim_e (including
+    # edge-touching, distance 0) is reported. This matches the source check.
+    logger.info('Executing rule MIM.e')
+    mim_e_value = fetch_rule(drc_rules, 'Mim_e')
+    mim_e_l = topmetal1_drw.separation(mim_drw, mim_e_value.um, euclidian)
+    mim_e_l.output('MIM.e', "6.11. MIM.e : Min. TopMetal1 space to MIM is #{mim_e_value} um")
+    mim_e_l.forget
+
+    # Rule MIM.h: TopVia1 must be over MIM
+    # Every MIM device must completely cover at least one TopVia1 or Vmim via
+    # (the MIM PCell places its via array on Vmim). The source computes
+    # MIM minus MIM-polygons-covering-a-via, which on merged MIM polygons is
+    # exactly not_covering.
+    logger.info('Executing rule MIM.h')
+    topvia1_or_vmim = topvia1_drw.join(vmim_drw)
+    mim_h_l = mim_drw.not_covering(topvia1_or_vmim)
+    mim_h_l.output('MIM.h', '6.11. MIM.h : TopVia1 must be over MIM')
+    topvia1_or_vmim.forget
+    mim_h_l.forget
 
     # Rule MIM.gR: Max. recommended total MIM area per chip is 174800.00 um2
     # DEVIATION: the sg13g2 source wraps this in `if RECOMMENDED`. Per interposer
