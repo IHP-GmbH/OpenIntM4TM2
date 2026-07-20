@@ -132,17 +132,4 @@ The symbol's `Sim.Library` property references `cornerCAP.lib` via the
 portable `${INTERPOSER_PDK_ROOT}` prefix. The derived value symbols inherit
 this model reference.
 
-### Acceptance checklist
 
-- [x] File `cap_cmim.kicad_sym` in this directory
-- [x] Generic `cap_cmim` plus 9 value-keyed derived symbols (`extends`)
-- [x] Pins named PLUS and MINUS, in that netlist order (numbers 1/2)
-- [x] Netlist emits `X<ref> PLUS MINUS cap_cmim w=<w> l=<l> m=<m>` (SUBCKT)
-- [x] Generic defaults w=8.11e-6, l=8.11e-6, m=1 (anchor at 100 fF, see note)
-- [x] Value symbols pre-wire w/l/m + `intm4tm2:CMIM_<value>` footprint
-- [x] Capacitance display formula as above (~100 fF at the generic defaults)
-- [x] Simulation model references `cornerCAP.lib` section `cap_typ`
-
-The layout counterpart (real-size footprints mirroring the PCell plates)
-lives in `libs.tech/kicad/footprints/intm4tm2.pretty`; see
-`libs.tech/kicad/footprints/README.md`.
