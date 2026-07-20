@@ -8,6 +8,11 @@ aluminum metal redistribution stack (Metal4 through TopMetal2) is retained,
 together with MIM capacitors, thin-film resistors, passivation/pad openings,
 edge seal and localized backside etch (LBE).
 
+## Status
+
+> [!WARNING]
+> OpenIntM4TM2 is currently a preview release only!
+
 ## Repository layout
 
 The repository follows the directory organization of the IHP open PDKs
