@@ -12,6 +12,7 @@ edge seal and localized backside etch (LBE).
 
 > [!WARNING]
 > OpenIntM4TM2 is currently a preview release only!
+> DRC and LVS are still WIP.
 
 ## Repository layout
 
