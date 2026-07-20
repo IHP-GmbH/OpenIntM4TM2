@@ -43,7 +43,11 @@ Metal5 outer rectangle.
 CLI::
 
     python cmim_footprint_gen.py --w 7u --l 7u [--m 1] --out <file.kicad_mod>
+    python cmim_footprint_gen.py --cap 250f --out <file.kicad_mod>
     python cmim_footprint_gen.py --family --outdir <intm4tm2.pretty dir>
+
+The discrete ``--family`` is keyed by round capacitance (CMIM_10fF ...
+CMIM_5pF); the anchor member (CMIM_100fF) matches the cap_cmim symbol.
 """
 
 import argparse
@@ -77,10 +81,19 @@ MINUS_LAYER = "In2.Cu"   # Metal5
 # Deterministic UUID namespace so re-running the generator is reproducible.
 _UUID_NS = uuid.uuid5(uuid.NAMESPACE_DNS, "ihp.intm4tm2.cmim.footprint")
 
-# Square family ladder (micrometres). Min = cmim_minLW (1.14u), default 7u,
-# max 70u stays under Cmax = 8 pF (~7.36 pF).
-FAMILY_UM = [1.14, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0, 50.0, 70.0]
-DEFAULT_UM = 7.0
+# Round-capacitance family. Each entry is (footprint name, nominal-C label,
+# w=l in micrometres). The widths are the grid-snapped (0.005 um) square-cap
+# solutions for the nominal values; they are used VERBATIM (never re-solved)
+# so the names, geometry and stated capacitance never drift. Every actual C
+# stays within ~0.1 % of nominal and every width is under Cmax = 8 pF.
+# Discrete family keyed by round CAPACITANCE (fF). Each plate width is derived
+# at runtime from the nominal via cap_to_width() -- the SAME path --cap uses --
+# so the pre-generated family and on-demand footprints never diverge. Every
+# actual C stays within ~0.1 % of nominal and every width is under Cmax = 8 pF.
+FAMILY_FF = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
+# Anchor member (100 fF), kept consistent with the cap_cmim symbol default.
+DEFAULT_FF = 100
+DEFAULT_NAME = "CMIM_100fF"
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +162,16 @@ def _grid_fix(value, grid, eps):
     'grid' tech parameter is used (as in utility_functions.py)."""
     igrid = 1.0 / grid
     return _fix(value * igrid + eps) * grid
+
+
+def _grid_round(value, grid):
+    """Snap to the NEAREST grid multiple (round-to-nearest).
+
+    Used only for the capacitance solver, where the target is a capacitance
+    rather than a dimension: rounding to the closest on-grid plate minimises
+    |C - nominal| (floor would systematically undershoot). Both --cap and
+    --family route through cap_to_width(), so they can never diverge."""
+    return round(round(value / grid) * grid, 6)
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +249,69 @@ def cmim_capacitance_fF(w_um, l_um, tech, m=1):
     return m * (w_um * l_um * area_coef_fF + 2.0 * (w_um + l_um) * perim_coef_fF)
 
 
+def cap_bounds_fF(tech):
+    """Return (Cmin, Cmax) in fF for the square-cap solver.
+
+    Cmin is the capacitance of a square plate at the device minimum width
+    (cmim_minLW ~ 1.14 um -> ~2.13 fF); Cmax is the tech cmim_maxC (8 pF).
+    Both are derived from tech, never hard-coded."""
+    cmin = cmim_capacitance_fF(tech["minLW_um"], tech["minLW_um"], tech, 1)
+    cmax = tech["cmax_F"] * 1e15
+    return cmin, cmax
+
+
+def solve_square_cap(cap_fF, tech):
+    """Inverse square-cap model: plate width (um) for a target C (fF), w=l.
+
+    For a square C = a*w^2 + b*w, with a = area spec (1.5 fF/um^2) and
+    b = 4 * perimeter spec (4 * 0.04 = 0.16 fF/um) since 2*(w+l) = 4*w.
+    Coefficients come from tech (no drift). Positive root:
+    w = (-b + sqrt(b^2 + 4*a*C)) / (2*a)."""
+    a = tech["caspec_F_per_um2"] * 1e15
+    b = 4.0 * (tech["cpspec_F_per_um"] * 1e15)
+    return (-b + math.sqrt(b * b + 4.0 * a * cap_fF)) / (2.0 * a)
+
+
+def cap_to_width(cap_fF, tech):
+    """Grid-snapped square-plate width (um) for a target capacitance (fF).
+
+    The single source of the C->width mapping, shared by --cap and --family so
+    on-demand and pre-generated footprints are byte-for-byte consistent."""
+    return _grid_round(solve_square_cap(cap_fF, tech), tech["grid"])
+
+
+def _cap_nominal_label(cap_fF):
+    """Human capacitance label: 10 -> '10fF', 1000 -> '1pF', 1500 -> '1.5pF'."""
+    if cap_fF >= 1000.0:
+        val, unit = cap_fF / 1000.0, "pF"
+    else:
+        val, unit = float(cap_fF), "fF"
+    return "{:g}{}".format(val, unit)
+
+
+def _cap_name(cap_fF):
+    """Footprint/symbol name for a nominal capacitance: 10 -> 'CMIM_10fF',
+    1500 -> 'CMIM_1p5pF'."""
+    return "CMIM_" + _cap_nominal_label(cap_fF).replace(".", "p")
+
+
+def parse_cap_fF(text):
+    """Parse a capacitance target to fF. Accepts f/fF (femto), p/pF (pico) and
+    a plain number (interpreted as fF): '250f'->250, '1p'->1000, '10fF'->10,
+    '250'->250, '2.13fF'->2.13."""
+    token = str(text).strip()
+    low = token.lower()
+    if low.endswith("ff"):
+        return float(token[:-2])
+    if low.endswith("pf"):
+        return float(token[:-2]) * 1000.0
+    if low.endswith("f"):
+        return float(token[:-1])
+    if low.endswith("p"):
+        return float(token[:-1]) * 1000.0
+    return float(token)
+
+
 # ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
@@ -245,6 +331,14 @@ def _fmt_dim(um):
     return text.replace(".", "p")
 
 
+def _fmt_um(um):
+    """Plain-decimal micrometre value (trailing zeros trimmed, keeps the dot):
+    8.11 -> '8.11', 11.495 -> '11.495', 3.6 -> '3.6', 7.0 -> '7'. Used for
+    human-readable descr text and the w/l properties (vs. _fmt_dim's names)."""
+    text = "{:.3f}".format(um).rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
 def footprint_name(w_um, l_um):
     return "CMIM_{}x{}um".format(_fmt_dim(w_um), _fmt_dim(l_um))
 
@@ -256,13 +350,19 @@ def _uid(name, tag):
 # ---------------------------------------------------------------------------
 # KiCad .kicad_mod emission
 # ---------------------------------------------------------------------------
-def build_footprint(w_um, l_um, tech, m=1):
-    """Return the .kicad_mod S-expression text for a cmim footprint."""
+def build_footprint(w_um, l_um, tech, m=1, name=None, nominal=None):
+    """Return the .kicad_mod S-expression text for a cmim footprint.
+
+    name    : footprint name; defaults to the dimension-keyed CMIM_<w>x<l>um.
+    nominal : round-capacitance label (e.g. '100fF') for the C-keyed family;
+              when given it is recorded in the descr and a 'Nominal' property
+              alongside the actual (recomputed) capacitance and w/l."""
     boxes = cmim_footprint_boxes(w_um, l_um, tech)
     plus_w, plus_h = boxes["plus_extent"]
     minus_w, minus_h = boxes["minus_extent"]
     cap_fF = cmim_capacitance_fF(w_um, l_um, tech, m)
-    name = footprint_name(w_um, l_um)
+    if name is None:
+        name = footprint_name(w_um, l_um)
 
     # Courtyard / fab outline follow the Metal5 outer rectangle (the true
     # keep-out), centred on the origin.
@@ -276,12 +376,13 @@ def build_footprint(w_um, l_um, tech, m=1):
     font_th = round(max(font * 0.15, 1e-5), 6)
     text_gap = _mm(minus_h) * 0.20 + font  # clear of the courtyard
 
+    nom_txt = "nominal {}, ".format(nominal) if nominal else ""
     descr = ("IHP SG13G2 open PDK MIM capacitor (IHP IntM4TM2 module), "
-             "model {model}; W={w}um L={l}um, C~{c:.2f}fF. "
+             "model {model}; {nom}W={w}um L={l}um, C~{c:.2f}fF. "
              "PLUS=TopMetal1 (In1.Cu), MINUS=Metal5 (In2.Cu). "
              "Generated by cmim_footprint_gen.py.").format(
-                 model=tech["model"], w=_fmt_dim(w_um), l=_fmt_dim(l_um),
-                 c=cap_fF)
+                 model=tech["model"], nom=nom_txt,
+                 w=_fmt_um(w_um), l=_fmt_um(l_um), c=cap_fF)
     tags = "cmim MIM capacitor IHP SG13G2 IntM4TM2"
 
     def effects():
@@ -323,8 +424,10 @@ def build_footprint(w_um, l_um, tech, m=1):
         lines.append('\t)')
 
     hidden_prop("Description", descr, "descr")
-    hidden_prop("w", "{}um".format(_fmt_dim(w_um)), "w")
-    hidden_prop("l", "{}um".format(_fmt_dim(l_um)), "l")
+    if nominal:
+        hidden_prop("Nominal", nominal, "nominal")
+    hidden_prop("w", "{}um".format(_fmt_um(w_um)), "w")
+    hidden_prop("l", "{}um".format(_fmt_um(l_um)), "l")
     hidden_prop("m", "{}".format(m), "m")
     hidden_prop("Capacitance", "{:.2f}fF".format(cap_fF), "cap")
     hidden_prop("Model", tech["model"], "model")
@@ -397,23 +500,25 @@ def _snapped(um, tech):
     return _grid_fix(um, tech["grid"], tech["epsilon1"])
 
 
-def write_footprint(w_um, l_um, tech, out_path, m=1):
-    text = build_footprint(w_um, l_um, tech, m)
+def write_footprint(w_um, l_um, tech, out_path, m=1, name=None, nominal=None):
+    text = build_footprint(w_um, l_um, tech, m, name=name, nominal=nominal)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, "w") as handle:
         handle.write(text)
     return out_path
 
 
-def _summary(w_um, l_um, tech, m=1):
+def _summary(w_um, l_um, tech, m=1, name=None, nominal=None):
     boxes = cmim_footprint_boxes(w_um, l_um, tech)
     return {
-        "name": footprint_name(w_um, l_um),
+        "name": name if name is not None else footprint_name(w_um, l_um),
+        "nominal": nominal,
         "w_um": w_um,
         "l_um": l_um,
         "m": m,
         "minus_extent": [round(v, 6) for v in boxes["minus_extent"]],
         "plus_extent": [round(v, 6) for v in boxes["plus_extent"]],
+        "minus_pad_um": round(boxes["minus_extent"][0], 6),
         "cap_fF": round(cmim_capacitance_fF(w_um, l_um, tech, m), 4),
     }
 
@@ -426,6 +531,10 @@ def main(argv=None):
                         help="Path to intm4tm2_tech.json (default: repo copy).")
     parser.add_argument("--w", help="Plate width, e.g. 7u / 7um / 7.")
     parser.add_argument("--l", help="Plate length, e.g. 7u / 7um / 7.")
+    parser.add_argument("--cap",
+                        help="Solve a square (w=l) cap for a target C, then "
+                             "emit like --w/--l. Accepts f/fF, p/pF or plain "
+                             "fF, e.g. 250f / 1p / 10fF.")
     parser.add_argument("--m", type=int, default=1, help="Multiplier (default 1).")
     parser.add_argument("--out", help="Output .kicad_mod path (single footprint).")
     parser.add_argument("--family", action="store_true",
@@ -438,37 +547,67 @@ def main(argv=None):
 
     if args.family:
         written = []
-        for size in FAMILY_UM:
-            w = _snapped(size, tech)
-            l = _snapped(size, tech)
-            name = footprint_name(w, l)
+        for nominal_fF in FAMILY_FF:
+            name = _cap_name(nominal_fF)
+            nominal = _cap_nominal_label(nominal_fF)
+            w_um = cap_to_width(nominal_fF, tech)
+            l_um = w_um
             out_path = os.path.join(args.outdir, name + ".kicad_mod")
-            write_footprint(w, l, tech, out_path, args.m)
+            write_footprint(w_um, l_um, tech, out_path, args.m,
+                            name=name, nominal=nominal)
             written.append(out_path)
-            summary = _summary(w, l, tech, args.m)
-            print("{name}: MINUS={minus} PLUS={plus} C={cap}fF -> {path}".format(
-                name=summary["name"], minus=summary["minus_extent"],
-                plus=summary["plus_extent"], cap=summary["cap_fF"],
-                path=out_path))
+            summary = _summary(w_um, l_um, tech, args.m,
+                               name=name, nominal=nominal)
+            print("{name}: nominal={nom} w=l={w}um C={cap}fF "
+                  "MINUS={minus}um -> {path}".format(
+                      name=name, nom=nominal, w=_fmt_um(w_um),
+                      cap=summary["cap_fF"], minus=summary["minus_pad_um"],
+                      path=out_path))
         # Cmax sanity check on the largest member.
-        max_um = max(FAMILY_UM)
         cmax_fF = tech["cmax_F"] * 1e15
-        top_fF = cmim_capacitance_fF(max_um, max_um, tech, args.m)
+        top_um = cap_to_width(FAMILY_FF[-1], tech)
+        top_fF = cmim_capacitance_fF(top_um, top_um, tech, args.m)
         status = "OK" if top_fF < cmax_fF else "OVER"
-        print("Cmax check: {:.1f}um -> {:.1f}fF (Cmax {:.1f}fF) [{}]".format(
-            max_um, top_fF, cmax_fF, status))
+        print("Cmax check: {}um -> {:.1f}fF (Cmax {:.1f}fF) [{}]".format(
+            _fmt_um(top_um), top_fF, cmax_fF, status))
+        return 0
+
+    if args.cap is not None:
+        cap_fF = parse_cap_fF(args.cap)
+        cmin, cmax = cap_bounds_fF(tech)
+        if cap_fF < cmin - 1e-6 or cap_fF > cmax + 1e-6:
+            parser.error(
+                "--cap {arg} ({c:.4f}fF) is out of range "
+                "[{lo:.2f}fF .. {hi:.1f}fF]: a square cap_cmim must stay "
+                "between Wmin={wmin}um (Cmin~{lo:.2f}fF) and "
+                "Cmax={cmaxp:g}pF.".format(
+                    arg=args.cap, c=cap_fF, lo=cmin, hi=cmax,
+                    wmin=_fmt_um(tech["minLW_um"]), cmaxp=cmax / 1000.0))
+        if args.out is None:
+            parser.error("--cap needs --out")
+        w = cap_to_width(cap_fF, tech)
+        l = w
+        name = _cap_name(cap_fF)
+        nominal = _cap_nominal_label(cap_fF)
+        write_footprint(w, l, tech, args.out, args.m, name=name, nominal=nominal)
+        summary = _summary(w, l, tech, args.m, name=name, nominal=nominal)
+        print("{name}: target={t:.2f}fF w=l={w}um C={cap}fF "
+              "MINUS={minus}um -> {path}".format(
+                  name=summary["name"], t=cap_fF, w=_fmt_um(w),
+                  cap=summary["cap_fF"], minus=summary["minus_pad_um"],
+                  path=args.out))
         return 0
 
     if args.w is None or args.l is None or args.out is None:
         parser.error("single-footprint mode needs --w, --l and --out "
-                     "(or use --family)")
+                     "(or use --cap / --family)")
 
     w = _snapped(parse_size_um(args.w), tech)
     l = _snapped(parse_size_um(args.l), tech)
     write_footprint(w, l, tech, args.out, args.m)
     summary = _summary(w, l, tech, args.m)
-    print("{name}: MINUS={minus} PLUS={plus} C={cap}fF -> {path}".format(
-        name=summary["name"], minus=summary["minus_extent"],
+    print("{name}: MINUS={minus}um PLUS={plus} C={cap}fF -> {path}".format(
+        name=summary["name"], minus=summary["minus_pad_um"],
         plus=summary["plus_extent"], cap=summary["cap_fF"], path=args.out))
     return 0
 

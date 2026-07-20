@@ -19,31 +19,54 @@ Both pads share the same centre; the courtyard and fab outline follow the outer
 Metal5 rectangle. Routing to these parts happens on the inner metals TopMetal1
 (`In1.Cu`) and Metal5 (`In2.Cu`), not on `F.Cu` / `B.Cu`.
 
-Display capacitance uses `C[fF] = w*l*1.5 + 2*(w+l)*0.04` (w, l in um).
+Display capacitance uses `C[fF] = w*l*1.5 + 2*(w+l)*0.04` (w, l in um), which
+for a square plate reduces to `C[fF] = 1.5*w^2 + 0.16*w`.
 
-### Family members
+### Family members (keyed by round capacitance)
 
-| Footprint            | w x l (um)   | Metal5 plate (um) | TopMetal1 plate (um) | C (approx) |
-|----------------------|--------------|-------------------|----------------------|------------|
-| `CMIM_1p14x1p14um`   | 1.14 x 1.14  | 2.34 x 2.34       | 1.26 x 1.26          | 2.1 fF     |
-| `CMIM_3x3um`         | 3 x 3        | 4.2 x 4.2         | 2.52 x 2.52          | 14.0 fF    |
-| `CMIM_5x5um`         | 5 x 5        | 6.2 x 6.2         | 5.04 x 5.04          | 38.3 fF    |
-| `CMIM_7x7um`         | 7 x 7        | 8.2 x 8.2         | 6.3 x 6.3            | 74.6 fF    |
-| `CMIM_10x10um`       | 10 x 10      | 11.2 x 11.2       | 10.08 x 10.08        | 151.6 fF   |
-| `CMIM_15x15um`       | 15 x 15      | 16.2 x 16.2       | 15.12 x 15.12        | 339.9 fF   |
-| `CMIM_20x20um`       | 20 x 20      | 21.2 x 21.2       | 18.9 x 18.9          | 603.2 fF   |
-| `CMIM_30x30um`       | 30 x 30      | 31.2 x 31.2       | 28.98 x 28.98        | 1.35 pF    |
-| `CMIM_50x50um`       | 50 x 50      | 51.2 x 51.2       | 49.14 x 49.14        | 3.76 pF    |
-| `CMIM_70x70um`       | 70 x 70      | 71.2 x 71.2       | 69.3 x 69.3          | 7.36 pF    |
+The discrete family is keyed by **round capacitance**, not by round plate
+dimensions. Each member's `w = l` is the grid-snapped square-cap solution for
+its nominal value, so the on-shelf part you pick is the capacitance you want.
+The "Metal5 pad" column is the real outer pad size (`w + 1.2` um), i.e. the
+courtyard and the copper drawn on the board.
 
-The smallest member is at the PCell minimum plate size (`cmim_minLW` = 1.14 um);
-the largest stays under the device maximum capacitance (`cmim_maxC` = 8 pF).
-`CMIM_7x7um` is the default the `cap_cmim` symbol references.
+| Footprint     | Nominal C | w = l (um) | Metal5 pad (um) | Actual C   |
+|---------------|-----------|------------|-----------------|------------|
+| `CMIM_10fF`   | 10 fF     | 2.53       | 3.73            | 10.01 fF   |
+| `CMIM_20fF`   | 20 fF     | 3.6        | 4.8             | 20.02 fF   |
+| `CMIM_50fF`   | 50 fF     | 5.72       | 6.92            | 49.99 fF   |
+| `CMIM_100fF`  | 100 fF    | 8.11       | 9.31            | 99.96 fF   |
+| `CMIM_200fF`  | 200 fF    | 11.495     | 12.695          | 200.04 fF  |
+| `CMIM_500fF`  | 500 fF    | 18.205     | 19.405          | 500.05 fF  |
+| `CMIM_1pF`    | 1 pF      | 25.765     | 26.965          | 999.88 fF  |
+| `CMIM_2pF`    | 2 pF      | 36.46      | 37.66           | 1999.83 fF |
+| `CMIM_5pF`    | 5 pF      | 57.68      | 58.88           | 4999.70 fF |
 
-## Generating a custom size on demand
+Every actual C stays within about 0.1 % of its nominal value. `CMIM_100fF` is
+the anchor member: it matches the default `w = l = 8.11e-6` m carried by the
+`cap_cmim` symbol (see `../symbols/README.md`).
 
-The family is emitted by `../scripts/cmim_footprint_gen.py`. To make a footprint
-for an arbitrary plate size that is not in the ladder above:
+## Generating an arbitrary capacitance on demand
+
+The family is emitted by `../scripts/cmim_footprint_gen.py`. For a value that is
+not on the ladder above, solve a square (`w = l`) cap straight from a target
+capacitance with `--cap`:
+
+```
+python ../scripts/cmim_footprint_gen.py --cap 250f --out CMIM_250fF.kicad_mod
+```
+
+`--cap` accepts `f` / `fF` (femtofarad), `p` / `pF` (picofarad) or a bare number
+(read as fF): `250f`, `1p`, `10fF`, `2.13fF`. It inverts the square-cap model,
+snaps the resulting `w = l` to the nearest step of the layout grid (0.005 um) so
+the emitted plate is the closest match to the target capacitance, and needs an
+`--out` path. `--cap` at a family value reproduces that family member exactly
+(same grid-snap as `--family`). The valid range is the device range, roughly **2.13 fF**
+(at the minimum plate `Wmin = 1.14` um) up to **8 pF** (`cmim_maxC`); a target
+outside that band is rejected.
+
+To emit a rectangular (`w != l`) plate for an arbitrary size instead of a target
+capacitance:
 
 ```
 python ../scripts/cmim_footprint_gen.py --w 12u --l 8u --out CMIM_12x8um.kicad_mod
@@ -51,7 +74,7 @@ python ../scripts/cmim_footprint_gen.py --w 12u --l 8u --out CMIM_12x8um.kicad_m
 
 `--w` / `--l` accept `u`, `um` or a bare number in micrometres, and are snapped
 to the layout grid the way the PCell would snap them. To regenerate the whole
-family in place:
+round-capacitance family in place:
 
 ```
 python ../scripts/cmim_footprint_gen.py --family

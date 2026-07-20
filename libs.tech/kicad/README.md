@@ -55,8 +55,11 @@ ships none of them pre-populated; you set the ones you need.
 
 Beyond the template board, this tree ships real-size KiCad footprints for the
 IntM4TM2 MIM capacitor (`cap_cmim`, model of the IHP SG13G2 open PDK). The
-schematic symbol lives in `symbols/cap_cmim.kicad_sym` (see
-`symbols/README.md`); the footprints and their generator are described below.
+schematic side is a hybrid symbol set in `symbols/cap_cmim.kicad_sym` (see
+`symbols/README.md`): the generic `cap_cmim` symbol (edit `w` / `l` for any
+value) plus 9 value-keyed derived symbols (`CMIM_10fF` ... `CMIM_5pF`) that
+pre-wire a round capacitance to its `w` / `l` and matching footprint. The
+footprints and their generator are described below.
 
 ### Footprint library `footprints/intm4tm2.pretty`
 
@@ -71,8 +74,9 @@ length `l` (micrometres):
   (a couple of microns smaller than the Metal5 plate, concentric with it).
 
 Both plates share the same centre. The footprint's courtyard and fab outline
-follow the outer Metal5 rectangle. See `footprints/README.md` for the family
-list with sizes and approximate capacitances.
+follow the outer Metal5 rectangle. The discrete family is keyed by round
+capacitance (`CMIM_10fF` ... `CMIM_5pF`, anchored at `CMIM_100fF`); see
+`footprints/README.md` for the member list with plate sizes and real pad sizes.
 
 ### Inner-copper layer placement
 
@@ -93,15 +97,23 @@ interposer metal stack.
 A standalone, stdlib-only script generates the footprints. It reads the tech
 constants from the same `intm4tm2_tech.json` the PCell uses, and re-implements
 the PCell plate math (the PCell itself is never imported, so the script has no
-KLayout dependency). Two CLI modes:
+KLayout dependency). CLI modes:
 
-- Single, on-demand footprint for an arbitrary size:
+- Arbitrary capacitance on demand: solve a square (`w = l`) plate straight from
+  a target C. Accepts `f` / `fF`, `p` / `pF` or a bare number in fF, over the
+  device range of roughly 2.13 fF (minimum plate) up to 8 pF:
+
+  ```
+  python scripts/cmim_footprint_gen.py --cap 250f --out my_cmim.kicad_mod
+  ```
+
+- Single, on-demand footprint for an arbitrary rectangular size:
 
   ```
   python scripts/cmim_footprint_gen.py --w 12u --l 8u --out my_cmim.kicad_mod
   ```
 
-- Regenerate the whole discrete family into the `.pretty` directory:
+- Regenerate the whole round-capacitance family into the `.pretty` directory:
 
   ```
   python scripts/cmim_footprint_gen.py --family
