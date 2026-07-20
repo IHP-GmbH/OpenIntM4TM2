@@ -39,7 +39,8 @@ import traceback
 
 moduleNames = [
         'CuPillarPad_code',
-        'cmim_code'
+        'cmim_code',
+        'bondpad_code'
 ]
 
 def getProcessNames():
