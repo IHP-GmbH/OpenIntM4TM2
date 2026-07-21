@@ -51,23 +51,28 @@ libs.tech/klayout/
 │   │       └── interposer_tech_default.json  # tech params (diameters, enclosures)
 │   │   └── testing/                 # DRC unit tests (IHP testcases/ convention)
 │   │       ├── run_regression.py    # runner: deck vs golden expectation per top cell
-│   │       └── testcases/unit/      # via4.gds (+ gen_via4_testcase.py generator)
+│   │       └── testcases/unit/      # <table>.gds + gen_<table>_testcase.py per rule table
 │   ├── lvs/                         # Layout vs Schematic
 │   │   ├── intm4tm2.lvs             # Top runset; loads the two rule decks
 │   │   ├── run_lvs.py               # CLI driver
-│   │   └── rule_decks/
-│   │       ├── layers_definitions.lvs
-│   │       └── connectivity.lvs     # Metal-stack connectivity extraction
+│   │   ├── rule_decks/
+│   │   │   ├── layers_definitions.lvs
+│   │   │   └── connectivity.lvs     # Metal-stack connectivity extraction
+│   │   └── testing/                 # LVS connectivity unit tests (IHP lvs/testing/ convention)
+│   │       ├── run_regression.py    # runner: deck verdict vs golden per fixture
+│   │       └── testcases/unit/      # lvs_{clean,open,short}.gds (+ generator)
 │   └── macros/
 │       └── interposer_filler_topmetal.lym  # TopMetal filler macro
 ├── python/
 │   └── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
-    ├── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
-    ├── cupillar_pcell_harness.py    # script harness (--generate / --validate-drc)
-    └── lvs_connectivity_harness.py  # script harness (--generate / --validate-lvs)
+    └── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
 ```
+
+The Cu-pillar DRC and LVS-connectivity checks live with their decks under the
+IHP `testing/` convention (`tech/drc/testing/` copperpillar table and
+`tech/lvs/testing/`), not as standalone harnesses.
 
 ## Technology files
 
@@ -242,27 +247,24 @@ emitting pads without their bodies.
 
 ## Tests
 
-In `intm4tm2_tests/`. Two pytest suites and two script harnesses; the harnesses are
-CLI tools (not `test_`-prefixed), so pytest does not collect them.
+Two pytest suites in `intm4tm2_tests/`, plus the DRC and LVS rule-deck regressions
+that live with their decks under the IHP `testing/` convention.
 
 ```bash
 # pytest suites (bump_mirror + layer-map parity):
 pytest intm4tm2_tests/test_bump_mirror.py
 pytest intm4tm2_tests/test_layer_parity.py
 
-# Cu-pillar PCell harness: generate fixtures, then validate with DRC:
-python intm4tm2_tests/cupillar_pcell_harness.py --generate
-python intm4tm2_tests/cupillar_pcell_harness.py --validate-drc
-
 # DRC rule-deck unit tests (IHP testcases/ convention): run the regression on the
-# committed testcase GDS. One table per rule deck (via4, metaln, mim, solderbump,
-# sealring, fillers, metalslits, lbe, pad, offgrid, angle, density, ...); each
-# table has a <table>_viol and a <table>_clean top cell compared against the
+# committed testcase GDS. One table per rule deck (via4, metaln, mim, copperpillar,
+# solderbump, sealring, fillers, metalslits, lbe, pad, offgrid, angle, density, ...);
+# each table has a <table>_viol and a <table>_clean top cell compared against the
 # GOLDEN expectations. Regenerate a testcase with its gen_*.py before editing it.
-python tech/drc/testing/run_regression.py           # all tables
-python tech/drc/testing/run_regression.py --table via4
+python tech/drc/testing/run_regression.py                 # all tables
+python tech/drc/testing/run_regression.py --table copperpillar
 
-# LVS connectivity harness: generate fixtures, then validate with LVS:
-python intm4tm2_tests/lvs_connectivity_harness.py --generate
-python intm4tm2_tests/lvs_connectivity_harness.py --validate-lvs
+# LVS connectivity unit tests (IHP lvs/testing/ convention): run the LVS deck on the
+# committed clean/open/short fixtures and compare the verdict against the golden.
+python tech/lvs/testing/run_regression.py                 # all fixtures
+python tech/lvs/testing/run_regression.py --case open
 ```

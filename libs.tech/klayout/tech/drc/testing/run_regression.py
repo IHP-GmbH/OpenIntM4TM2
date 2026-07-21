@@ -36,6 +36,14 @@ GOLDEN = {
             'angle_clean': set(),
         },
     },
+    'copperpillar': {
+        'deck': 'copperpillar',
+        'cells': {
+            'copperpillar_viol':  {'Padc.a', 'Padc.b', 'Padc.c',
+                                   'Padc.d', 'Padc.e', 'Padc.f'},
+            'copperpillar_clean': set(),
+        },
+    },
     'density': {
         'deck': 'density',
         'cells': {
