@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<!--
+  IHP IntM4TM2 interposer module - openEMS technology stackup (300 um Si carrier).
+
+  Ported from the Apache-2.0 IHP-Open-PDK SG13G2 openEMS stackup
+  (ihp-sg13g2/libs.tech/openems/openems_ihp_sg13g2/workflow/SG13G2.xml).
+  The IntM4TM2 interposer is a reduced back-end: Metal4 is the lowest routing
+  metal, sitting directly on the carrier base oxide. The M4..TM2 block keeps the
+  exact SG13G2 layer thicknesses and inter-metal spacings (they are identical in
+  the base process); it is only shifted down by 3.42 um so Metal4 starts at the
+  carrier surface instead of on top of the (absent) Metal1..Metal3 stack.
+  All values are public: SG13G2 process specification + the source XML above.
+
+  Copyright 2025 IHP PDK Authors. Licensed under the Apache License, Version 2.0.
+-->
+  <Stackup schemaVersion="2.0">
+    <Materials>
+      <Material Name="Metal4" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="23190000.0" Color="93e837"/>
+      <Material Name="Metal5" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="23190000.0" Color="dcd146"/>
+      <Material Name="TopMetal1" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="27800000.0" Color="ffe6bf"/>
+      <Material Name="TopMetal2" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="30300000.0" Color="ff8000"/>
+      <Material Name="TopVia2" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="3143000.0" Color="ff8000"/>
+      <Material Name="TopVia1" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="2191000.0" Color="ffe6bf"/>
+      <Material Name="Via4" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="1660000.0" Color="deac5e"/>
+      <Material Name="Passive" Type="Dielectric" Permittivity="6.6" DielectricLossTangent="0.0" Conductivity="0" Color="a0a0f0"/>
+      <Material Name="SiO2" Type="Dielectric" Permittivity="4.1" DielectricLossTangent="0.0" Conductivity="0" Color="fffcad"/>
+      <Material Name="Substrate" Type="Semiconductor" Permittivity="11.9" DielectricLossTangent="0" Conductivity="2.0" Color="01e0ff"/>
+      <Material Name="AIR" Type="Dielectric" Permittivity="1.0" DielectricLossTangent="0.0" Conductivity="0" Color="d0d0d0"/>
+      <Material Name="LOWLOSS" Type="Conductor" Permittivity="1" DielectricLossTangent="0" Conductivity="1E10" Color="ff0000"/>
+      <Material Name="MIM_equiv" Type="Dielectric" Permittivity="16.87" DielectricLossTangent="0.0" Conductivity="0" Color="ff0000"/>
+    </Materials>
+    <ELayers LengthUnit="um">
+      <Dielectrics>
+        <Dielectric Name="AIR" Material="AIR" Thickness="300.0000" />
+        <Dielectric Name="Passive" Material="Passive" Thickness="0.4000" />
+        <Dielectric Name="SiO2" Material="SiO2" Thickness="12.3103" />
+        <Dielectric Name="Substrate" Material="Substrate" Thickness="300.0000" />
+      </Dielectrics>
+      <Layers>
+        <Substrate Offset="300.0"/>
+        <Layer Name="Metal4" Type="conductor" Zmin="0.6400" Zmax="1.1300" Material="Metal4" Layer="50" />
+        <Layer Name="Metal5" Type="conductor" Zmin="1.6700" Zmax="2.1600" Material="Metal5" Layer="67" />
+        <Layer Name="TopMetal1" Type="conductor" Zmin="3.0103" Zmax="5.0103" Material="TopMetal1" Layer="126" />
+        <Layer Name="TopMetal2" Type="conductor" Zmin="7.8103" Zmax="10.8103" Material="TopMetal2" Layer="134" />
+        <Layer Name="TopVia2" Type="via" Zmin="5.0103" Zmax="7.8103" Material="TopVia2" Layer="133" />
+        <Layer Name="TopVia1" Type="via" Zmin="2.1600" Zmax="3.0103" Material="TopVia1" Layer="125" />
+        <Layer Name="Via4" Type="via" Zmin="1.1300" Zmax="1.6700" Material="Via4" Layer="66" />
+        <Layer Name="MIM_DK" Type="conductor" Zmin="2.1600" Zmax="2.2600" Material="MIM_equiv" Layer="36" />
+        <Layer Name="MIM" Type="conductor" Zmin="2.2600" Zmax="3.0103" Material="TopVia1" Layer="36" />
+      </Layers>
+    </ELayers>
+  </Stackup>
