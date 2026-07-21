@@ -24,7 +24,15 @@ if BEOL
   logger.info('Starting 5.20. Via4 table')
 
   # Via4 derivations
+  # Seal-excluded layers, shared by all four Via4 enclosure rules (V4.c/V4.c1 use
+  # metal4_nseal; V4.c2/M5.c1 use metal5_nseal). The reference maximal deck excludes
+  # EdgeSeal from every via/metal enclosure check (M4.c1/M5.c/M5.c1 all run on the
+  # *_outside_EdgeSeal derivations); the seal ring carries its own dedicated Seal.*
+  # rules. Hoisted here so the four rules stay consistent instead of half on raw
+  # layers and half on nseal.
   via4_nseal = via4_drw.not(edgeseal_drw)
+  metal4_nseal = metal4_drw.not(edgeseal_drw)
+  metal5_nseal = metal5_drw.not(edgeseal_drw)
 
   # Rule V4.a: Min. and max. Via4 width is 0.19um
   logger.info('Executing rule V4.a')
@@ -93,9 +101,11 @@ if BEOL
 
   unless PRECHECK_DRC
     # Rule V4.c: Min. Metal4 enclosure of Via4 is 0.005um
+    # Runs on the seal-excluded layers for consistency with the V4.c1 endcap rule
+    # and the reference maximal deck (which checks enclosure outside the EdgeSeal).
     logger.info('Executing rule V4.c')
     vn_c_value = fetch_rule(drc_rules, 'Vn_c')
-    v4_c_l = via4_drw.enclosed(metal4_drw, vn_c_value.um, euclidian)
+    v4_c_l = via4_nseal.enclosed(metal4_nseal, vn_c_value.um, euclidian)
     v4_c_l.output('V4.c', "5.20. V4.c : Min. Metal4 enclosure of Via4 is #{vn_c_value} um")
     v4_c_l.forget
 
@@ -105,7 +115,6 @@ if BEOL
     # (not the verbatim universal-DRC form) for consistency with V4.c/V4.c2 and flat/deep robustness.
     logger.info('Executing rule V4.c1')
     vn_c1_value = fetch_rule(drc_rules, 'Vn_c1')
-    metal4_nseal = metal4_drw.not(edgeseal_drw)
     # (a) insufficient endcap enclosure; a deficiency on one side or two opposite sides is allowed
     #     (the endcap side-relaxation policy carried verbatim from the reference deck).
     v4_c1_enc = via4_nseal.enclosed(metal4_nseal, vn_c1_value.um,
@@ -118,11 +127,11 @@ if BEOL
     v4_c1_miss.output('V4.c1', "5.20. V4.c1 : Min. Metal4 endcap enclosure of Via4 is #{vn_c1_value} um")
     v4_c1_enc.forget
     v4_c1_miss.forget
-    metal4_nseal.forget
 
     # Rule V4.c2: Min. Metal5 enclosure of Via4 is 0.005um
+    # Seal-excluded, matching the reference maximal M5.c rule and the M5.c1 endcap below.
     logger.info('Executing rule V4.c2')
-    v4_c2_l = via4_drw.enclosed(metal5_drw, vn_c_value.um, euclidian)
+    v4_c2_l = via4_nseal.enclosed(metal5_nseal, vn_c_value.um, euclidian)
     v4_c2_l.output('V4.c2', "5.20. V4.c2 : Min. Metal5 enclosure of Via4 is #{vn_c_value} um")
     v4_c2_l.forget
 
@@ -131,7 +140,6 @@ if BEOL
     # metric + one/two-opposite-side relaxation) plus the no-Metal5-landing catch. Reuses vn_c1_value
     # from V4.c1 (same linear scope, matching the deck's reuse of vn_a_value/vn_b_value).
     logger.info('Executing rule M5.c1')
-    metal5_nseal = metal5_drw.not(edgeseal_drw)
     m5_c1_enc = via4_nseal.enclosed(metal5_nseal, vn_c1_value.um,
                                     projection, whole_edges,
                                     one_side_allowed, two_opposite_sides_allowed)
@@ -140,6 +148,5 @@ if BEOL
     m5_c1_miss.output('M5.c1', "5.20. M5.c1 : Min. Metal5 endcap enclosure of Via4 is #{vn_c1_value} um")
     m5_c1_enc.forget
     m5_c1_miss.forget
-    metal5_nseal.forget
   end
 end
