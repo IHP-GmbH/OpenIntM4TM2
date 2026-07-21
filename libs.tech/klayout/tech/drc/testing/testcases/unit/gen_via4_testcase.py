@@ -9,6 +9,12 @@ The layout has two top cells, each checked as a whole by run_regression.py:
   - via4_viol : one violating structure per rule  -> expects {V4.b1, V4.c1, M5.c1}
   - via4_clean: the corresponding legal structures -> expects {} (also guards V4.a/b/c/c2)
 
+via4_clean also carries a via with a grossly deficient enclosure placed *inside* an
+EdgeSeal box. All four enclosure rules (V4.c/V4.c1/V4.c2/M5.c1) run on the
+seal-excluded derivations, so that via is dropped and the cell stays clean; if any
+rule is reverted to the raw layers this structure re-fires V4.c/V4.c2 and the
+regression fails, guarding the seal-exclusion alignment.
+
 Structures are spaced several um apart so they never interact (no spurious V4.b).
 All via cuts are 0.19x0.19 um (= Vn_a) so V4.a never fires.
 
@@ -23,6 +29,7 @@ import klayout.db as db
 L_VIA4 = (66, 0)
 L_METAL4 = (50, 0)
 L_METAL5 = (67, 0)
+L_EDGESEAL = (39, 0)
 L_TEXT = (63, 0)
 
 VIA = 0.19       # Vn_a : via cut size (um)
@@ -62,6 +69,7 @@ def build():
     v4 = layout.layer(*L_VIA4)
     m4 = layout.layer(*L_METAL4)
     m5 = layout.layer(*L_METAL5)
+    es = layout.layer(*L_EDGESEAL)
     tx = layout.layer(*L_TEXT)
 
     # ---- violating structures -------------------------------------------- #
@@ -116,6 +124,17 @@ def build():
     _cover(clean, m4, ox, 0.0, ox + VIA, VIA)
     _cover(clean, m5, ox, 0.0, ox + VIA, VIA)
     _text(clean, tx, ox, VIA + 0.3, "V4.c/V4.c2 PASS")
+
+    # Seal-exclusion PASS: via enclosed by Metal4/Metal5 by only 0.002 (< Vn_c = 0.005,
+    # so it would fail V4.c/V4.c2 on the raw layers), placed fully inside an EdgeSeal
+    # box. All four enclosure rules run on the seal-excluded derivations, so the via is
+    # dropped and this stays clean; on raw layers it would re-fire V4.c/V4.c2.
+    ox = 4 * STRIDE
+    _via_ll(clean, v4, ox, 0.0)
+    for m in (m4, m5):
+        _box(clean, m, ox - 0.002, -0.002, ox + VIA + 0.002, VIA + 0.002)
+    _box(clean, es, ox - 0.5, -0.5, ox + VIA + 0.5, VIA + 0.5)
+    _text(clean, tx, ox, VIA + 0.3, "V4.c/c2 seal-excluded PASS")
 
     return layout
 
