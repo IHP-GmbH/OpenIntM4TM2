@@ -49,5 +49,9 @@ ENV/
 # DRC unit-test layouts are tracked despite the global *.gds ignore
 !libs.tech/klayout/tech/drc/testing/testcases/**/*.gds
 
-# DRC regression run artifacts
+# LVS unit-test layouts are tracked despite the global *.gds ignore
+!libs.tech/klayout/tech/lvs/testing/testcases/**/*.gds
+
+# DRC / LVS regression run artifacts
 libs.tech/klayout/tech/drc/testing/regression_run/
+libs.tech/klayout/tech/lvs/testing/regression_run/
