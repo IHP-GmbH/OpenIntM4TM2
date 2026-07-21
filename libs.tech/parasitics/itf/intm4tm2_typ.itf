@@ -1,0 +1,46 @@
+$
+$ Copyright 2025 IHP PDK Authors
+$
+$ Licensed under the Apache License, Version 2.0 (the "License");
+$ you may not use this file except in compliance with the License.
+$ You may obtain a copy of the License at
+$
+$    https://www.apache.org/licenses/LICENSE-2.0
+$
+$ Unless required by applicable law or agreed to in writing, software
+$ distributed under the License is distributed on an "AS IS" BASIS,
+$ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+$ See the License for the specific language governing permissions and
+$ limitations under the License.
+$
+$ IntM4TM2 interposer interconnect technology (typical corner).
+$ Derived from the public SG13G2 ITF (ihp-sg13g2/libs.tech/parasitics/itf/
+$ sg13g2_typ.itf). The IntM4TM2 interposer is a reduced back-end: Metal4 is the
+$ lowest routing metal, sitting on the carrier base oxide (dummyOx). The Metal4,
+$ Metal5, TopMetal1, TopMetal2 conductor/dielectric/via values are taken verbatim
+$ from the SG13G2 ITF; the Metal1..Metal3, GatPoly and Activ layers are removed,
+$ and the dielectric below Metal4 is the carrier base oxide. Below dummyOx is the
+$ Si carrier, which serves as the extraction ground reference.
+$
+$ Deviation from source: the upstream SG13G2 ITF lists oxTopMetal2 twice above
+$ TopMetal2; this file keeps a single 1.5 um passivation oxide.
+$
+
+TECHNOLOGY = intm4tm2
+
+
+DIELECTRIC air              {THICKNESS=5.0    ER=1.0  }
+DIELECTRIC nitTop           {THICKNESS=0.4    ER=6.6  }
+DIELECTRIC oxTopMetal2      {THICKNESS=1.5    ER=4.1  }
+CONDUCTOR TopMetal2         {THICKNESS=3.0    WMIN=2.0 SMIN=2.0 RPSQ=0.011 }
+DIELECTRIC oxTopMetal1      {THICKNESS=4.8    ER=4.1 }
+CONDUCTOR TopMetal1         {THICKNESS=2.0    WMIN=1.5 SMIN=1.5 RPSQ=0.018 }
+DIELECTRIC ox5              {THICKNESS=1.34   ER=4.1 }
+CONDUCTOR Metal5            {THICKNESS=0.490  WMIN=0.2 SMIN=0.21 RPSQ=0.088 }
+DIELECTRIC ox4              {THICKNESS=1.03   ER=4.1 }
+CONDUCTOR Metal4            {THICKNESS=0.490  WMIN=0.2 SMIN=0.21 RPSQ=0.088 }
+DIELECTRIC dummyOx          {THICKNESS=0.64   ER=4.1 }
+
+VIA TopVia2                 { FROM=TopMetal1 TO=TopMetal2  AREA=0.81   RPV=1.1 }
+VIA TopVia1                 { FROM=Metal5    TO=TopMetal1  AREA=0.1764 RPV=2.2 }
+VIA Via4                    { FROM=Metal4    TO=Metal5     AREA=0.0361 RPV=9 }
