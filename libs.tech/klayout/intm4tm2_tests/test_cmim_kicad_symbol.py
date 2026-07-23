@@ -291,6 +291,47 @@ def test_base_capacitance_display_matches_model(base):
 
 
 # ---------------------------------------------------------------------------
+# PRESENTATION: polarity clarity + no clutter (the symbol-picker fixes).
+# ---------------------------------------------------------------------------
+def test_base_pin_names_hidden(base):
+    """Pin NAME text must be hidden: the vertical PLUS/MINUS labels overlapped
+    the body and were unreadable. Polarity is shown by +/- graphics instead."""
+    pn = child(base, "pin_names")
+    assert pn is not None, "base symbol lost its (pin_names ...) block"
+    hide = child(pn, "hide")
+    assert hide is not None and hide[1] == "yes", (
+        "pin_names must be hidden (hide yes) so the PLUS/MINUS text stops "
+        "overlapping the symbol body")
+
+
+def test_base_has_plus_and_minus_markers(base):
+    """The base graphic must carry a '+' above the plates (PLUS/top) and a
+    '-' below them (MINUS/bottom) so the polarity is unambiguous. The plate
+    strokes sit at y = +/-0.762, so real markers are the strokes with |y|>1."""
+    ys = []
+    for poly in find_all(base, "polyline"):
+        pts = child(poly, "pts")
+        if not pts:
+            continue
+        for xy in find_all(pts, "xy"):
+            ys.append(float(xy[2]))
+    assert any(y > 1.0 for y in ys), "no PLUS ('+') marker above the plates"
+    assert any(y < -1.0 for y in ys), "no MINUS ('-') marker below the plates"
+
+
+def test_all_noise_fields_hidden(lib):
+    """w/l/m/Capacitance are sim/detail fields; they must not render on the
+    symbol face (they showed as raw '57.68e-6' / '1' clutter before)."""
+    for sym in top_level_symbols(lib):
+        for prop in find_all(sym, "property"):
+            if len(prop) >= 2 and prop[1] in ("w", "l", "m", "Capacitance"):
+                eff = child(prop, "effects")
+                hide = child(eff, "hide") if eff else None
+                assert hide is not None and hide[1] == "yes", (
+                    f"{sym[1]}: property {prop[1]} must be hidden (hide yes)")
+
+
+# ---------------------------------------------------------------------------
 # DERIVED symbols (one value-keyed symbol per round capacitance)
 # ---------------------------------------------------------------------------
 def test_family_derived_symbols_present(lib):
