@@ -468,14 +468,49 @@ def build_footprint(w_um, l_um, tech, m=1, name=None, nominal=None):
 
     fp_rect("F.CrtYd", "crtyd")
     fp_rect("F.Fab", "fab")
+    fp_rect("F.SilkS", "silk")
 
-    # --- fab reference text: the footprint name ---
-    lines.append('\t(fp_text user "{}"'.format(name))
-    lines.append('\t\t(at 0 0 0)')
-    lines.append('\t\t(layer "F.Fab")')
-    lines.append('\t\t(uuid "{}")'.format(_uid(name, "fabtext")))
-    lines.append('\t\t{}'.format(effects()))
+    # --- polarity / layer guide -------------------------------------------
+    # The two plates are concentric parallel plates on adjacent metals, so the
+    # copper cannot be split; instead the device square is annotated as a top
+    # PLUS zone and a bottom MINUS zone (a visual aid -- the real copper stays
+    # the two full concentric plate pads above). +y is downward in KiCad, so
+    # PLUS (TopMetal1, pin 1) sits at the top (negative y) and MINUS (Metal5,
+    # pin 2) at the bottom, matching the schematic symbol. Each zone names its
+    # polarity and metal so the upper/lower layer is readable on the footprint.
+    def effects_f(f):
+        th = round(max(f * 0.15, 1e-5), 6)
+        return ("(effects\n\t\t\t(font\n\t\t\t\t(size {s} {s})\n"
+                "\t\t\t\t(thickness {t})\n\t\t\t)\n\t\t)").format(s=f, t=th)
+
+    def guide_text(text, layer, y_mm, tag, f):
+        lines.append('\t(fp_text user "{}"'.format(text))
+        lines.append('\t\t(at 0 {} 0)'.format("{:.6f}".format(y_mm)))
+        lines.append('\t\t(layer "{}")'.format(layer))
+        lines.append('\t\t(uuid "{}")'.format(_uid(name, tag)))
+        lines.append('\t\t{}'.format(effects_f(f)))
+        lines.append('\t)')
+
+    legend_font = round(max(font * 0.55, 8e-5), 6)
+    zone_y = _mm(half_y) * 0.5
+
+    # silk divider splitting the PLUS (top) zone from the MINUS (bottom) zone
+    lines.append('\t(fp_line')
+    lines.append('\t\t(start {} 0)'.format("{:.6f}".format(-_mm(half_x))))
+    lines.append('\t\t(end {} 0)'.format("{:.6f}".format(_mm(half_x))))
+    lines.append('\t\t(stroke')
+    lines.append('\t\t\t(width {})'.format(line_w))
+    lines.append('\t\t\t(type solid)')
+    lines.append('\t\t)')
+    lines.append('\t\t(layer "F.SilkS")')
+    lines.append('\t\t(uuid "{}")'.format(_uid(name, "divider")))
     lines.append('\t)')
+
+    # visible zone labels (silk): polarity + upper/lower metal name
+    guide_text("+ TopMetal1", "F.SilkS", -zone_y, "plus_zone", legend_font)
+    guide_text("- Metal5", "F.SilkS", zone_y, "minus_zone", legend_font)
+    # fab legend: the KiCad copper-layer mapping of each polarity
+    guide_text("PLUS=In1.Cu  MINUS=In2.Cu", "F.Fab", 0.0, "legend", legend_font)
 
     lines.append('\t(embedded_fonts no)')
     lines.append(')')

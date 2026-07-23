@@ -272,6 +272,36 @@ def test_footprint_structure(mod_path):
     assert courtyards, f"{mod_path.name} has no F.CrtYd courtyard"
 
 
+def _fp_texts(footprint):
+    """Return [(text, layer), ...] for every (fp_text user "..." ...) element."""
+    out = []
+    for t in find_all(footprint, "fp_text"):
+        text = t[2] if len(t) > 2 and isinstance(t[2], str) else None
+        layer_node = child(t, "layer")
+        out.append((text, layer_node[1] if layer_node else None))
+    return out
+
+
+@pytest.mark.parametrize("mod_path", _mod_files(), ids=lambda p: p.stem)
+def test_footprint_polarity_layer_guide(mod_path):
+    """Every footprint must carry the connection guide: a readable +/- polarity
+    and upper/lower metal label on silk, plus a fab legend mapping each
+    polarity to its KiCad copper layer. The real copper stays the two
+    concentric plate pads (checked by test_footprint_structure); this only
+    pins the annotation so the usability guide cannot silently regress."""
+    footprint = parse_sexp(mod_path.read_text())
+    texts = _fp_texts(footprint)
+    silk = {t for t, layer in texts if layer == "F.SilkS"}
+    fab = " ".join(t for t, layer in texts if layer == "F.Fab" and t)
+    assert "+ TopMetal1" in silk, (
+        f"{mod_path.name} missing the '+ TopMetal1' silk label, got {silk}")
+    assert "- Metal5" in silk, (
+        f"{mod_path.name} missing the '- Metal5' silk label, got {silk}")
+    assert "In1.Cu" in fab and "In2.Cu" in fab, (
+        f"{mod_path.name} fab legend must map PLUS/MINUS to In1.Cu/In2.Cu, "
+        f"got {fab!r}")
+
+
 # ---------------------------------------------------------------------------
 # GEOMETRY PARITY: footprint pad sizes vs. real PCell plate bounding boxes.
 # ---------------------------------------------------------------------------
