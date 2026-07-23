@@ -146,14 +146,57 @@
 		(layer "F.Fab")
 		(uuid "8f96281b-21ff-5c99-bf22-0865ed491f77")
 	)
-	(fp_text user "CMIM_5pF"
-		(at 0 0 0)
-		(layer "F.Fab")
-		(uuid "631e077d-9c4e-5cfb-b660-9b3f33a1d93d")
+	(fp_rect
+		(start -0.029440 -0.029440)
+		(end 0.029440 0.029440)
+		(stroke
+			(width 0.001178)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "9bf04be9-5152-52dc-9e67-24b8da4c4c33")
+	)
+	(fp_line
+		(start -0.029440 0)
+		(end 0.029440 0)
+		(stroke
+			(width 0.001178)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "0195f4fa-6c2f-5ab5-a07f-a810a7917529")
+	)
+	(fp_text user "+ TopMetal1"
+		(at 0 -0.014720 0)
+		(layer "F.SilkS")
+		(uuid "4d19e429-abd7-524c-8d9f-af8645ca29ae")
 		(effects
 			(font
-				(size 0.011776 0.011776)
-				(thickness 0.001766)
+				(size 0.006477 0.006477)
+				(thickness 0.000972)
+			)
+		)
+	)
+	(fp_text user "- Metal5"
+		(at 0 0.014720 0)
+		(layer "F.SilkS")
+		(uuid "d1b4745f-8674-5fe1-b6ab-0fab3a272d5b")
+		(effects
+			(font
+				(size 0.006477 0.006477)
+				(thickness 0.000972)
+			)
+		)
+	)
+	(fp_text user "PLUS=In1.Cu  MINUS=In2.Cu"
+		(at 0 0.000000 0)
+		(layer "F.Fab")
+		(uuid "18b79f1a-0256-594b-862a-82d28ae9ea8e")
+		(effects
+			(font
+				(size 0.006477 0.006477)
+				(thickness 0.000972)
 			)
 		)
 	)
