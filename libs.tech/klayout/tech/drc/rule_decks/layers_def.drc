@@ -19,6 +19,38 @@
 # Boundary layer
 prboundary = polygons(235, 0)
 
+# Minimal lower-layer context retained for approved interposer extensions
+activ = polygons(1, 0)
+activ_pin = polygons(1, 2)
+activ_filler = polygons(1, 22)
+
+biwind_drw = polygons(3, 0)
+pemwind_drw = polygons(11, 0)
+
+gatpoly = polygons(5, 0)
+gatpoly_pin = polygons(5, 2)
+gatpoly_filler = polygons(5, 22)
+
+cont = polygons(6, 0)
+
+metal1 = polygons(8, 0)
+metal1_pin = polygons(8, 2)
+
+baspoly_drw = polygons(13, 0)
+psd_drw = polygons(14, 0)
+
+deepco_drw = polygons(35, 0)
+
+pwell_drw = polygons(46, 0)
+pwell_block = polygons(46, 21)
+
+pempoly_drw = polygons(53, 0)
+empoly_drw = polygons(55, 0)
+ldmos_drw = polygons(57, 0)
+pbiwind_drw = polygons(58, 0)
+nodrc_drw = polygons(62, 0)
+flash_drw = polygons(71, 0)
+
 # MIM capacitor layers
 mim = polygons(36, 0)
 vmim = polygons(129, 0)
@@ -122,6 +154,10 @@ sbumppad = passiv_sbump.and(dfpad_sbump)
 # LBE layer (Localized Backside Etch)
 lbe = polygons(157, 0)
 
+# TSV / DeepVia
+deepvia = polygons(152, 0)
+recog_tsv = polygons(99, 32)
+
 # IND layers (Inductor marker - visual only)
 ind = polygons(27, 0)
 ind_pin = polygons(27, 2)
@@ -131,6 +167,8 @@ ind_text = labels(27, 25)
 recog = polygons(99, 0)
 recog_pillar = polygons(99, 35)
 recog_sbump = polygons(99, 36)
+
+colwind_drw = polygons(139, 0)
 
 # Note: the post-passivation 3D interconnect bodies (cu-pillar body 500/35,
 # SnAg cap 501/35, solder ball 502/36) are owned by the interconnect PDK
@@ -143,6 +181,10 @@ recog_sbump = polygons(99, 36)
 #==================================
 # Aliases with _drw suffix for compatibility with rule decks
 
+activ_drw = activ
+gatpoly_drw = gatpoly
+cont_drw = cont
+metal1_drw = metal1
 mim_drw = mim
 vmim_drw = vmim
 metal4_drw = metal4
@@ -156,6 +198,7 @@ dfpad_drw = dfpad
 passiv_drw = passiv
 edgeseal_drw = edgeseal
 lbe_drw = lbe
+deepvia_drw = deepvia
 ind_drw = ind
 prboundary_drw = prboundary
 nometfiller_drw = nometfiller

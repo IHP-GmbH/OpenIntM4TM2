@@ -1,0 +1,45 @@
+{
+  "description": "Focused interposer smoke suite including approved extension coverage.",
+  "cases": [
+    {
+      "name": "angle_clean",
+      "layout": "testing/testcases/unit/angle.gds",
+      "topcell": "angle_clean",
+      "decks": ["angle"],
+      "expect_exit": 0
+    },
+    {
+      "name": "via4_violation",
+      "layout": "testing/testcases/unit/via4.gds",
+      "topcell": "via4_viol",
+      "decks": ["via4"],
+      "expect_exit": 1
+    },
+    {
+      "name": "lbe_violation",
+      "layout": "testing/testcases/unit/lbe.gds",
+      "topcell": "lbe_viol",
+      "decks": ["lbe"],
+      "expect_exit": 1
+    },
+    {
+      "name": "pin_violation",
+      "layout": "testing/testcases/unit/pin.gds",
+      "decks": ["pin"],
+      "expect_exit": 1
+    },
+    {
+      "name": "forbidden_violation",
+      "layout": "testing/testcases/unit/forbidden.gds",
+      "decks": ["forbidden"],
+      "expect_exit": 1
+    },
+    {
+      "name": "tsv_g_violation",
+      "layout": "testing/testcases/interposer/tsv.gds",
+      "topcell": "tsv_g",
+      "decks": ["tsv_g"],
+      "expect_exit": 1
+    }
+  ]
+}
