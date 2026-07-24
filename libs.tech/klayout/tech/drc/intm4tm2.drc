@@ -126,6 +126,7 @@ end
 all_decks = {
   'offgrid'         => '3_1_offgrid.drc',
   'angle'           => '3_2_angle.drc',
+  'forbidden'       => '3_2_forbidden.drc',
   'metaln'          => '5_17_metaln.drc',
   'metalnfiller'    => '5_18_metalnfiller.drc',
   'via4'            => '5_20_via4.drc',
@@ -142,7 +143,9 @@ all_decks = {
   'sealring'        => '6_10_sealring.drc',
   'mim'             => '6_11_mim.drc',
   'metalslits'      => '7_3_metalslits.drc',
+  'pin'             => '7_4_pin.drc',
   'lbe'             => '9_1_lbe.drc',
+  'tsv_g'           => '10_1_tsv_g.drc',
   'density'         => 'density.drc',
 }
 
