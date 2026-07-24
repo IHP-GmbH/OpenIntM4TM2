@@ -1,8 +1,9 @@
 {
-    "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95. LBE_b2, Slt_h4 and Padb_e have no upstream JSON key; see the corresponding rule decks for their derivation notes. TM1Fil_b/TM2Fil_b (TopMetal filler-to-filler space) added so the TopMetal fill generator has a checked minimum. PadU_w/PadU_s apply the method-independent 5.27 passivation-opening litho floor (Pas.a/Pas.b) to the 9/35 and 9/36 pad-opening datatypes that the 5.27 rule (9/0 only) does not reach, with stable rule ids so the value can be swapped without renaming.",
-    "version": "1.6",
+    "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95. LBE_b2, Slt_h4 and Padb_e have no upstream JSON key; see the corresponding rule decks for their derivation notes. TM1Fil_b/TM2Fil_b (TopMetal filler-to-filler space) added so the TopMetal fill generator has a checked minimum. PadU_w/PadU_s apply the method-independent 5.27 passivation-opening litho floor (Pas.a/Pas.b) to the 9/35 and 9/36 pad-opening datatypes that the 5.27 rule (9/0 only) does not reach, with stable rule ids so the value can be swapped without renaming. Interposer extensions: pin (7.4) and forbidden ported from the public SG13G2 open deck. TSV_G keys are present but the tsv_g deck is skipped on the default run pending full interposer support of the TSV module.",
+    "version": "1.7",
     "based_on": "IHP SG13G2 Layout Rules Rev 2.1 (2024-12-19)",
     "rules": {
+        "grid": 0.005,
         "Pad_aR": 30.00,
         "Pad_a1": 150.00,
         "Pad_bR": 8.40,
@@ -33,6 +34,9 @@
         "LBE_c": 100.00,
         "LBE_d": 150.00,
         "LBE_e": 50.00,
+        "LBE_f": 30.00,
+        "LBE_g": 10.00,
+        "LBE_h": "No value",
         "LBE_i": 0.20,
         "Vn_a": 0.19,
         "Vn_b": 0.22,
@@ -101,6 +105,14 @@
         "Mim_e": 0.6,
         "Mim_f": 1.3,
         "Mim_g": 5625.0,
-        "Mim_gR": 174800.00
+        "Mim_gR": 174800.00,
+        "TSV_G_b": 3.0,
+        "TSV_G_c": 25.0,
+        "TSV_G_d": 25.0,
+        "TSV_G_e": 5.0,
+        "TSV_G_f": 2.5,
+        "TSV_G_g": 1.5,
+        "TSV_G_i": 0.01,
+        "TSV_G_j": 0.10
     }
 }

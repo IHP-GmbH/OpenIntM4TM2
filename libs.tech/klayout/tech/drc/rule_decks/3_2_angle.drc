@@ -113,6 +113,9 @@ if BEOL
 
     # Localized backside etch
     'lbe_drw' => lbe_drw,
+
+    # DeepVia extension
+    'deepvia_drw' => deepvia_drw,
   }
 
   # Layers constrained to orthogonal (0/90) edges only.

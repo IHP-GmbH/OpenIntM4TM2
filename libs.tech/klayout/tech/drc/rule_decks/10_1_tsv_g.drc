@@ -1,0 +1,108 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+if BEOL
+  #================================================
+  #----------- 10.1. Through-Silicon Via ----------
+  #================================================
+
+  logger.info('Starting 10.1 TSV_G table')
+
+  deepvia_ring = deepvia_drw.interacting(deepvia_drw.holes)
+  deepvia_holes = deepvia_ring.holes
+
+  logger.info('Executing rule TSV_G.a')
+  tsvg_a_l = deepvia_drw.not(deepvia_ring)
+  tsvg_a_l.output('TSV_G.a', '10.1. TSV_G.a: DeepVia has to be a ring structure')
+  tsvg_a_l.forget
+
+  logger.info('Executing rule TSV_G.b')
+  tsvg_b_value = fetch_rule(drc_rules, 'TSV_G_b')
+  tsvg_inner_diameter = fetch_rule(drc_rules, 'TSV_G_c') - 2.0 * tsvg_b_value
+  tsvg_b_l1 = deepvia_holes.without_bbox_min(tsvg_inner_diameter.um)
+  tsvg_b_l2 = deepvia_holes.without_bbox_max(tsvg_inner_diameter.um)
+  tsvg_b_l = tsvg_b_l1.join(tsvg_b_l2)
+  tsvg_b_l.output('TSV_G.b', "10.1. TSV_G.b: Min. and max. DeepVia width is #{tsvg_b_value} um")
+  tsvg_b_l1.forget
+  tsvg_b_l2.forget
+  tsvg_b_l.forget
+
+  logger.info('Executing rule TSV_G.c')
+  tsvg_c_value = fetch_rule(drc_rules, 'TSV_G_c')
+  tsvg_c_l1 = deepvia_ring.without_bbox_min(tsvg_c_value.um)
+  tsvg_c_l2 = deepvia_ring.without_bbox_max(tsvg_c_value.um)
+  tsvg_c_l = tsvg_c_l1.join(tsvg_c_l2)
+  tsvg_c_l.output('TSV_G.c', "10.1. TSV_G.c: DeepVia ring diameter is #{tsvg_c_value} um")
+  tsvg_c_l1.forget
+  tsvg_c_l2.forget
+  tsvg_c_l.forget
+
+  logger.info('Executing rule TSV_G.d')
+  tsvg_d_value = fetch_rule(drc_rules, 'TSV_G_d')
+  tsvg_d_l = deepvia_ring.space(tsvg_d_value.um, euclidian)
+  tsvg_d_l.output('TSV_G.d', "10.1. TSV_G.d: Min. DeepVia space is #{tsvg_d_value} um")
+  tsvg_d_l.forget
+
+  logger.info('Executing rule TSV_G.e')
+  tsvg_e_value = fetch_rule(drc_rules, 'TSV_G_e')
+  tsvg_e_targets = activ_drw.join(activ_filler).join(gatpoly_drw).join(gatpoly_filler).join(cont_drw)
+  tsvg_e_l = deepvia_ring.sep(tsvg_e_targets, tsvg_e_value.um, euclidian)
+  tsvg_e_l.output('TSV_G.e',
+                  "10.1. TSV_G.e: Min. DeepVia space to Activ, Activ:filler, GatPoly, GatPoly:filler and Cont is #{tsvg_e_value} um")
+  tsvg_e_targets.forget
+  tsvg_e_l.forget
+
+  logger.info('Executing rule TSV_G.f')
+  tsvg_f_value = fetch_rule(drc_rules, 'TSV_G_f')
+  tsvg_f_l = deepvia_ring.enclosed(pwell_block, tsvg_f_value.um, euclidian)
+  tsvg_f_l.output('TSV_G.f', "10.1. TSV_G.f: Min. PWell:block enclosure of DeepVia is #{tsvg_f_value} um")
+  tsvg_f_l.forget
+
+  logger.info('Executing rule TSV_G.g')
+  tsvg_g_value = fetch_rule(drc_rules, 'TSV_G_g')
+  tsvg_g_l = deepvia_ring.enclosed(metal1_drw, tsvg_g_value.um, euclidian)
+  tsvg_g_l.output('TSV_G.g', "10.1. TSV_G.g: Min. Metal1 enclosure of DeepVia ring structure is #{tsvg_g_value} um")
+  tsvg_g_l.forget
+
+  logger.info('Executing rule TSV_G.i')
+  tsvg_i_value = fetch_rule(drc_rules, 'TSV_G_i')
+  deepvia_area = deepvia_drw.area
+  deepvia_ratio = CHIP.area.zero? ? 0.0 : deepvia_area / CHIP.area
+  CHIP.output('TSV_G.i', "10.1. TSV_G.i: Max. global DeepVia density [%] is #{tsvg_i_value * 100}") if deepvia_ratio > tsvg_i_value
+
+  logger.info('Executing rule TSV_G.j')
+  tsvg_j_value = fetch_rule(drc_rules, 'TSV_G_j')
+  tsvg_j_window = 500.0
+  tsvg_size = tsvg_j_window.um
+  tsvg_step = 0.5 * tsvg_size
+    tsvg_bbox = CHIP.bbox
+    tsvg_org_x = tsvg_bbox.left + tsvg_step / 2
+    tsvg_org_y = tsvg_bbox.bottom + tsvg_step / 2
+    tsvg_j_l = deepvia_drw.with_density(tsvg_j_value..1.0,
+                                      tile_size(tsvg_size),
+                                      tile_step(tsvg_step),
+                                      tile_boundary(CHIP),
+                                      tile_origin(tsvg_org_x, tsvg_org_y))
+    tsvg_j_l.output('TSV_G.j',
+                  "10.1. TSV_G.j: Max. DeepVia coverage ratio for any #{tsvg_j_window} x #{tsvg_j_window} um2 chip area [%] is #{tsvg_j_value * 100}")
+    tsvg_bbox = nil
+    tsvg_j_l.forget
+
+  deepvia_ring.forget
+  deepvia_holes.forget
+end
