@@ -1,0 +1,222 @@
+name: tests
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # One KLayout for the whole ecosystem. The source of truth is
+  # `ARG KLAYOUT_PIP` in the adk-tools Dockerfile, which is also the version
+  # Chiplet Studio's in-tree extern/klayout is pinned at. A deck checked against
+  # a different KLayout has been proven to work somewhere other than where it
+  # ships.
+  KLAYOUT_VERSION: "0.30.5"
+  # Pinned by content, not just by name. A .deb that changes under a stable URL
+  # would otherwise change what these decks were checked against, silently.
+  KLAYOUT_DEB_SHA256: "9f88fe45d1992fc9bd0ce986bbbe150ad198c6a59a86fc13343db822a5790e49"
+
+jobs:
+  # Everything that needs no binary and no fixture. Seconds, so this is what the
+  # required check waits on.
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pytest
+
+      - name: Every rule deck parses as Ruby
+        # KLayout DRC and LVS decks are Ruby. A deck that does not parse fails
+        # at sign-off time, in a KLayout log, long after the commit that broke
+        # it. `ruby -c` costs nothing and moves that to the pull request.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ruby
+          status=0
+          count=0
+          while IFS= read -r deck; do
+            count=$((count + 1))
+            ruby -c "$deck" > /dev/null \
+              || { echo "::error file=$deck::deck does not parse as Ruby"; status=1; }
+          done < <(git ls-files '*.drc' '*.lvs')
+          echo "parsed $count decks"
+          test "$count" -gt 0
+          exit $status
+
+      - name: Layer and stackup consistency
+        # test_layer_parity diffs the .lyp against the canonical layer list;
+        # test_em_stackup validates the openEMS and Palace XML. Neither needs a
+        # KLayout binary, and both guard artifacts that are read by other repos.
+        run: pytest libs.tech/klayout/intm4tm2_tests/test_layer_parity.py
+                    libs.tech/klayout/intm4tm2_tests/test_em_stackup.py -q
+
+  # The rest of the pytest suite that runs without the KLayout CLI.
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Two hard dependencies, not optional siblings. bump_mirror.py raises
+      # rather than degrading when either is absent: for the interconnect PDK on
+      # purpose ("pads without their bodies would be an incomplete attachment
+      # that no downstream DRC can flag"), and for gds2kicad because the
+      # chiplet-mode CLI imports PinList to read a .pins.json. No test can
+      # self-skip its way around either, so this repository's suite has never
+      # been runnable on a bare clone of it and CI has to supply both.
+      #
+      # This is more sibling checkout than a per-repository job should carry,
+      # and the way to shrink it is to make the PinList import lazy so the
+      # chiplet-mode tests can skip. Until then, checking them out is honest and
+      # excluding the tests would not be.
+      #
+      # Tracking `dev` rather than a pin means a broken sibling dev turns this
+      # repository red. That is the real coupling: a pin here would only hide
+      # the break until someone bumped it.
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
+          ref: dev
+          path: .siblings/interconnect_pdk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/gds2kicad
+          ref: dev
+          path: .siblings/gds_to_kicad
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # PyYAML is an undeclared dependency of bump_mirror.py chiplet mode.
+        # Without it load_chiplet_positions falls back to a minimal parser
+        # that warns and returns an empty mapping, so a --chiplet run places
+        # no bumps at all. Install it rather than let CI exercise a path no
+        # real use of the tool should take.
+        run: pip install pytest PyYAML "klayout==${KLAYOUT_VERSION}"
+
+      # The KLayout-gated modules self-skip here and run in the `decks` job
+      # below, with a real CLI. -ra (from pytest.ini) prints which ones and why.
+      - name: Run tests
+        env:
+          INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
+          GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
+        run: pytest -q
+
+  # Deck semantics: the DRC and LVS regressions and the PCell smokes, which need
+  # a real `klayout` binary. Measured on a 32-core host: 63 s for the DRC
+  # regression, 5 s for LVS, 27 s for the pytest suite. A 2-core runner plus the
+  # 63 MB .deb should land this in the several-minute range, not seconds.
+  #
+  # It is deliberately NOT part of ci-gate. Not because of the runtime today,
+  # but because this is the job that grows: every new rule table adds a KLayout
+  # invocation, and a required check that creeps past a few minutes is one
+  # people learn to bypass. Read it, and let the adk-tools verify build be the
+  # gate that blocks a release.
+  decks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
+          ref: dev
+          path: .siblings/interconnect_pdk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/gds2kicad
+          ref: dev
+          path: .siblings/gds_to_kicad
+
+      # Deliberately no actions/setup-python here. It puts a hosted-toolcache
+      # interpreter first on PATH and exports LD_LIBRARY_PATH into its lib
+      # directory, and the PCell tests spawn `klayout -zz -rx -r script.py`,
+      # whose embedded interpreter then loads that libpython and cannot find a
+      # matching stdlib. The symptom is "ModuleNotFoundError: No module named
+      # 'math'" out of the vendored pycell4klayout API, which reads like a
+      # broken PDK and is not one. The Ruby decks are unaffected, which is why
+      # this never showed up in the ADK workflow. Use the system python3, which
+      # is what the .deb was built against.
+      - name: Install the KLayout CLI
+        # Hard failure, with no warn-and-continue branch. The pip wheel ships
+        # the Python module without the CLI, and every deck suite here is
+        # guarded on `shutil.which("klayout")`, so a missing binary does not
+        # fail this job: it empties it and reports green. That is the exact
+        # failure this job exists to prevent, so a download or checksum problem
+        # has to stop it.
+        run: |
+          set -euo pipefail
+          deb="klayout_${KLAYOUT_VERSION}-1_amd64.deb"
+          curl -fsSLO "https://www.klayout.org/downloads/Ubuntu-24/${deb}"
+          echo "${KLAYOUT_DEB_SHA256}  ${deb}" | sha256sum -c -
+          sudo apt-get update
+          sudo apt-get install -y "./${deb}"
+          # Assert the binary is the version we pinned, not whatever the URL
+          # happened to serve.
+          klayout -b -v
+          klayout -b -v 2>&1 | grep -qF "${KLAYOUT_VERSION}"
+
+      - name: Install dependencies
+        # A venv over the system interpreter, so pip works under PEP 668 without
+        # --break-system-packages and without shadowing the interpreter KLayout
+        # expects. --system-site-packages is not needed: nothing here imports a
+        # distro package.
+        # python3-tk: the vendored pycell4klayout API imports tkinter, so
+        # without it every PCell test errors at setup with a message about the
+        # PCell library being unregisterable, which reads like a broken PDK. The
+        # adk-tools runtime image installs it for the same reason.
+        run: |
+          sudo apt-get install -y --no-install-recommends python3-venv python3-tk ngspice
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet pytest PyYAML "klayout==${KLAYOUT_VERSION}"
+
+      - name: Full pytest suite
+        # -ra prints the reason for anything that skips, so a new one is visible
+        # rather than absorbed into the passed count. xschem has no Ubuntu
+        # package, so the symbol test is expected to stay skipped.
+        env:
+          INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
+          GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
+        run: .venv/bin/pytest -q
+
+      # The regression drivers import klayout.db, which lives in the venv, so
+      # they run on the venv interpreter. The KLayout processes they spawn are
+      # unaffected: a venv over the system python exports no LD_LIBRARY_PATH, so
+      # the embedded interpreter still finds its own stdlib.
+      - name: DRC rule-deck regression
+        working-directory: libs.tech/klayout/tech/drc/testing
+        run: ${{ github.workspace }}/.venv/bin/python3 run_regression.py
+
+      - name: LVS regression
+        working-directory: libs.tech/klayout/tech/lvs/testing
+        run: ${{ github.workspace }}/.venv/bin/python3 run_regression.py
+
+  # The one required status check. It depends only on the fast jobs, so the
+  # required wait stays about a minute. `decks` runs on the same triggers and is
+  # advisory: read it, but it does not block a merge.
+  ci-gate:
+    needs: [static, unit]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every gating job to have succeeded
+        run: |
+          echo "static: ${{ needs.static.result }}"
+          echo "unit:   ${{ needs.unit.result }}"
+          test "${{ needs.static.result }}" = "success"
+          test "${{ needs.unit.result }}" = "success"
