@@ -67,6 +67,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The interconnect PDK is a hard dependency, not an optional sibling.
+      # bump_mirror.py raises rather than degrading when it is absent, on
+      # purpose: "pads without their bodies would be an incomplete attachment
+      # that no downstream DRC can flag". So the suite cannot self-skip its way
+      # around a missing interconnect PDK, and CI has to supply one.
+      #
+      # Tracking `dev` rather than a pin means a broken interconnect dev turns
+      # this repository red. That is the honest coupling: the two PDKs ship as
+      # one attachment story, and a pin here would just hide the break until
+      # someone bumped it.
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
+          ref: dev
+          path: .siblings/interconnect_pdk
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -77,6 +93,8 @@ jobs:
       # The KLayout-gated modules self-skip here and run in the `decks` job
       # below, with a real CLI. -ra (from pytest.ini) prints which ones and why.
       - name: Run tests
+        env:
+          INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
         run: pytest -q
 
   # Deck semantics: the DRC and LVS regressions and the PCell smokes, which need
@@ -95,10 +113,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
+          repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
+          ref: dev
+          path: .siblings/interconnect_pdk
 
+      # Deliberately no actions/setup-python here. It puts a hosted-toolcache
+      # interpreter first on PATH and exports LD_LIBRARY_PATH into its lib
+      # directory, and the PCell tests spawn `klayout -zz -rx -r script.py`,
+      # whose embedded interpreter then loads that libpython and cannot find a
+      # matching stdlib. The symptom is "ModuleNotFoundError: No module named
+      # 'math'" out of the vendored pycell4klayout API, which reads like a
+      # broken PDK and is not one. The Ruby decks are unaffected, which is why
+      # this never showed up in the ADK workflow. Use the system python3, which
+      # is what the .deb was built against.
       - name: Install the KLayout CLI
         # Hard failure, with no warn-and-continue branch. The pip wheel ships
         # the Python module without the CLI, and every deck suite here is
@@ -119,15 +148,22 @@ jobs:
           klayout -b -v 2>&1 | grep -qF "${KLAYOUT_VERSION}"
 
       - name: Install dependencies
+        # A venv over the system interpreter, so pip works under PEP 668 without
+        # --break-system-packages and without shadowing the interpreter KLayout
+        # expects. --system-site-packages is not needed: nothing here imports a
+        # distro package.
         run: |
-          pip install pytest "klayout==${KLAYOUT_VERSION}"
-          sudo apt-get install -y --no-install-recommends ngspice
+          sudo apt-get install -y --no-install-recommends python3-venv ngspice
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet pytest "klayout==${KLAYOUT_VERSION}"
 
       - name: Full pytest suite
-        # Nothing should skip here except the xschem-gated symbol test: xschem
-        # has no Ubuntu package. -ra prints the reasons, so a new skip is
-        # visible rather than absorbed into the passed count.
-        run: pytest -q
+        # -ra prints the reason for anything that skips, so a new one is visible
+        # rather than absorbed into the passed count. xschem has no Ubuntu
+        # package, so the symbol test is expected to stay skipped.
+        env:
+          INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
+        run: .venv/bin/pytest -q
 
       - name: DRC rule-deck regression
         working-directory: libs.tech/klayout/tech/drc/testing
