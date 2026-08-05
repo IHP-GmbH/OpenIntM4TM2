@@ -67,21 +67,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The interconnect PDK is a hard dependency, not an optional sibling.
-      # bump_mirror.py raises rather than degrading when it is absent, on
-      # purpose: "pads without their bodies would be an incomplete attachment
-      # that no downstream DRC can flag". So the suite cannot self-skip its way
-      # around a missing interconnect PDK, and CI has to supply one.
+      # Two hard dependencies, not optional siblings. bump_mirror.py raises
+      # rather than degrading when either is absent: for the interconnect PDK on
+      # purpose ("pads without their bodies would be an incomplete attachment
+      # that no downstream DRC can flag"), and for gds2kicad because the
+      # chiplet-mode CLI imports PinList to read a .pins.json. No test can
+      # self-skip its way around either, so this repository's suite has never
+      # been runnable on a bare clone of it and CI has to supply both.
       #
-      # Tracking `dev` rather than a pin means a broken interconnect dev turns
-      # this repository red. That is the honest coupling: the two PDKs ship as
-      # one attachment story, and a pin here would just hide the break until
-      # someone bumped it.
+      # This is more sibling checkout than a per-repository job should carry,
+      # and the way to shrink it is to make the PinList import lazy so the
+      # chiplet-mode tests can skip. Until then, checking them out is honest and
+      # excluding the tests would not be.
+      #
+      # Tracking `dev` rather than a pin means a broken sibling dev turns this
+      # repository red. That is the real coupling: a pin here would only hide
+      # the break until someone bumped it.
       - uses: actions/checkout@v4
         with:
           repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
           ref: dev
           path: .siblings/interconnect_pdk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/gds2kicad
+          ref: dev
+          path: .siblings/gds_to_kicad
 
       - uses: actions/setup-python@v5
         with:
@@ -95,6 +107,7 @@ jobs:
       - name: Run tests
         env:
           INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
+          GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
         run: pytest -q
 
   # Deck semantics: the DRC and LVS regressions and the PCell smokes, which need
@@ -118,6 +131,12 @@ jobs:
           repository: IHP-GmbH/IHP-Interconnect-IntM4TM2
           ref: dev
           path: .siblings/interconnect_pdk
+
+      - uses: actions/checkout@v4
+        with:
+          repository: IHP-GmbH/gds2kicad
+          ref: dev
+          path: .siblings/gds_to_kicad
 
       # Deliberately no actions/setup-python here. It puts a hosted-toolcache
       # interpreter first on PATH and exports LD_LIBRARY_PATH into its lib
@@ -152,8 +171,12 @@ jobs:
         # --break-system-packages and without shadowing the interpreter KLayout
         # expects. --system-site-packages is not needed: nothing here imports a
         # distro package.
+        # python3-tk: the vendored pycell4klayout API imports tkinter, so
+        # without it every PCell test errors at setup with a message about the
+        # PCell library being unregisterable, which reads like a broken PDK. The
+        # adk-tools runtime image installs it for the same reason.
         run: |
-          sudo apt-get install -y --no-install-recommends python3-venv ngspice
+          sudo apt-get install -y --no-install-recommends python3-venv python3-tk ngspice
           python3 -m venv .venv
           .venv/bin/pip install --quiet pytest "klayout==${KLAYOUT_VERSION}"
 
@@ -163,6 +186,7 @@ jobs:
         # package, so the symbol test is expected to stay skipped.
         env:
           INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
+          GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
         run: .venv/bin/pytest -q
 
       - name: DRC rule-deck regression
