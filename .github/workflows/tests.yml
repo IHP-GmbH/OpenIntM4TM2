@@ -194,13 +194,17 @@ jobs:
           GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
         run: .venv/bin/pytest -q
 
+      # The regression drivers import klayout.db, which lives in the venv, so
+      # they run on the venv interpreter. The KLayout processes they spawn are
+      # unaffected: a venv over the system python exports no LD_LIBRARY_PATH, so
+      # the embedded interpreter still finds its own stdlib.
       - name: DRC rule-deck regression
         working-directory: libs.tech/klayout/tech/drc/testing
-        run: python3 run_regression.py
+        run: ${{ github.workspace }}/.venv/bin/python3 run_regression.py
 
       - name: LVS regression
         working-directory: libs.tech/klayout/tech/lvs/testing
-        run: python3 run_regression.py
+        run: ${{ github.workspace }}/.venv/bin/python3 run_regression.py
 
   # The one required status check. It depends only on the fast jobs, so the
   # required wait stays about a minute. `decks` runs on the same triggers and is
