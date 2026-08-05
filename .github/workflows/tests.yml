@@ -100,7 +100,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest "klayout==${KLAYOUT_VERSION}"
+        # PyYAML is an undeclared dependency of bump_mirror.py chiplet mode.
+        # Without it load_chiplet_positions falls back to a minimal parser
+        # that warns and returns an empty mapping, so a --chiplet run places
+        # no bumps at all. Install it rather than let CI exercise a path no
+        # real use of the tool should take.
+        run: pip install pytest PyYAML "klayout==${KLAYOUT_VERSION}"
 
       # The KLayout-gated modules self-skip here and run in the `decks` job
       # below, with a real CLI. -ra (from pytest.ini) prints which ones and why.
@@ -178,7 +183,7 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends python3-venv python3-tk ngspice
           python3 -m venv .venv
-          .venv/bin/pip install --quiet pytest "klayout==${KLAYOUT_VERSION}"
+          .venv/bin/pip install --quiet pytest PyYAML "klayout==${KLAYOUT_VERSION}"
 
       - name: Full pytest suite
         # -ra prints the reason for anything that skips, so a new one is visible
