@@ -1,5 +1,18 @@
-#!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
+# =========================================================================================
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================================
 
 import argparse
 import json
@@ -10,9 +23,9 @@ from pathlib import Path
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run focused interposer smoke tests.")
+    parser = argparse.ArgumentParser(description="Run the focused interposer smoke suite.")
     parser.add_argument("--case", action="append", default=[], help="Run only the named smoke case(s).")
-    parser.add_argument("--keep", action="store_true", help="Keep per-case output directories.")
+    parser.add_argument("--keep", action="store_true", help="Keep per-case run directories after completion.")
     return parser.parse_args()
 
 
@@ -20,42 +33,41 @@ def main():
     args = parse_args()
     testing_dir = Path(__file__).resolve().parent
     drc_dir = testing_dir.parent
-    smoke_manifest = testing_dir / "interposer_smoke_tests.json"
-    run_drc = drc_dir / "run_drc.py"
-    smoke_runs = testing_dir / "smoke_runs"
+    manifest_path = testing_dir / "interposer_smoke_tests.json"
+    run_drc_path = drc_dir / "run_drc.py"
+    smoke_root = testing_dir / "smoke_runs"
 
-    with smoke_manifest.open() as fh:
+    with manifest_path.open() as fh:
         manifest = json.load(fh)
 
     cases = manifest["cases"]
     if args.case:
-        wanted = set(args.case)
-        cases = [case for case in cases if case["name"] in wanted]
+        requested = set(args.case)
+        cases = [case for case in cases if case["name"] in requested]
 
     if not cases:
         print("No smoke cases selected.", file=sys.stderr)
         return 2
 
-    smoke_runs.mkdir(exist_ok=True)
+    smoke_root.mkdir(exist_ok=True)
     failures = []
 
     for case in cases:
-        case_dir = smoke_runs / case["name"]
-        if case_dir.exists():
-            shutil.rmtree(case_dir)
+        case_run_dir = smoke_root / case["name"]
+        if case_run_dir.exists():
+            shutil.rmtree(case_run_dir)
 
-        cmd = [sys.executable, str(run_drc), "--path", str(drc_dir / case["layout"])]
-        if case.get("topcell"):
-            cmd.extend(["--topcell", case["topcell"]])
+        command = [sys.executable, str(run_drc_path), "--path", str(drc_dir / case["layout"])]
         for deck in case["decks"]:
-            cmd.extend(["--deck", deck])
-        cmd.extend(["--run_dir", str(case_dir)])
-        result = subprocess.run(cmd, cwd=drc_dir)
+            command.extend(["--deck", deck])
+        command.extend(case.get("flags", []))
+        command.extend(["--run_dir", str(case_run_dir)])
 
+        result = subprocess.run(command, cwd=drc_dir)
         if result.returncode != case["expect_exit"]:
             failures.append((case["name"], case["expect_exit"], result.returncode))
-        elif not args.keep and case_dir.exists():
-            shutil.rmtree(case_dir)
+        elif not args.keep and case_run_dir.exists():
+            shutil.rmtree(case_run_dir)
 
     if failures:
         for name, expected, actual in failures:
