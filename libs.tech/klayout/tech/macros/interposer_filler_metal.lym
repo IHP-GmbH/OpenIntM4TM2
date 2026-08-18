@@ -51,11 +51,20 @@
 	#     still filled rather than silently skipped.
 
 	# --- fill geometry parameters ---
-	large     = 2.0   # large dummy side; &lt;= MFil.a2 (max filler width 5.0 um), small enough for tight gaps
-	small     = 1.0   # small dummy side; only enters gaps &gt;= 1.0 um the large lattice leaves
-	mfil_c    = 0.42  # MFil.c: min filler-to-Metal(n) space (interposer_tech_default.json)
-	large_gap = 0.84  # = 2*mfil_c; uniform lattice, ~50% coverage on open area
-	small_gap = 0.60  # small-pass lattice gap
+	large  = 2.0   # large dummy side; &lt;= MFil.a2 (max filler width 5.0 um), small enough for tight gaps
+	small  = 1.0   # small dummy side; only enters gaps &gt;= 1.0 um the large lattice leaves
+	mfil_c = 0.42  # MFil.c: min filler-to-Metal(n) space (interposer_tech_default.json)
+
+	# Lattice gaps set the pitch, hence the coverage. The defaults (large gap
+	# 2*mfil_c) give ~50% on open area, mid-band of [35,60]. They are per-metal and
+	# overridable with -rd so the density-feedback driver (python/fill_closure.py)
+	# can densify a metal that comes in under the floor or relax one over the cap;
+	# unset, the defaults keep the interactive menu run reproducible. Smaller gap =
+	# denser = higher coverage; the cell size is fixed so MFil.a2 always holds.
+	gap = {
+	  50 =&gt; { :lg =&gt; ($m4_large_gap || "0.84").to_f, :sg =&gt; ($m4_small_gap || "0.60").to_f },
+	  67 =&gt; { :lg =&gt; ($m5_large_gap || "0.84").to_f, :sg =&gt; ($m5_small_gap || "0.60").to_f },
+	}
 
 	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
 	prb  = source.input("235/0")
@@ -70,6 +79,9 @@
 
 	# --- per-metal fill: Metal4 (50), Metal5 (67) ---
 	[[50, "M4"], [67, "M5"]].each do |ml, nm|
+	  large_gap = gap[ml][:lg]
+	  small_gap = gap[ml][:sg]
+
 	  metal  = source.input("#{ml}/0")
 	  filler = source.input("#{ml}/22")
 	  nofill = source.input("#{ml}/23")

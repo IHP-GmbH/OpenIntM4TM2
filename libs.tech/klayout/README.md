@@ -65,9 +65,11 @@ libs.tech/klayout/
 │       ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
 │       └── interposer_filler_topmetal.lym  # TopMetal filler macro
 ├── python/
-│   └── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
+│   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
+│   └── fill_closure.py              # Metal4/Metal5 density-feedback fill driver (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
+    ├── test_fill_closure.py         # pytest: fill closure converges density into band
     ├── test_filler_metal.py         # pytest: Metal4/Metal5 fill is DRC-clean and in-band
     └── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
 ```
@@ -139,6 +141,24 @@ timestamped subdir), `--threads` (per-invocation, default 4), `--run_mode`
 
 The `assembly` deck is no longer here; if requested, `run_drc.py` redirects you to
 the ADK assembly DRC (`adk/klayout/drc/run_drc.py --interposer-adapter <name>`).
+
+### Metal fill
+
+Two KLayout menu macros generate dummy fill to satisfy the density rules:
+`tech/macros/interposer_filler_metal.lym` for Metal4/Metal5 and
+`interposer_filler_topmetal.lym` for TopMetal1/TopMetal2. Run them on the open
+layout (menu `IntM4TM2 Interposer > filler`); the Metal4/Metal5 macro fills the
+prBoundary, else the EdgeSeal interior, else the layout extent, and honors drawn
+metal, vias, the `nofill` purpose (datatype 23) and NoMetFiller (160/0).
+
+For a batch flow that also verifies the result, `python/fill_closure.py` runs the
+Metal4/Metal5 generator, checks the density deck, and shrinks or grows the fill
+lattice per metal until both are in band (or the iteration budget is spent):
+
+```bash
+python python/fill_closure.py in.gds -o out.gds            # design + closed fill
+python python/fill_closure.py in.gds -o out.gds --max-iter 8
+```
 
 ### LVS
 
