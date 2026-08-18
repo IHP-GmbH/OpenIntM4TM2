@@ -59,7 +59,7 @@ def main():
 
         command = [sys.executable, str(run_drc_path), "--path", str(drc_dir / case["layout"])]
         for deck in case["decks"]:
-            command.extend(["--table", deck])
+            command.extend(["--deck", deck])
         command.extend(case.get("flags", []))
         command.extend(["--run_dir", str(case_run_dir)])
 
