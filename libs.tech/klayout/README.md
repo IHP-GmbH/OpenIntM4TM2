@@ -62,11 +62,13 @@ libs.tech/klayout/
 │   │       ├── run_regression.py    # runner: deck verdict vs golden per fixture
 │   │       └── testcases/unit/      # lvs_{clean,open,short}.gds (+ generator)
 │   └── macros/
+│       ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
 │       └── interposer_filler_topmetal.lym  # TopMetal filler macro
 ├── python/
 │   └── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
+    ├── test_filler_metal.py         # pytest: Metal4/Metal5 fill is DRC-clean and in-band
     └── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
 ```
 
