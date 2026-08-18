@@ -28,7 +28,7 @@ SEGMENTS = 64
 DEEPVIA = kdb.LayerInfo(152, 0)
 METAL1 = kdb.LayerInfo(8, 0)
 PWELL_BLOCK = kdb.LayerInfo(46, 21)
-PRBOUNDARY = kdb.LayerInfo(189, 0)
+PRBOUNDARY = kdb.LayerInfo(235, 0)
 
 OUTER_RADIUS = 12.5
 INNER_RADIUS = 9.5

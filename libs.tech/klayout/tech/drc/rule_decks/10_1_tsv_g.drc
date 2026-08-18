@@ -19,8 +19,11 @@
 # INTERPOSER_SCOPE: extension
 # INTERPOSER_SOURCE: SG13G2 Layout Rules Rev. 2.1
 # INTERPOSER_NOTE: TSV_G is retained intentionally as an SG13G2-derived interposer extension.
+# DEVIATION: the sg13g2 source guards the table with `TABLES.include?('tsv_g') || BEOL`.
+# The interposer engine has no TABLES selector, so this is reduced to `if BEOL`
+# (deck selection is handled by the runset's all_decks map).
 
-if TABLES.include?('tsv_g') || BEOL
+if BEOL
   #================================================
   #----------- 10.1. Through-Silicon Via ----------
   #================================================
@@ -100,6 +103,9 @@ if TABLES.include?('tsv_g') || BEOL
   tsvg_g_l.forget
 
   unless PRECHECK_DRC
+    chip_area = CHIP.area
+    chip_bbox = CHIP.bbox
+
     # Rule TSV_G.i: Max. global DeepVia density [%] is 1.00
     logger.info('Executing rule TSV_G.i')
     tsvg_i_value = drc_rules['TSV_G_i'].to_f

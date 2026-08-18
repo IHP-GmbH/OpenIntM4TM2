@@ -55,6 +55,16 @@ flash_drw = polygons(71, 0)
 mim = polygons(36, 0)
 vmim = polygons(129, 0)
 
+# SG13G2-derived extension support layers used by TSV_G
+activ = polygons(1, 0)
+activ_filler = polygons(1, 22)
+gatpoly = polygons(5, 0)
+gatpoly_filler = polygons(5, 22)
+cont = polygons(6, 0)
+metal1 = polygons(8, 0)
+pwell_block = polygons(46, 21)
+deepvia = polygons(152, 0)
+
 # Metal4 layers
 metal4 = polygons(50, 0)
 metal4_pin = polygons(50, 2)
@@ -187,6 +197,11 @@ cont_drw = cont
 metal1_drw = metal1
 mim_drw = mim
 vmim_drw = vmim
+activ_drw = activ
+gatpoly_drw = gatpoly
+cont_drw = cont
+metal1_drw = metal1
+deepvia_drw = deepvia
 metal4_drw = metal4
 metal5_drw = metal5
 topmetal1_drw = topmetal1

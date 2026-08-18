@@ -72,7 +72,7 @@ json_file = File.join(rule_deck_path, "interposer_tech_default.json")
 
 if File.exist?(json_file)
   json_data = JSON.parse(File.read(json_file))
-  drc_rules = json_data['rules']
+  drc_rules = (json_data['rules'] || {}).merge(json_data['drc_rules'] || {})
   logger.info("Loaded DRC rules from #{json_file}")
 else
   logger.warn("DRC rules file not found: #{json_file}")
