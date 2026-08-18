@@ -1,0 +1,122 @@
+{
+  "description": "Focused interposer-native smoke suite for core decks and approved extensions.",
+  "cases": [
+    {
+      "name": "angle_clean",
+      "layout": "testing/testcases/unit/topmetal2.gds",
+      "decks": [
+        "angle"
+      ],
+      "flags": [],
+      "expect_exit": 0
+    },
+    {
+      "name": "offgrid_clean",
+      "layout": "testing/testcases/unit/topmetal2.gds",
+      "decks": [
+        "offgrid"
+      ],
+      "flags": [],
+      "expect_exit": 0
+    },
+    {
+      "name": "metaln_violation",
+      "layout": "testing/testcases/unit/metal4.gds",
+      "decks": [
+        "metaln"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "via4_violation",
+      "layout": "testing/testcases/unit/via4.gds",
+      "decks": [
+        "via4"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "pad_violation",
+      "layout": "testing/testcases/unit/pad.gds",
+      "decks": [
+        "pad"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "sealring_violation",
+      "layout": "testing/testcases/unit/sealring.gds",
+      "decks": [
+        "sealring"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "mim_violation",
+      "layout": "testing/testcases/unit/mim.gds",
+      "decks": [
+        "mim"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "lbe_extension_violation",
+      "layout": "testing/testcases/unit/lbe.gds",
+      "decks": [
+        "lbe"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "tsv_g_clean",
+      "layout": "testing/testcases/interposer/tsv_clean.gds",
+      "decks": [
+        "tsv_g"
+      ],
+      "flags": [],
+      "expect_exit": 0
+    },
+    {
+      "name": "tsv_g_spacing_violation",
+      "layout": "testing/testcases/interposer/tsv_spacing_violation.gds",
+      "decks": [
+        "tsv_g"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "tsv_g_pwell_miss_violation",
+      "layout": "testing/testcases/interposer/tsv_pwell_miss_violation.gds",
+      "decks": [
+        "tsv_g"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "tsv_g_metal1_miss_violation",
+      "layout": "testing/testcases/interposer/tsv_metal1_miss_violation.gds",
+      "decks": [
+        "tsv_g"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    },
+    {
+      "name": "tsv_g_extension_violation",
+      "layout": "testing/testcases/interposer/tsv.gds",
+      "decks": [
+        "tsv_g"
+      ],
+      "flags": [],
+      "expect_exit": 1
+    }
+  ]
+}

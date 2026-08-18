@@ -23,13 +23,13 @@ from typing import Dict, List, Set, Union, Tuple
 
 # Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
 AVAILABLE_DECKS = [
-    'offgrid', 'angle',
+    'offgrid', 'angle', 'forbidden',
     'metaln', 'metalnfiller',
     'via4', 'topvia1',
     'topmetal1', 'topmetal1filler',
     'topvia2', 'topmetal2', 'topmetal2filler',
     'passiv', 'pad', 'copperpillar', 'solderbump',
-    'sealring', 'mim', 'metalslits', 'lbe',
+    'sealring', 'mim', 'metalslits', 'pin', 'lbe', 'tsv_g',
     'density',
 ]
 

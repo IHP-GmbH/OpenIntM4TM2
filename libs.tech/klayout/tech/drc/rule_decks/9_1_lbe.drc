@@ -73,7 +73,7 @@ if BEOL
   # We implement the message value (LBE_b2 = 30000) as a minimum-area check pending spec confirmation.
   logger.info('Executing rule LBE.b2')
   lbe_b2_value = fetch_rule(drc_rules, 'LBE_b2')
-  lbeb2_l1 = lbe_drw.with_area(nil, lbe_b2_value.um)
+  lbeb2_l1 = lbe_drw.with_area(nil, lbe_b2_value.um2)
   lbeb2_l1.output('LBE.b2', "9.1. LBE.b2: Min. LBE area (µm²): #{lbe_b2_value}")
   lbeb2_l1.forget
 
@@ -96,7 +96,11 @@ if BEOL
   lbe_e_pas_l.output('LBE.e.Passiv', "9.1. LBE.e.Passiv: Min. LBE space to Passiv: #{lbe_e_value} µm")
   lbe_e_pas_l.forget
 
-  # Rule LBE.f (Min. LBE space to Activ = 30µm) is DROPPED: it requires the Activ (front-end diffusion)
-  # layer, which does not exist in the interposer BEOL-only layer set. No interposer-side equivalent.
+  # Rule LBE.f: Min. LBE space to Activ is 30.00µm
+  logger.info('Executing rule LBE.f')
+  lbe_f_value = fetch_rule(drc_rules, 'LBE_f')
+  lbe_f_l = lbe_drw.sep(activ_drw, lbe_f_value.um, euclidian)
+  lbe_f_l.output('LBE.f', "9.1. LBE.f: Min. LBE space to Activ: #{lbe_f_value} µm")
+  lbe_f_l.forget
 
 end
