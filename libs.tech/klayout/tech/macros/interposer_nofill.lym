@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Emit no-fill</description>
+ <version>0.1</version>
+ <category>filler</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>filler</group-name>
+ <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").end</menu-path>
+ <interpreter>dsl</interpreter>
+ <dsl-interpreter-name>drc-dsl-xml</dsl-interpreter-name>
+ <text>
+	# Designer-facing no-fill emitter for the interposer BEOL.
+	#
+	# The fill generators (interposer_filler_metal.lym / interposer_filler_topmetal.lym)
+	# treat the per-metal nofill datatypes (50/23, 67/23, 126/23, 134/23) as absolute
+	# keep-outs, but nothing in the open flow creates those shapes with a clearance the
+	# designer chooses. This macro does: it takes the region marked on NoMetFiller
+	# (160/0), grows it by a clearance halo, and stamps it onto the per-metal nofill
+	# datatypes, so RF structures, matched devices, pillar pads and probe areas can be
+	# kept clear of dummy fill on purpose. Run it before the fill generators; their
+	# keep-out set already consumes x/23.
+	#
+	# Why a halo. The generators only hold fill MFil.c (0.42 um) off drawn Metal4/Metal5
+	# and TM(n)Fil.c (3.0 um) off the top metals. A pillar pad or an RF coil usually
+	# needs far more; the CuPillarPad PCell's addFillerEx, when enabled, draws a 10 um
+	# exclusion. Marking 160/0 and setting the clearance here reproduces that, per metal.
+	# 160/0 is itself an absolute keep-out for the generators, so a zero clearance is
+	# only useful to convert a global marker into a per-metal selective one; a clearance
+	# &gt; 0 is what actually buys the extra space.
+	#
+	# Parameters (overridable with -rd):
+	#   clearance  halo added around the marked region, in um (default 0.0 = the marker
+	#              itself, re-emitted on the selected per-metal nofill datatypes)
+	#   metals     comma-separated GDS layers to emit on (default "50,67,126,134" =
+	#              Metal4, Metal5, TopMetal1, TopMetal2)
+	#
+	# Output: marker.sized(clearance) on {metal}/23 for each selected metal, unioned
+	# with whatever nofill the designer already drew on that layer. The union is not
+	# cosmetic: run from the menu (no target), KLayout's DRC engine writes the first
+	# output to a layer by swapping in a fresh temp layer, which drops the layer's
+	# prior content. Without re-emitting source.input("#{ml}/23") a menu run would
+	# silently wipe existing nofill (and with no 160/0 marker the empty halo would
+	# wipe all four nofill layers). Reading the same layer we write is exactly the
+	# case that swap makes safe. It also makes the batch target() output self-contained
+	# rather than dependent on the caller merging.
+
+	clearance = ($clearance || "0.0").to_f
+	metals    = ($metals || "50,67,126,134").split(",").map { |s| s.strip.to_i }
+
+	marker = source.input("160/0")
+	halo   = marker.sized(clearance)
+
+	metals.each do |ml|
+	  (halo | source.input("#{ml}/23")).output(ml, 23)
+	end
+ </text>
+</klayout-macro>
