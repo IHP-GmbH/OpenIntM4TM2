@@ -136,7 +136,7 @@ GOLDEN = {
     'topmetal1filler': {
         'deck': 'topmetal1filler',
         'cells': {
-            'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1'},
+            'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1', 'TM1Fil.b'},
             'topmetal1filler_clean': set(),
         },
     },
@@ -150,7 +150,7 @@ GOLDEN = {
     'topmetal2filler': {
         'deck': 'topmetal2filler',
         'cells': {
-            'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1'},
+            'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1', 'TM2Fil.b'},
             'topmetal2filler_clean': set(),
         },
     },

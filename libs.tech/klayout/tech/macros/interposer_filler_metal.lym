@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Fill Metal4/Metal5</description>
+ <version>0.2</version>
+ <category>filler</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>filler</group-name>
+ <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").end</menu-path>
+ <interpreter>dsl</interpreter>
+ <dsl-interpreter-name>drc-dsl-xml</dsl-interpreter-name>
+ <text>
+	# Metal-fill generation for the interposer BEOL (Metal4 and Metal5).
+	#
+	# Companion to interposer_filler_topmetal.lym; this is the missing lower-metal
+	# generator. The interposer density deck enforces a minimum on Metal4/Metal5
+	# (M4.j/M5.j 35% global, and MnFil.h 25% in every 800x800 um window), but until
+	# now nothing in the open flow could create that fill. This closes that gap.
+	#
+	# Strategy: a two-size fixed-grid fill. A 2.0 um square on a uniform lattice
+	# gives ~50% coverage on open area, comfortably mid-band of the 35..60% global
+	# window and ~25% below the 75% window maximum. A 1.0 um square then fills only
+	# gaps the large square could not reach (thin-line / sparse regions): on open
+	# area the 0.84 um large-lattice channels are narrower than 1.0 um so the small
+	# pass adds nothing there, but where a real gap remains (e.g. routing channels
+	# between thin lines) it lifts the local density back above the 35% floor. This
+	# keeps the open-area asymptote safely under the maximum while still rescuing
+	# sparse regions from the minimum.
+	#
+	# Values were tuned against the interposer decks (density.drc + 5_18) on an open
+	# seal interior and on a deliberately sparse thin-line stress layout. They are
+	# generator parameters, not DRC rules; the one rule value they need, mfil_c
+	# (MFil_c), is read from interposer_tech_default.json below so it tracks the
+	# checker. The density-feedback driver (python/fill_closure.py) steers the pitch.
+	#
+	# Differences from the TopMetal macro, on purpose:
+	#   - pre-existing filler is sized by mfil_c before being subtracted, so a rerun
+	#     or an imported block already carrying fill cannot land new fill close
+	#     enough to merge (the TopMetal macro subtracts the raw, unsized filler);
+	#   - no TRANS (26/0) reference: TRANS is a front-end marker absent from the
+	#     interposer layer map, so a TRANS keep-out would be permanently empty and
+	#     is meaningless on an interposer with no transistors;
+	#   - the fill region falls back prBoundary &gt; EdgeSeal interior &gt; layout extent
+	#     instead of only EdgeSeal.holes, so a layout without a closed seal ring is
+	#     still filled rather than silently skipped.
+
+	require 'json'
+
+	# --- DRC clearance from the tech JSON (single source with the checker) ---
+	# MFil.c (min filler-to-metal space) is a real DRC rule enforced by 5_18, so
+	# read it from interposer_tech_default.json instead of hard-coding it; the
+	# generator and the sign-off deck then cannot drift apart. JSON location:
+	# -rd tech_json=&lt;path&gt; (headless closure/tests) &gt; the copy shipped next to this
+	# macro (tech/drc/rule_decks) &gt; a built-in default with a warning, so an
+	# interactive menu run never crashes on a missing file.
+	tech_json = $tech_json.to_s.empty? ?
+	  File.join(File.dirname(File.expand_path(__FILE__)), "..", "drc", "rule_decks", "interposer_tech_default.json") :
+	  $tech_json
+	rules = File.exist?(tech_json) ? JSON.parse(File.read(tech_json))["rules"] : nil
+	$stderr.puts("interposer_filler_metal: tech JSON not found (#{tech_json}); using built-in clearance default") unless rules
+	mfil_c = (rules &amp;&amp; rules["MFil_c"]) ? Float(rules["MFil_c"]) : 0.42
+
+	# --- fill geometry parameters (generator choices, not DRC rules) ---
+	large  = 2.0   # large dummy side; &lt;= MFil.a2 (max filler width 5.0 um), small enough for tight gaps
+	small  = 1.0   # small dummy side; only enters gaps &gt;= 1.0 um the large lattice leaves
+
+	# Lattice gaps set the pitch, hence the coverage. The defaults (large gap
+	# 2*mfil_c) give ~50% on open area, mid-band of [35,60]. They are per-metal and
+	# overridable with -rd so the density-feedback driver (python/fill_closure.py)
+	# can densify a metal that comes in under the floor or relax one over the cap;
+	# unset, the defaults keep the interactive menu run reproducible. Smaller gap =
+	# denser = higher coverage; the cell size is fixed so MFil.a2 always holds.
+	gap = {
+	  50 =&gt; { :lg =&gt; ($m4_large_gap || "0.84").to_f, :sg =&gt; ($m4_small_gap || "0.60").to_f },
+	  67 =&gt; { :lg =&gt; ($m5_large_gap || "0.84").to_f, :sg =&gt; ($m5_small_gap || "0.60").to_f },
+	}
+
+	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
+	prb  = source.input("235/0")
+	seal = source.input("39/0")
+	if prb.count &gt; 0
+	  base = prb
+	elsif seal.count &gt; 0
+	  base = seal.holes
+	else
+	  base = extent
+	end
+
+	# --- per-metal fill: Metal4 (50), Metal5 (67) ---
+	[[50, "M4"], [67, "M5"]].each do |ml, nm|
+	  large_gap = gap[ml][:lg]
+	  small_gap = gap[ml][:sg]
+
+	  metal  = source.input("#{ml}/0")
+	  filler = source.input("#{ml}/22")
+	  nofill = source.input("#{ml}/23")
+	  slit   = source.input("#{ml}/24")
+	  via4   = source.input("66/0")
+	  nomet  = source.input("160/0")
+
+	  # keep-out: MFil.c from drawn metal and from vias; mfil_c from pre-existing
+	  # filler so a rerun cannot merge new fill into old; honor designer nofill and
+	  # the global NoMetFiller marker.
+	  excl = metal.sized(mfil_c) | via4.sized(mfil_c) | filler.sized(mfil_c) | nofill | slit | nomet
+	  region = base - excl
+
+	  patL = fill_pattern("#{nm}_FILL_L").shape(ml, 22, box(0.0, 0.0, large, large))
+	  patS = fill_pattern("#{nm}_FILL_S").shape(ml, 22, box(0.0, 0.0, small, small))
+
+	  left = region.fill_with_left(patL, hstep(large + large_gap), vstep(large + large_gap))
+	  left.fill(patS, hstep(small + small_gap), vstep(small + small_gap))
+	end
+ </text>
+</klayout-macro>
