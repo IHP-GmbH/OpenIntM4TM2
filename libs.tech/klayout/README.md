@@ -63,7 +63,8 @@ libs.tech/klayout/
 │   │       └── testcases/unit/      # lvs_{clean,open,short}.gds (+ generator)
 │   └── macros/
 │       ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
-│       └── interposer_filler_topmetal.lym  # TopMetal filler macro
+│       ├── interposer_filler_topmetal.lym  # TopMetal filler macro
+│       └── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
 ├── python/
 │   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 │   └── fill_closure.py              # Metal4/Metal5 density-feedback fill driver (CLI)
@@ -71,6 +72,8 @@ libs.tech/klayout/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
     ├── test_fill_closure.py         # pytest: fill closure converges density into band
     ├── test_filler_metal.py         # pytest: Metal4/Metal5 fill is DRC-clean and in-band
+    ├── test_filler_topmetal.py      # pytest: TopMetal fill is DRC-clean and in-band
+    ├── test_nofill_emitter.py       # pytest: no-fill emitter geometry + generator honors it
     └── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
 ```
 
@@ -162,6 +165,13 @@ lattice per metal until both are in band (or the iteration budget is spent):
 python python/fill_closure.py in.gds -o out.gds            # design + closed fill
 python python/fill_closure.py in.gds -o out.gds --max-iter 8
 ```
+
+To keep fill away from RF structures, matched devices, pillar pads or probe areas,
+`tech/macros/interposer_nofill.lym` turns a region marked on NoMetFiller (160/0)
+into per-metal nofill (`x/23`), grown by a designer-chosen clearance (`-rd
+clearance=<um>`, `-rd metals=50,67,126,134`); both generators already honor `x/23`
+and `160/0` as absolute keep-outs, so the halo becomes real clearance. Run it before
+the generators.
 
 ### LVS
 
