@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
  <description>Fill TopMetal</description>
- <version>0.2</version>
+ <version>0.3</version>
  <category>filler</category>
  <prolog/>
  <epilog/>
@@ -37,11 +37,24 @@
 	#     extent instead of only EdgeSeal.holes, so a layout without a closed seal ring
 	#     is still filled rather than silently skipped.
 
-	# --- fill geometry parameters ---
+	require 'json'
+
+	# --- DRC clearances from the tech JSON (single source with the checker) ---
+	# TM(n)Fil.c (filler-to-TopMetal) and TM(n)Fil.b (filler-to-filler) are real DRC
+	# rules enforced by 5_23 / 5_26, so read them from interposer_tech_default.json
+	# instead of hard-coding them; generator and sign-off deck then cannot drift.
+	# JSON location: -rd tech_json=&lt;path&gt; (headless) &gt; the copy shipped next to this
+	# macro (tech/drc/rule_decks) &gt; built-in defaults with a warning. The values are
+	# read per metal (TM1Fil_* / TM2Fil_*) inside the loop below.
+	tech_json = $tech_json.to_s.empty? ?
+	  File.join(File.dirname(File.expand_path(__FILE__)), "..", "drc", "rule_decks", "interposer_tech_default.json") :
+	  $tech_json
+	rules = File.exist?(tech_json) ? JSON.parse(File.read(tech_json))["rules"] : nil
+	$stderr.puts("interposer_filler_topmetal: tech JSON not found (#{tech_json}); using built-in clearance defaults") unless rules
+
+	# --- fill geometry parameters (generator choices, not DRC rules) ---
 	width   = 5.0   # TopMetal filler cell width;  &lt;= TM(n)Fil.a1 (max filler width 10.0 um)
 	height  = 10.0  # TopMetal filler cell height; &lt;= TM(n)Fil.a1
-	tmfil_c = 3.0   # TM(n)Fil.c: min filler-to-TopMetal(n) space (interposer_tech_default.json)
-	tmfil_b = 3.0   # TM(n)Fil.b: min filler-to-filler space; also the lattice gap
 
 	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
 	prb  = source.input("235/0")
@@ -61,6 +74,9 @@
 	  nofill = source.input("#{ml}/23")
 	  slit   = source.input("#{ml}/24")
 	  nomet  = source.input("160/0")
+
+	  tmfil_c = (rules &amp;&amp; rules["#{nm}Fil_c"]) ? Float(rules["#{nm}Fil_c"]) : 3.0  # TM(n)Fil.c: min filler-to-TopMetal space
+	  tmfil_b = (rules &amp;&amp; rules["#{nm}Fil_b"]) ? Float(rules["#{nm}Fil_b"]) : 3.0  # TM(n)Fil.b: min filler-to-filler space; also the lattice gap
 
 	  # keep-out: TM(n)Fil.c from drawn top metal and from the vias landing on it;
 	  # TM(n)Fil.b from pre-existing filler so a rerun cannot merge new fill into old;

@@ -149,7 +149,10 @@ Two KLayout menu macros generate dummy fill to satisfy the density rules:
 `interposer_filler_topmetal.lym` for TopMetal1/TopMetal2. Run them on the open
 layout (menu `IntM4TM2 Interposer > filler`); the Metal4/Metal5 macro fills the
 prBoundary, else the EdgeSeal interior, else the layout extent, and honors drawn
-metal, vias, the `nofill` purpose (datatype 23) and NoMetFiller (160/0).
+metal, vias, the `nofill` purpose (datatype 23) and NoMetFiller (160/0). The
+filler-to-metal and filler-to-filler clearances (`MFil_c`, `TM(n)Fil_c/b`) are
+read from `tech/drc/rule_decks/interposer_tech_default.json`, the same file the
+sign-off decks use, so the generators and the checker cannot drift apart.
 
 For a batch flow that also verifies the result, `python/fill_closure.py` runs the
 Metal4/Metal5 generator, checks the density deck, and shrinks or grows the fill

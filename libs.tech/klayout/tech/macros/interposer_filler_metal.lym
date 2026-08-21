@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
  <description>Fill Metal4/Metal5</description>
- <version>0.1</version>
+ <version>0.2</version>
  <category>filler</category>
  <prolog/>
  <epilog/>
@@ -35,9 +35,9 @@
 	#
 	# Values were tuned against the interposer decks (density.drc + 5_18) on an open
 	# seal interior and on a deliberately sparse thin-line stress layout. They are
-	# generator parameters, not DRC rules; only mfil_c below mirrors a rule value
-	# (MFil_c in interposer_tech_default.json). Wiring the whole set to the tech JSON
-	# and adding a measure/repeat density-feedback loop are the next fill items.
+	# generator parameters, not DRC rules; the one rule value they need, mfil_c
+	# (MFil_c), is read from interposer_tech_default.json below so it tracks the
+	# checker. The density-feedback driver (python/fill_closure.py) steers the pitch.
 	#
 	# Differences from the TopMetal macro, on purpose:
 	#   - pre-existing filler is sized by mfil_c before being subtracted, so a rerun
@@ -50,10 +50,25 @@
 	#     instead of only EdgeSeal.holes, so a layout without a closed seal ring is
 	#     still filled rather than silently skipped.
 
-	# --- fill geometry parameters ---
+	require 'json'
+
+	# --- DRC clearance from the tech JSON (single source with the checker) ---
+	# MFil.c (min filler-to-metal space) is a real DRC rule enforced by 5_18, so
+	# read it from interposer_tech_default.json instead of hard-coding it; the
+	# generator and the sign-off deck then cannot drift apart. JSON location:
+	# -rd tech_json=&lt;path&gt; (headless closure/tests) &gt; the copy shipped next to this
+	# macro (tech/drc/rule_decks) &gt; a built-in default with a warning, so an
+	# interactive menu run never crashes on a missing file.
+	tech_json = $tech_json.to_s.empty? ?
+	  File.join(File.dirname(File.expand_path(__FILE__)), "..", "drc", "rule_decks", "interposer_tech_default.json") :
+	  $tech_json
+	rules = File.exist?(tech_json) ? JSON.parse(File.read(tech_json))["rules"] : nil
+	$stderr.puts("interposer_filler_metal: tech JSON not found (#{tech_json}); using built-in clearance default") unless rules
+	mfil_c = (rules &amp;&amp; rules["MFil_c"]) ? Float(rules["MFil_c"]) : 0.42
+
+	# --- fill geometry parameters (generator choices, not DRC rules) ---
 	large  = 2.0   # large dummy side; &lt;= MFil.a2 (max filler width 5.0 um), small enough for tight gaps
 	small  = 1.0   # small dummy side; only enters gaps &gt;= 1.0 um the large lattice leaves
-	mfil_c = 0.42  # MFil.c: min filler-to-Metal(n) space (interposer_tech_default.json)
 
 	# Lattice gaps set the pitch, hence the coverage. The defaults (large gap
 	# 2*mfil_c) give ~50% on open area, mid-band of [35,60]. They are per-metal and

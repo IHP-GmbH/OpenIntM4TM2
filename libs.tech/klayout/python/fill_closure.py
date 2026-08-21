@@ -54,6 +54,9 @@ REPO_KLAYOUT = HERE.parent                      # libs.tech/klayout
 MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_metal.lym"
 DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
+# The generator reads its DRC clearances (MFil_c) from this same JSON; pass it
+# explicitly so the driven run uses the sign-off values, never a stale literal.
+TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 METALS = {50: "M4", 67: "M5"}                   # GDS layer -> density rule prefix
 
@@ -76,7 +79,7 @@ def _macro_body():
 
 
 def _run_generator(design, fill_only, params, workdir):
-    defines = []
+    defines = ["-rd", f"tech_json={TECH_JSON}"]
     for layer, (large_gap, small_gap) in params.items():
         key = METALS[layer].lower()             # m4 / m5
         defines += ["-rd", f"{key}_large_gap={large_gap:.4f}",

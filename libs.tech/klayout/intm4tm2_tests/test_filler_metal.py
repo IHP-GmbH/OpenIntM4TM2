@@ -40,6 +40,7 @@ violation (MFil.c / MFil.a2, which also covers merge with the pre-existing
 filler), and an achieved drawn+fill density inside the [35, 60] % band.
 """
 
+import json
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,7 @@ REPO_KLAYOUT = Path(__file__).resolve().parents[1]
 MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_metal.lym"
 DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
+TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
 
@@ -102,12 +104,17 @@ def _build_design(path: Path, with_prboundary: bool) -> None:
     ly.write(str(path))
 
 
-def _run_macro(design: Path, fill_only: Path, workdir: Path) -> None:
-    """Run the fill macro headless: source = design, target = fill-only output."""
+def _run_macro(design: Path, fill_only: Path, workdir: Path, tech_json: Path = TECH_JSON) -> None:
+    """Run the fill macro headless: source = design, target = fill-only output.
+
+    tech_json is handed to the macro via -rd so it reads its MFil_c clearance from
+    that file (the deterministic path used by the flow), instead of the menu-time
+    fallback that resolves the JSON relative to the macro.
+    """
     runner = workdir / "run_fill.drc"
     runner.write_text(f'source("{design}")\ntarget("{fill_only}")\n' + _macro_body())
     subprocess.run(
-        [KLAYOUT_BIN, "-b", "-r", str(runner)],
+        [KLAYOUT_BIN, "-b", "-rd", f"tech_json={tech_json}", "-r", str(runner)],
         check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
 
@@ -182,3 +189,65 @@ def test_metal_fill_is_drc_clean_and_in_band(with_prboundary, tmp_path):
         d = _density(combined, metal_layer)
         assert DENSITY_MIN <= d <= DENSITY_MAX, \
             f"{name} drawn+fill density {d:.1f}% outside [{DENSITY_MIN}, {DENSITY_MAX}] %"
+
+
+def _tech_json_with_mfil_c(base_json: Path, value: float, out: Path) -> Path:
+    """A copy of the tech JSON with only MFil_c overridden."""
+    data = json.loads(base_json.read_text())
+    data["rules"]["MFil_c"] = value
+    out.write_text(json.dumps(data))
+    return out
+
+
+def _fill_area_and_keepout(design_gds: Path, fill_gds: Path, layer: int, clearance: float):
+    """(generated-filler area um2, keep-out honored) for one metal layer.
+
+    All region work stays inside this function: a Region built from a recursive
+    shape iterator borrows its source Layout, so returning the Region past the
+    Layout's local scope would hand back an empty one. Both layouts are written at
+    the same dbu, so metal.sized(...) can be intersected with the fill directly.
+    """
+    dly = kdb.Layout()
+    dly.read(str(design_gds))
+    dtop = dly.top_cell()
+    dli = dly.find_layer(layer, 0)
+    metal = kdb.Region() if dli is None else kdb.Region(dtop.begin_shapes_rec(dli))
+    fly = kdb.Layout()
+    fly.read(str(fill_gds))
+    ftop = fly.top_cell()
+    fli = fly.find_layer(layer, 22)
+    filler = kdb.Region() if fli is None else kdb.Region(ftop.begin_shapes_rec(fli))
+    dbu = dly.dbu
+    area = filler.area() * dbu * dbu
+    halo = int(round((clearance - 0.05) / dbu))
+    honored = (metal.sized(halo) & filler).is_empty()
+    return area, honored
+
+
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+def test_generator_reads_mfil_c_from_tech_json(tmp_path):
+    """The MFil.c keep-out comes from the tech JSON, not a hard-coded literal.
+
+    The same design is filled against two JSONs that differ only in MFil_c. The
+    larger keep-out must both push every generated cell farther than that distance
+    from drawn metal and leave strictly less fill in place. A generator that
+    ignored the JSON would emit byte-identical output for both, so equal areas
+    (or fill within the bumped keep-out) means the value is not being read.
+    """
+    design = tmp_path / "design.gds"
+    _build_design(design, with_prboundary=False)
+
+    def run(mfil_c, tag):
+        tj = _tech_json_with_mfil_c(TECH_JSON, mfil_c, tmp_path / f"tech_{tag}.json")
+        fill = tmp_path / f"fill_{tag}.gds"
+        _run_macro(design, fill, tmp_path, tech_json=tj)
+        return _fill_area_and_keepout(design, fill, 50, mfil_c)
+
+    area_small, ok_small = run(0.42, "small")
+    area_large, ok_large = run(3.0, "large")
+
+    assert area_small > 0 and area_large > 0, "generator produced no Metal4 fill"
+    assert ok_small, "fill landed closer than MFil_c=0.42 to drawn metal"
+    assert ok_large, "fill ignored the bumped MFil_c=3.0 keep-out from the tech JSON"
+    assert area_large < area_small, \
+        f"bumping MFil_c left the fill unchanged ({area_large:.1f} vs {area_small:.1f} um2): tech JSON not read"
