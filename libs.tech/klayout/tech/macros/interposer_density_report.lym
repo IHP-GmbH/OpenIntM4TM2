@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Density report</description>
+ <version>0.1</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>filler</group-name>
+ <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text># One-click interposer density report.
+#
+# The density deck (density.drc) measures global metal density, LBE density and
+# per-plate slit adequacy, but only emits them as violation markers. This macro
+# runs the same measurement on the active layout and shows the plain numbers in a
+# dialog, so a designer tuning fill can see "am I in band, and by how much" without
+# selecting the opt-in density deck and reading a report database.
+#
+# The measurement itself lives in python/density_report.py (unit-tested headless);
+# this macro is only the GUI entry point. Windowed local density (MnFil.h/k) and the
+# authoritative pass/fail still come from running the density deck.
+
+import os
+import sys
+
+import pya
+
+
+def _load_density_report():
+    # python/ sits two levels up from tech/macros/ (klayout/tech/macros -> klayout/python).
+    here = os.path.dirname(os.path.realpath(__file__))
+    py_dir = os.path.normpath(os.path.join(here, "..", "..", "python"))
+    if py_dir not in sys.path:
+        sys.path.insert(0, py_dir)
+    import density_report
+    return density_report
+
+
+def run():
+    view = pya.Application.instance().main_window().current_view()
+    if view is None:
+        pya.MessageBox.warning("Density report", "No layout is open.", pya.MessageBox.Ok)
+        return
+
+    try:
+        density_report = _load_density_report()
+    except Exception as exc:  # noqa: BLE001 - surface any import problem to the user
+        pya.MessageBox.critical(
+            "Density report",
+            "Could not load python/density_report.py:\n{}".format(exc),
+            pya.MessageBox.Ok)
+        return
+
+    cv = view.active_cellview()
+    report = density_report.measure(cv.layout(), cv.cell.name)
+    text = density_report.format_report(report)
+
+    # Print to the macro console as well, so the summary can be copied out.
+    print(text)
+    # Monospace so the columns line up in the dialog.
+    pya.MessageBox.info(
+        "Interposer density report",
+        "<pre>{}</pre>".format(text),
+        pya.MessageBox.Ok)
+
+
+run()
