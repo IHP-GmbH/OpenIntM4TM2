@@ -41,5 +41,12 @@ if BEOL
     tm1fil_a1_l = topmetal1_filler.with_bbox_max(tm1fil_a1_val.um + 0.001.um, nil)
     tm1fil_a1_l.output('TM1Fil.a1', "5.23. TM1Fil.a1 : Max. TopMetal1:filler width is #{tm1fil_a1_val} um")
     tm1fil_a1_l.forget
+
+    # Rule TM1Fil.b : Min. TopMetal1:filler space to TopMetal1:filler is 3.00 um
+    logger.info('Executing rule TM1Fil.b')
+    tm1fil_b_val = fetch_rule(drc_rules, 'TM1Fil_b')
+    tm1fil_b_l = topmetal1_filler.space(tm1fil_b_val.um, euclidian)
+    tm1fil_b_l.output('TM1Fil.b', "5.23. TM1Fil.b : Min. TopMetal1:filler space to TopMetal1:filler is #{tm1fil_b_val} um")
+    tm1fil_b_l.forget
   end
 end
