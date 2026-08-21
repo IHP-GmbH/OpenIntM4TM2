@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Fill slits</description>
+ <version>0.1</version>
+ <category>filler</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>filler</group-name>
+ <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").end</menu-path>
+ <interpreter>dsl</interpreter>
+ <dsl-interpreter-name>drc-dsl-xml</dsl-interpreter-name>
+ <text>
+	# Stress-relief slit generation for the interposer BEOL (Metal4, Metal5,
+	# TopMetal1, TopMetal2).
+	#
+	# Companion to interposer_filler_metal.lym / interposer_filler_topmetal.lym.
+	# Those fill open area with dummy metal; this cuts slits into wide DRAWN metal.
+	# Two rules force slits on wide metal: Slt.c (7_3_metalslits.drc) flags any metal
+	# wider than 30 um that carries no slit, and Slt.i (density.drc) demands at least
+	# 6% slit coverage on any plate bigger than 35 x 35 um. Large power/ground planes on
+	# an interposer trip both and today must be slotted by hand. This closes that gap.
+	#
+	# Strategy: a fixed-grid stamp of small square slit cells inside each wide plate.
+	#   - Wide metal is isolated by opening (erode then dilate) by Slt_c/2, so slits
+	#     land on every plate Slt.c flags (wider than 30 um), a superset of the Slt.i
+	#     plates; one pass therefore clears both rules.
+	#   - A square cell makes one bound satisfy both Slt.a (min slit width 2.8 um)
+	#     and Slt.b (max slit edge length 20 um): Slt.a &lt;= side &lt;= Slt.b.
+	#   - Only whole cells are placed (region.fill drops partial cells), each sitting
+	#     at least Slt.f (1.0 um) inside the plate, so Slt.a, Slt.b and Slt.f hold by
+	#     construction with no post-clip.
+	#   - The keep-out also honors the slit-to-via spacings (Slt.h2/h3/h4), keeps
+	#     slits off MIM (Slt.e1, and Slt.g space for M5/TM1), off pads and probe
+	#     recognition including their pillar/sbump purposes (Slt.e), off the designer's
+	#     nofill (x/23) and NoMetFiller (160/0), and off any slit already drawn.
+	#
+	# The slit layers (x/24) are absolute keep-outs for the two fill generators, so
+	# run this FIRST: slit the drawn plates, then fill the open area around them.
+	#
+	# Output: new slit cells on {metal}/24 only. Like the fill generators (and unlike
+	# the batch-self-contained nofill emitter) it emits only the geometry it creates;
+	# merge it back onto the design to keep the plates' pre-existing slits. The
+	# density-feedback driver (python/fill_closure.py style) can steer slit_gap.
+
+	require 'json'
+
+	# --- rule values from the tech JSON (single source with the checker) ---
+	# Slt.i / Slt.a / Slt.b / Slt.f / Slt.g / Slt.h* are real DRC rules (density.drc
+	# and 7_3_metalslits.drc); read them from interposer_tech_default.json instead of
+	# hard-coding, so the generator and the sign-off decks cannot drift. JSON
+	# location: -rd tech_json=&lt;path&gt; (headless) &gt; the copy shipped next to this macro
+	# (tech/drc/rule_decks) &gt; built-in defaults with a warning, so an interactive
+	# menu run never crashes on a missing file.
+	tech_json = $tech_json.to_s.empty? ?
+	  File.join(File.dirname(File.expand_path(__FILE__)), "..", "drc", "rule_decks", "interposer_tech_default.json") :
+	  $tech_json
+	rules = File.exist?(tech_json) ? JSON.parse(File.read(tech_json))["rules"] : nil
+	$stderr.puts("interposer_filler_slit: tech JSON not found (#{tech_json}); using built-in defaults") unless rules
+
+	rv = lambda { |key, dflt| (rules &amp;&amp; rules[key]) ? Float(rules[key]) : dflt }
+
+	slt_c  = rv.call("Slt_c", 30.0)     # max metal width that needs NO slit (Slt.c)
+	slt_a  = rv.call("Slt_a", 2.8)      # min slit width
+	slt_b  = rv.call("Slt_b", 20.0)     # max slit edge length
+	slt_f  = rv.call("Slt_f", 1.0)      # min metal enclosure of slit
+	slt_g  = rv.call("Slt_g", 0.6)      # min slit space to MIM (M5/TM1)
+	slt_h2 = rv.call("Slt_h2", 0.3)     # min slit space to Via4 / TopVia1 (M4/M5)
+	slt_h3 = rv.call("Slt_h3", 1.0)     # min slit space to TopVia1 (TM1)
+	slt_h4 = rv.call("Slt_h4", 1.0)     # min slit space to TopVia2 (TM2)
+
+	# --- slit-cell geometry (generator choices, not DRC rules) ---
+	# side: clamped to Slt.a &lt;= side &lt;= Slt.b so an -rd override cannot produce a slit
+	# that is itself illegal. Default 3.0 um clears the 2.8 um minimum width and is far
+	# under the 20 um edge cap.
+	side = [[($slit_side || "3.0").to_f, slt_a].max, slt_b].min
+	# gap: lattice gap between cells. Coverage ~ side^2 / (side + gap)^2. The default
+	# (side 3.0, gap 5.0 -&gt; 8 um pitch) lands the per-plate slit ratio at ~10% on the
+	# smallest qualifying plate (just over 30 um, where the opening rounds hardest) and
+	# ~13% on a large plane, so every plate clears the 6% Slt.i floor with margin. A
+	# larger gap removes less metal but tightens that margin; -rd slit_gap overrides
+	# (clamped non-negative), and a density-feedback driver can steer it per run.
+	gap = [($slit_gap || "5.0").to_f, 0.0].max
+
+	# Detect every plate Slt.c flags (metal wider than Slt_c = 30 um), a superset of the
+	# Slt.i plates (wider than 35 um), so one pass clears BOTH the "wide metal needs a
+	# slit" rule (Slt.c) and the "6% slit density" rule (Slt.i). The opening (erode then
+	# dilate by Slt_c/2) is the same morphology Slt.c uses. A plate whose fillable core,
+	# after the keep-outs below, is narrower than side+gap gets no cell; the density
+	# report and the metalslits deck flag any plate left under band for manual slotting.
+	half_w = 0.5 * slt_c
+
+	# Per-metal: [layer, name, [via "layer/dt", ...], via clearance, MIM Slt.g space?]
+	[
+	  [50,  "M4",  ["66/0"],          slt_h2, false],
+	  [67,  "M5",  ["66/0", "125/0"], slt_h2, true ],
+	  [126, "TM1", ["125/0"],         slt_h3, true ],
+	  [134, "TM2", ["133/0"],         slt_h4, false],
+	].each do |ml, nm, vias, via_clr, mim_space|
+	  metal = source.input("#{ml}/0")
+
+	  # Wide-plate detection (opens by Slt_c/2; see the note above).
+	  plate = metal.sized(-half_w).sized(half_w)
+
+	  # Keep-out so the emitted slits satisfy the 7.3 geometry rules by construction:
+	  #   Slt.f  metal encloses slit by slt_f     -&gt; erode the DRAWN metal by slt_f
+	  #   Slt.h* slit clears the adjacent vias     -&gt; subtract via.sized(via_clr)
+	  #   Slt.g / Slt.e1  slit clears / avoids MIM -&gt; subtract MIM (grown for M5/TM1)
+	  #   Slt.e  no slit on pads or probe recognition
+	  # Eroding the drawn metal (not the already-rounded opened plate) and keeping only
+	  # the wide-plate core avoids double corner rounding, so plates just over the
+	  # threshold still fit enough cells.
+	  region = metal.sized(-slt_f).and(plate)
+	  vias.each { |v| region = region - source.input(v).sized(via_clr) }
+	  mim = source.input("36/0")
+	  region = region - (mim_space ? mim.sized(slt_g) : mim)
+
+	  # Pads (dfpad) and probe recognition (Recog) carry the drawn purpose AND the
+	  # Cu-pillar / solder-bump purposes; subtract all three of each, or a slit would be
+	  # cut into a landing pad. Also honor the designer's own keep-outs (the per-metal
+	  # nofill x/23 and the global NoMetFiller 160/0, both absolute for the fill
+	  # generators) and any slit already drawn, so a rerun does not stack cells.
+	  pads  = source.input("41/0") | source.input("41/35") | source.input("41/36")
+	  recog = source.input("99/0") | source.input("99/35") | source.input("99/36")
+	  region = region - pads - recog
+	  region = region - source.input("#{ml}/23") - source.input("160/0")
+	  region = region - source.input("#{ml}/24")
+
+	  # Whole cells only: region.fill drops any cell that does not fully fit, so
+	  # every emitted slit is a full `side` square at least slt_f inside the plate.
+	  # multi_origin anchors the raster at each plate's own corner, so the achieved
+	  # per-plate ratio does not depend on where the plate sits relative to a global
+	  # grid (a single global raster can starve an unluckily-placed small plate).
+	  pat = fill_pattern("#{nm}_SLIT").shape(ml, 24, box(0.0, 0.0, side, side))
+	  region.fill(pat, hstep(side + gap), vstep(side + gap), multi_origin)
+	end
+ </text>
+</klayout-macro>

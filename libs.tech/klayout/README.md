@@ -64,15 +64,20 @@ libs.tech/klayout/
 │   └── macros/
 │       ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
 │       ├── interposer_filler_topmetal.lym  # TopMetal filler macro
-│       └── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
+│       ├── interposer_filler_slit.lym      # stress-relief slit generator (wide plates -> x/24)
+│       ├── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
+│       └── interposer_density_report.lym   # one-click density report (menu)
 ├── python/
 │   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
+│   ├── density_report.py           # density report: global + LBE + slit adequacy (CLI/menu)
 │   └── fill_closure.py              # fill driver: fill_stack (4-metal) + Metal4/Metal5 closure (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
+    ├── test_density_report.py       # pytest: density report matches the deck math
     ├── test_fill_closure.py         # pytest: fill closure converges density into band
     ├── test_fill_stack.py           # pytest: fill_stack fills all four metals, both modes
     ├── test_filler_metal.py         # pytest: Metal4/Metal5 fill is DRC-clean and in-band
+    ├── test_filler_slit.py          # pytest: slit generator clears Slt.c/Slt.i and 7.3 geometry
     ├── test_filler_topmetal.py      # pytest: TopMetal fill is DRC-clean and in-band
     ├── test_nofill_emitter.py       # pytest: no-fill emitter geometry + generator honors it
     └── test_layer_parity.py         # pytest: intm4tm2.lyp vs canonical layer list
@@ -180,6 +185,37 @@ into per-metal nofill (`x/23`), grown by a designer-chosen clearance (`-rd
 clearance=<um>`, `-rd metals=50,67,126,134`); both generators already honor `x/23`
 and `160/0` as absolute keep-outs, so the halo becomes real clearance. Run it before
 the generators.
+
+### Slits
+
+Wide power/ground planes need stress-relief slits: rule Slt.c flags any metal wider
+than 30 um that carries no slit, and Slt.i demands at least 6% slit coverage on any
+plate bigger than 35 x 35 um. `tech/macros/interposer_filler_slit.lym` cuts a grid of
+small square slits (`x/24`) into every wide drawn plate on Metal4, Metal5, TopMetal1
+and TopMetal2. It opens the metal by Slt_c/2 to catch every plate Slt.c flags (a
+superset of the Slt.i plates, so one pass clears both), sizes the cells so the 7.3
+geometry rules (Slt.a min width, Slt.b max edge, Slt.f enclosure, Slt.h via spacing)
+hold by construction, keeps slits off pads, probe recognition, MIM and the designer's
+`x/23` / `160/0` keep-outs, and anchors the lattice per plate so the per-plate ratio
+clears the 6% floor with margin (default ~10-13%; `-rd slit_gap=<um>` tunes it, clamped
+non-negative). Run it before the fill generators, which treat `x/24` as a keep-out.
+
+### Density report
+
+`python/density_report.py` measures the same quantities the density deck computes,
+global Metal4/Metal5/TopMetal1/TopMetal2 coverage, LBE coverage and per-plate slit
+adequacy, and prints them as a plain table (thresholds from the same tech JSON, so it
+cannot drift from sign-off):
+
+```bash
+python python/density_report.py in.gds --topcell INTERPOSER   # human-readable table
+python python/density_report.py in.gds --json                 # raw dict
+```
+
+`tech/macros/interposer_density_report.lym` is the one-click menu entry point: it runs
+the report on the active layout and shows it in a dialog. The windowed local-density
+rules (MnFil.h/k) and the authoritative pass/fail still come from running the density
+deck (`run_drc.py --density`).
 
 ### LVS
 
