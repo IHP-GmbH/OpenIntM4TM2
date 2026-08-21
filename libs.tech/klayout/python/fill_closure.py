@@ -40,11 +40,13 @@ Usage:
 """
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from pathlib import Path
 
 import klayout.db as kdb
@@ -52,6 +54,7 @@ import klayout.db as kdb
 HERE = Path(__file__).resolve().parent
 REPO_KLAYOUT = HERE.parent                      # libs.tech/klayout
 MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_metal.lym"
+TOPMETAL_MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_topmetal.lym"
 DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 # The generator reads its DRC clearances (MFil_c) from this same JSON; pass it
@@ -59,6 +62,13 @@ DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 METALS = {50: "M4", 67: "M5"}                   # GDS layer -> density rule prefix
+# The full interposer fill stack; TopMetal is added on top of the Metal4/Metal5 pass.
+STACK = {50: "M4", 67: "M5", 126: "TM1", 134: "TM2"}
+# density.drc band per metal, as (min_key, max_key) in interposer_tech_default.json;
+# Metal4/Metal5 share the Mn_j/Mn_k global band. Values there are fractions (0..1),
+# scaled to percent for the report to match the measured coverage_pct.
+BAND_KEYS = {50: ("Mn_j", "Mn_k"), 67: ("Mn_j", "Mn_k"),
+             126: ("TM1_c", "TM1_d"), 134: ("TM2_c", "TM2_d")}
 
 # density.drc global band (interposer_tech_default.json Mn_j / Mn_k), for the
 # human-readable report only; the deck verdict is what actually decides pass/fail.
@@ -73,9 +83,53 @@ DENSIFY = 0.7
 RELAX = 1.3
 
 
-def _macro_body():
-    """The DRC-DSL body of the fill macro (KLayout un-escapes the XML entities)."""
-    return ET.parse(MACRO).getroot().find("text").text
+def _macro_body(macro=MACRO):
+    """The DRC-DSL body of a fill macro (KLayout un-escapes the XML entities)."""
+    return ET.parse(macro).getroot().find("text").text
+
+
+def _run_topmetal(design, fill_only, workdir):
+    """Run the TopMetal1/TopMetal2 generator once, writing its fill to fill_only."""
+    runner = workdir / "fill_topmetal_run.drc"
+    runner.write_text(f'source("{design}")\ntarget("{fill_only}")\n' + _macro_body(TOPMETAL_MACRO))
+    subprocess.run([shutil.which("klayout"), "-b", "-rd", f"tech_json={TECH_JSON}", "-r", str(runner)],
+                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+@contextmanager
+def _workdir(workdir):
+    """Yield a working directory Path; make a temporary one when workdir is None."""
+    if workdir is None:
+        with tempfile.TemporaryDirectory() as td:
+            yield Path(td)
+    else:
+        wd = Path(workdir)
+        wd.mkdir(parents=True, exist_ok=True)
+        yield wd
+
+
+def _rules():
+    return json.loads(TECH_JSON.read_text())["rules"]
+
+
+def _band(rules, layer):
+    """[min, max] density band in percent for a metal layer, from the tech JSON."""
+    lo_key, hi_key = BAND_KEYS[layer]
+    return [float(rules[lo_key]) * 100.0, float(rules[hi_key]) * 100.0]
+
+
+def _metal_entry(rules, layer, coverage, state):
+    lo, hi = _band(rules, layer)
+    return {"coverage_pct": round(coverage, 2), "band": [lo, hi],
+            "state": state, "converged": state == "ok"}
+
+
+def _area_entry(rules, layer, coverage):
+    """Report entry for a metal graded by area coverage against its band (no deck)."""
+    lo, hi = _band(rules, layer)
+    state = "under" if coverage < lo else "over" if coverage > hi else "ok"
+    return {"coverage_pct": round(coverage, 2), "band": [lo, hi],
+            "state": state, "converged": lo <= coverage <= hi}
 
 
 def _run_generator(design, fill_only, params, workdir):
@@ -156,9 +210,14 @@ def close_fill(design, output, topcell="TOP", max_iter=6, workdir=None, log=lamb
     """Iterate the generator to bring Metal4/Metal5 density in band.
 
     Returns (converged, history). history is one dict per iteration with the
-    gaps used, the achieved density, and the deck state per metal.
+    gaps used, the achieved density, and the deck state per metal. `workdir` may
+    be None, in which case a temporary directory is created and cleaned up.
     """
-    workdir = Path(workdir)
+    with _workdir(workdir) as wd:
+        return _close_fill(design, output, topcell, max_iter, wd, log)
+
+
+def _close_fill(design, output, topcell, max_iter, workdir, log):
     fill_only = workdir / "fill_only.gds"
     combined = workdir / "combined.gds"
     run_dir = workdir / "drc_run"
@@ -184,6 +243,74 @@ def close_fill(design, output, topcell="TOP", max_iter=6, workdir=None, log=lamb
 
     Path(output).write_bytes(combined.read_bytes())
     return converged, history
+
+
+def fill_stack(design, output, topcell="INTERPOSER", mode="single-pass",
+               max_iter=6, workdir=None, log=lambda *_: None):
+    """Fill all four interposer metals (Metal4, Metal5, TopMetal1, TopMetal2) in one call.
+
+    mode "single-pass" (default): run each generator once, merge, and grade coverage by
+    area against each metal's density band (fast, no DRC deck). mode "closure": drive
+    Metal4/Metal5 through the density-feedback loop (deck-verified) and add a single
+    TopMetal pass graded by area.
+
+    Honors the keep-outs already in `design`: both generators subtract the per-metal
+    nofill datatypes (<metal>/23) and NoMetFiller (160/0), and merging only adds fill,
+    so anything stamped upstream (for example by the KiCad plugin) is preserved.
+
+    Safe in place: `output` may be the same path as `design`; the design is read fully
+    before `output` is written. `workdir` may be None (a temporary directory is used).
+
+    Returns a report dict, coverage and band in percent:
+        {"mode": ...,
+         "converged": bool,                       # AND over the four metals
+         "M4"/"M5"/"TM1"/"TM2": {"coverage_pct", "band": [min, max], "state", "converged"}}
+    where "state" is "ok"/"under"/"over", plus "split" for a Metal4/Metal5 that the deck
+    finds both under and over across windows (closure mode only).
+    """
+    if shutil.which("klayout") is None:
+        raise RuntimeError("klayout binary not on PATH")
+    if mode not in ("single-pass", "closure"):
+        raise ValueError(f"unknown mode {mode!r} (expected 'single-pass' or 'closure')")
+
+    with _workdir(workdir) as wd:
+        rules = _rules()
+        report = {"mode": mode}
+
+        if mode == "closure":
+            m45 = wd / "m45.gds"
+            _, history = close_fill(design, m45, topcell, max_iter, workdir=wd / "closure", log=log)
+            last = history[-1]
+            for layer in METALS:
+                report[STACK[layer]] = _metal_entry(rules, layer,
+                                                     last["density"][layer], last["state"][layer])
+            base_for_tm = m45
+        else:
+            fill_m = wd / "fill_metal.gds"
+            _run_generator(design, fill_m, {layer: DEFAULT_GAPS for layer in METALS}, wd)
+            m45 = wd / "m45.gds"
+            _merge(design, fill_m, m45)
+            base_for_tm = m45
+
+        # TopMetal on top of the (already Metal4/Metal5-filled) layout; the top metals
+        # live on their own layers, so this does not disturb the lower-metal result.
+        fill_tm = wd / "fill_topmetal.gds"
+        _run_topmetal(base_for_tm, fill_tm, wd)
+        combined = wd / "combined.gds"
+        _merge(base_for_tm, fill_tm, combined)
+
+        # Grade by area the metals the deck did not already decide.
+        area_layers = list(STACK) if mode == "single-pass" else [126, 134]
+        for layer in area_layers:
+            report[STACK[layer]] = _area_entry(rules, layer, _density(combined, layer))
+
+        report["converged"] = all(report[STACK[layer]]["converged"] for layer in STACK)
+
+        Path(output).write_bytes(combined.read_bytes())
+        log("fill_stack ({}): {}".format(mode, "  ".join(
+            f"{STACK[layer]}={report[STACK[layer]]['coverage_pct']:.1f}% "
+            f"[{report[STACK[layer]]['state']}]" for layer in STACK)))
+        return report
 
 
 def main(argv=None):
