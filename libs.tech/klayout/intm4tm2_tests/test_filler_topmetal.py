@@ -28,6 +28,7 @@ Two region paths are exercised (EdgeSeal-only and prBoundary), matching the
 generator's prBoundary > seal > extent fallback.
 """
 
+import json
 import shutil
 import subprocess
 import sys
@@ -41,6 +42,7 @@ REPO_KLAYOUT = Path(__file__).resolve().parents[1]
 MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_topmetal.lym"
 DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
+TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
 
@@ -78,10 +80,10 @@ def _build_design(path, with_prboundary):
     ly.write(str(path))
 
 
-def _run_macro(design, fill_only, workdir):
+def _run_macro(design, fill_only, workdir, tech_json=TECH_JSON):
     runner = workdir / "run_fill.drc"
     runner.write_text(f'source("{design}")\ntarget("{fill_only}")\n' + _macro_body())
-    subprocess.run([KLAYOUT_BIN, "-b", "-r", str(runner)],
+    subprocess.run([KLAYOUT_BIN, "-b", "-rd", f"tech_json={tech_json}", "-r", str(runner)],
                    check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
@@ -153,3 +155,71 @@ def test_topmetal_fill_is_drc_clean_and_in_band(with_prboundary, tmp_path):
         d = _density(combined, metal_layer)
         assert DENSITY_MIN <= d <= DENSITY_MAX, \
             f"{name} drawn+fill density {d:.1f}% outside [{DENSITY_MIN}, {DENSITY_MAX}] %"
+
+
+def _fill_area(fill_gds, layer, dt=22):
+    ly = kdb.Layout()
+    ly.read(str(fill_gds))
+    li = ly.find_layer(layer, dt)
+    if li is None:
+        return 0.0
+    top = ly.top_cell()
+    # materialize the area here while `ly` is alive: a Region from a recursive
+    # iterator borrows the layout and empties out once it goes out of scope.
+    reg = kdb.Region(top.begin_shapes_rec(li))
+    return reg.area() * ly.dbu * ly.dbu
+
+
+def _keepout_honored(design_gds, fill_gds, layer, clearance):
+    """No generated filler on `layer` lands within `clearance` of drawn metal."""
+    dly = kdb.Layout()
+    dly.read(str(design_gds))
+    dtop = dly.top_cell()
+    dli = dly.find_layer(layer, 0)
+    metal = kdb.Region() if dli is None else kdb.Region(dtop.begin_shapes_rec(dli))
+    fly = kdb.Layout()
+    fly.read(str(fill_gds))
+    ftop = fly.top_cell()
+    fli = fly.find_layer(layer, 22)
+    filler = kdb.Region() if fli is None else kdb.Region(ftop.begin_shapes_rec(fli))
+    halo = int(round((clearance - 0.05) / dly.dbu))
+    return (metal.sized(halo) & filler).is_empty()
+
+
+def _tech_json_override(base_json, overrides, out):
+    data = json.loads(base_json.read_text())
+    data["rules"].update(overrides)
+    out.write_text(json.dumps(data))
+    return out
+
+
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+def test_generator_reads_tmfil_c_per_metal_from_tech_json(tmp_path):
+    """TM(n)Fil.c is read per metal from the tech JSON, not shared or hard-coded.
+
+    Bumping only TM1Fil_c must shrink the TopMetal1 fill and push it past the new
+    keep-out, while leaving the TopMetal2 fill identical. That proves both that the
+    value is read from the JSON and that the per-metal key (TM1 vs TM2) is honored
+    rather than a single shared clearance applied to both metals.
+    """
+    design = tmp_path / "design.gds"
+    _build_design(design, with_prboundary=False)
+
+    base = tmp_path / "fill_base.gds"
+    _run_macro(design, base, tmp_path, tech_json=TECH_JSON)
+
+    tj = _tech_json_override(TECH_JSON, {"TM1Fil_c": 12.0}, tmp_path / "tech_tm1.json")
+    bumped = tmp_path / "fill_tm1.gds"
+    _run_macro(design, bumped, tmp_path, tech_json=tj)
+
+    tm1_base, tm1_bump = _fill_area(base, 126), _fill_area(bumped, 126)
+    tm2_base, tm2_bump = _fill_area(base, 134), _fill_area(bumped, 134)
+
+    assert tm1_base > 0 and tm1_bump > 0, "no TopMetal1 fill generated"
+    assert tm2_base > 0, "no TopMetal2 fill generated"
+    assert tm1_bump < tm1_base, \
+        f"TM1Fil_c bump left TopMetal1 fill unchanged ({tm1_bump:.1f} vs {tm1_base:.1f} um2): tech JSON not read"
+    assert _keepout_honored(design, bumped, 126, 12.0), \
+        "TopMetal1 fill ignored the bumped TM1Fil_c=12.0 keep-out from the tech JSON"
+    assert tm2_bump == tm2_base, \
+        f"bumping TM1Fil_c changed TopMetal2 fill ({tm2_bump:.1f} vs {tm2_base:.1f} um2): clearance key is not per-metal"
