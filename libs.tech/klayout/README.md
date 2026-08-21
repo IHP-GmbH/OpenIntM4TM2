@@ -70,7 +70,7 @@ libs.tech/klayout/
 ├── python/
 │   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 │   ├── density_report.py           # density report: global + LBE + slit adequacy (CLI/menu)
-│   └── fill_closure.py              # fill driver: fill_stack (4-metal) + Metal4/Metal5 closure (CLI)
+│   └── fill_closure.py              # fill driver: fill_stack + 4-metal density closure (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
     ├── test_density_report.py       # pytest: density report matches the deck math
@@ -163,9 +163,11 @@ filler-to-metal and filler-to-filler clearances (`MFil_c`, `TM(n)Fil_c/b`) are
 read from `tech/drc/rule_decks/interposer_tech_default.json`, the same file the
 sign-off decks use, so the generators and the checker cannot drift apart.
 
-For a batch flow that also verifies the result, `python/fill_closure.py` runs the
-Metal4/Metal5 generator, checks the density deck, and shrinks or grows the fill
-lattice per metal until both are in band (or the iteration budget is spent):
+For a batch flow that also verifies the result, `python/fill_closure.py` runs both
+generators, checks the density deck, and adjusts each metal's lattice until all four
+are in band (or the iteration budget is spent): Metal4/Metal5 densify or relax, and
+TopMetal relaxes to hold under its 70% cap (it is already at maximum density, so an
+under-band TopMetal is a drawn-metal issue, reported not chased):
 
 ```bash
 python python/fill_closure.py in.gds -o out.gds            # design + closed fill
@@ -177,7 +179,7 @@ For a single call that fills the whole stack (Metal4, Metal5, TopMetal1, TopMeta
 is the in-process entry point (used by the KiCad chiplet_export plugin). It merges each
 generator's output, honors keep-outs already in the design (`<metal>/23`, `160/0`), is
 safe when `output` equals the input, and returns a per-metal coverage/band/state report;
-`single-pass` grades by area (no deck), `closure` deck-verifies Metal4/Metal5.
+`single-pass` grades by area (no deck), `closure` deck-verifies all four metals.
 
 To keep fill away from RF structures, matched devices, pillar pads or probe areas,
 `tech/macros/interposer_nofill.lym` turns a region marked on NoMetFiller (160/0)

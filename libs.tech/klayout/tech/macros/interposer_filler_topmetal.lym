@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <klayout-macro>
  <description>Fill TopMetal</description>
- <version>0.3</version>
+ <version>0.4</version>
  <category>filler</category>
  <prolog/>
  <epilog/>
@@ -56,6 +56,14 @@
 	width   = 5.0   # TopMetal filler cell width;  &lt;= TM(n)Fil.a1 (max filler width 10.0 um)
 	height  = 10.0  # TopMetal filler cell height; &lt;= TM(n)Fil.a1
 
+	# Extra lattice gap ADDED to the TM(n)Fil.b minimum spacing, per metal, overridable
+	# with -rd. Default 0.0 keeps the densest legal grid (spacing exactly TM(n)Fil.b),
+	# which lands ~40% on open area, mid-band of the 25..70% TopMetal window. The
+	# density-feedback driver (python/fill_closure.py) grows this to thin the fill when a
+	# design that is already dense in drawn TopMetal would otherwise cross the 70% cap;
+	# it cannot densify below the minimum spacing, so an under-band case is a design issue.
+	tm_gap = { "TM1" =&gt; ($tm1_gap || "0.0").to_f, "TM2" =&gt; ($tm2_gap || "0.0").to_f }
+
 	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
 	prb  = source.input("235/0")
 	seal = source.input("39/0")
@@ -85,8 +93,9 @@
 	  vias.each { |v| excl = excl | source.input(v).sized(tmfil_c) }
 	  region = base - excl
 
+	  extra = [tm_gap[nm], 0.0].max   # never tighter than the TM(n)Fil.b minimum
 	  pat = fill_pattern("#{nm}_FILL_CELL").shape(ml, 22, box(0.0, 0.0, width, height))
-	  region.fill(pat, hstep(width + tmfil_b), vstep(height + tmfil_b))
+	  region.fill(pat, hstep(width + tmfil_b + extra), vstep(height + tmfil_b + extra))
 	end
  </text>
 </klayout-macro>
