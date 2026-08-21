@@ -67,10 +67,11 @@ libs.tech/klayout/
 │       └── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
 ├── python/
 │   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
-│   └── fill_closure.py              # Metal4/Metal5 density-feedback fill driver (CLI)
+│   └── fill_closure.py              # fill driver: fill_stack (4-metal) + Metal4/Metal5 closure (CLI)
 └── intm4tm2_tests/
     ├── test_bump_mirror.py          # pytest suite for bump_mirror
     ├── test_fill_closure.py         # pytest: fill closure converges density into band
+    ├── test_fill_stack.py           # pytest: fill_stack fills all four metals, both modes
     ├── test_filler_metal.py         # pytest: Metal4/Metal5 fill is DRC-clean and in-band
     ├── test_filler_topmetal.py      # pytest: TopMetal fill is DRC-clean and in-band
     ├── test_nofill_emitter.py       # pytest: no-fill emitter geometry + generator honors it
@@ -165,6 +166,13 @@ lattice per metal until both are in band (or the iteration budget is spent):
 python python/fill_closure.py in.gds -o out.gds            # design + closed fill
 python python/fill_closure.py in.gds -o out.gds --max-iter 8
 ```
+
+For a single call that fills the whole stack (Metal4, Metal5, TopMetal1, TopMetal2),
+`fill_closure.fill_stack(design, output, topcell="INTERPOSER", mode="single-pass"|"closure")`
+is the in-process entry point (used by the KiCad chiplet_export plugin). It merges each
+generator's output, honors keep-outs already in the design (`<metal>/23`, `160/0`), is
+safe when `output` equals the input, and returns a per-metal coverage/band/state report;
+`single-pass` grades by area (no deck), `closure` deck-verifies Metal4/Metal5.
 
 To keep fill away from RF structures, matched devices, pillar pads or probe areas,
 `tech/macros/interposer_nofill.lym` turns a region marked on NoMetFiller (160/0)
