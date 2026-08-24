@@ -16,24 +16,28 @@
 # limitations under the License.
 #
 ########################################################################
-"""Density-feedback fill closure for interposer Metal4/Metal5.
+"""Density-feedback fill closure for all four interposer metals.
 
-The fill generator (tech/macros/interposer_filler_metal.lym) places a fixed-grid
-pattern; on its own it does not know whether the result actually lands inside the
-density band. This driver closes that loop: it runs the generator, signs the
-result off with the interposer density deck (density.drc, the same fetch_rule
-thresholds used at tape-out), and adjusts the generator's pitch until both lower
-metals are in band or the iteration budget is spent.
+The fill generators (tech/macros/interposer_filler_metal.lym for Metal4/Metal5,
+interposer_filler_topmetal.lym for TopMetal1/TopMetal2) place fixed-grid patterns; on
+their own they do not know whether the result actually lands inside the density band.
+This driver closes that loop: each iteration it runs both generators, merges the fill,
+signs the result off with the interposer density deck (density.drc, the same fetch_rule
+thresholds used at tape-out), and adjusts each metal's lattice until all four are in band
+or the iteration budget is spent.
 
 Per metal, from the deck verdict:
-  - under the floor  (M4.j / M4Fil.h) -> densify   (shrink the lattice gap)
-  - over the cap     (M4.k / M4Fil.k) -> relax     (grow the lattice gap)
-  - both at once (one window sparse, another dense) -> a global pitch cannot fix
-    it; reported as 'split', left for local fill (not yet implemented)
+  - Metal4/Metal5 under the floor (Mn.j / MnFil.h) -> densify (shrink the lattice gap);
+    over the cap (Mn.k / MnFil.k) -> relax (grow the lattice gap).
+  - TopMetal over the cap (TMn.d) -> relax (grow the lattice gap). The TopMetal grid is
+    already at maximum density, so an under-band TopMetal (TMn.c) cannot be helped by any
+    pitch and is reported, not chased (that is a drawn-metal issue).
+  - Metal4/Metal5 both under and over across windows -> a global pitch cannot fix it;
+    reported as 'split', left for local fill (not yet implemented).
 
-The deck stays the authority for pass/fail; this only steers the generator. The
-output is the design with the accepted fill merged in (fill flattened; run the
-macro interactively if you want the fill kept as cell instances).
+The deck stays the authority for pass/fail; this only steers the generators. The output
+is the design with the accepted fill merged in (fill flattened; run the macros
+interactively if you want the fill kept as cell instances).
 
 Usage:
     python fill_closure.py in.gds -o out.gds [--topcell TOP] [--max-iter 6]
@@ -61,18 +65,15 @@ DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 # explicitly so the driven run uses the sign-off values, never a stale literal.
 TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
-METALS = {50: "M4", 67: "M5"}                   # GDS layer -> density rule prefix
-# The full interposer fill stack; TopMetal is added on top of the Metal4/Metal5 pass.
+METALS = {50: "M4", 67: "M5"}                   # lower metals (two-size lattice generator)
+TOPMETALS = {126: "TM1", 134: "TM2"}            # top metals (single-cell lattice generator)
+# The full interposer fill stack; the closure drives all four against the density deck.
 STACK = {50: "M4", 67: "M5", 126: "TM1", 134: "TM2"}
 # density.drc band per metal, as (min_key, max_key) in interposer_tech_default.json;
 # Metal4/Metal5 share the Mn_j/Mn_k global band. Values there are fractions (0..1),
 # scaled to percent for the report to match the measured coverage_pct.
 BAND_KEYS = {50: ("Mn_j", "Mn_k"), 67: ("Mn_j", "Mn_k"),
              126: ("TM1_c", "TM1_d"), 134: ("TM2_c", "TM2_d")}
-
-# density.drc global band (interposer_tech_default.json Mn_j / Mn_k), for the
-# human-readable report only; the deck verdict is what actually decides pass/fail.
-GLOBAL_MIN, GLOBAL_MAX = 35.0, 60.0
 
 DEFAULT_GAPS = (0.84, 0.60)                      # (large_gap, small_gap), = macro defaults
 # Densest allowed lattice: large gap 0.35 keeps the 2.0 um cell open-area coverage
@@ -82,17 +83,34 @@ GAP_CAP = (5.0, 5.0)
 DENSIFY = 0.7
 RELAX = 1.3
 
+# TopMetal lattice: a single extra gap added to the TM(n)Fil.b minimum spacing. The
+# generator is already at maximum density at 0.0, so the closure can only RELAX (thin
+# the fill) when a design that is dense in drawn TopMetal crosses the 70% cap; it cannot
+# densify below the minimum, so a TopMetal that comes in under 25% is a design issue and
+# is reported, not chased. Grown additively (multiplying 0.0 would never move).
+TM_DEFAULT_GAP = 0.0
+TM_GAP_CAP = 30.0
+TM_GAP_STEP = 3.0
+
 
 def _macro_body(macro=MACRO):
     """The DRC-DSL body of a fill macro (KLayout un-escapes the XML entities)."""
     return ET.parse(macro).getroot().find("text").text
 
 
-def _run_topmetal(design, fill_only, workdir):
-    """Run the TopMetal1/TopMetal2 generator once, writing its fill to fill_only."""
+def _run_topmetal(design, fill_only, workdir, params=None):
+    """Run the TopMetal1/TopMetal2 generator once, writing its fill to fill_only.
+
+    `params` optionally maps a TopMetal GDS layer (126/134) to the extra lattice gap
+    (um) the closure wants; unset, the macro uses its dense default (gap 0.0).
+    """
+    defines = ["-rd", f"tech_json={TECH_JSON}"]
+    for layer, extra in (params or {}).items():
+        key = TOPMETALS[layer].lower()          # tm1 / tm2
+        defines += ["-rd", f"{key}_gap={extra:.4f}"]
     runner = workdir / "fill_topmetal_run.drc"
     runner.write_text(f'source("{design}")\ntarget("{fill_only}")\n' + _macro_body(TOPMETAL_MACRO))
-    subprocess.run([shutil.which("klayout"), "-b", "-rd", f"tech_json={TECH_JSON}", "-r", str(runner)],
+    subprocess.run([shutil.which("klayout"), "-b", *defines, "-r", str(runner)],
                    check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
@@ -182,7 +200,11 @@ def _density(gds, metal_layer):
 
 
 def _deck_state(combined, topcell, run_dir):
-    """Per-metal in-band classification straight from the density deck verdict."""
+    """Per-metal in-band classification straight from the density deck verdict.
+
+    Metal4/Metal5 read the global band (Mn.j/Mn.k) and the 800 um windowed band
+    (MnFil.h/k); TopMetal1/TopMetal2 have only the global band (TMn.c/TMn.d), no window.
+    """
     if str(DRC_DIR) not in sys.path:
         sys.path.insert(0, str(DRC_DIR))
     from run_drc import run_deck, get_rules_with_violations
@@ -190,56 +212,86 @@ def _deck_state(combined, topcell, run_dir):
                       run_dir, threads=2, run_mode="flat")
     viol = get_rules_with_violations(report)
     state = {}
-    for layer, name in METALS.items():
-        under = (f"{name}.j" in viol) or (f"{name}Fil.h" in viol)
-        over = (f"{name}.k" in viol) or (f"{name}Fil.k" in viol)
+    for layer, name in STACK.items():
+        if layer in METALS:
+            under = (f"{name}.j" in viol) or (f"{name}Fil.h" in viol)
+            over = (f"{name}.k" in viol) or (f"{name}Fil.k" in viol)
+        else:                                    # TopMetal: global-only TMn.c / TMn.d
+            under = f"{name}.c" in viol
+            over = f"{name}.d" in viol
         state[layer] = "split" if (under and over) else "under" if under else "over" if over else "ok"
     return state
 
 
-def _adjust(gaps, state):
-    large_gap, small_gap = gaps
-    if state == "under":
-        return (max(GAP_FLOOR[0], large_gap * DENSIFY), max(GAP_FLOOR[1], small_gap * DENSIFY))
+def _adjust(layer, gaps, state):
+    """Next lattice parameters for one metal from its deck verdict.
+
+    Metal4/Metal5 carry a (large_gap, small_gap) tuple, shrunk to densify and grown to
+    relax. TopMetal carries a single extra gap that only grows (it is already at maximum
+    density), so an 'under' TopMetal is left as is for the report rather than chased.
+    'ok' and 'split' never move: a single global pitch cannot fix a window that is sparse
+    and another that is dense.
+    """
+    if layer in METALS:
+        large_gap, small_gap = gaps
+        if state == "under":
+            return (max(GAP_FLOOR[0], large_gap * DENSIFY), max(GAP_FLOOR[1], small_gap * DENSIFY))
+        if state == "over":
+            return (min(GAP_CAP[0], large_gap * RELAX), min(GAP_CAP[1], small_gap * RELAX))
+        return gaps
+    # TopMetal: grow the extra gap to thin an over-cap fill; cannot densify past 0.
     if state == "over":
-        return (min(GAP_CAP[0], large_gap * RELAX), min(GAP_CAP[1], small_gap * RELAX))
-    return gaps                                  # 'ok' or 'split': global pitch cannot help
+        return min(TM_GAP_CAP, gaps + TM_GAP_STEP)
+    return gaps
 
 
 def close_fill(design, output, topcell="TOP", max_iter=6, workdir=None, log=lambda *_: None):
-    """Iterate the generator to bring Metal4/Metal5 density in band.
+    """Iterate the generators to bring all four interposer metals into band.
 
-    Returns (converged, history). history is one dict per iteration with the
-    gaps used, the achieved density, and the deck state per metal. `workdir` may
-    be None, in which case a temporary directory is created and cleaned up.
+    Each iteration runs the Metal4/Metal5 generator and the TopMetal generator, merges
+    both fills onto the design, signs the result off with the density deck, and adjusts
+    each metal's lattice from the deck verdict (Metal4/Metal5 densify or relax; TopMetal
+    relaxes only). Returns (converged, history); history is one dict per iteration with
+    the per-metal gaps used, the achieved density, and the deck state, keyed by the four
+    STACK layers. `workdir` may be None, in which case a temporary directory is used.
     """
     with _workdir(workdir) as wd:
         return _close_fill(design, output, topcell, max_iter, wd, log)
 
 
+def _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined):
+    """Fill Metal4/Metal5 and TopMetal for one iteration and merge into `combined`."""
+    _run_generator(design, fill_m45, {l: params[l] for l in METALS}, workdir)
+    _run_topmetal(design, fill_tm, workdir, {l: params[l] for l in TOPMETALS})
+    _merge(design, fill_m45, tmp)
+    _merge(tmp, fill_tm, combined)
+
+
 def _close_fill(design, output, topcell, max_iter, workdir, log):
-    fill_only = workdir / "fill_only.gds"
+    fill_m45 = workdir / "fill_m45.gds"
+    fill_tm = workdir / "fill_tm.gds"
+    tmp = workdir / "m45.gds"
     combined = workdir / "combined.gds"
     run_dir = workdir / "drc_run"
     run_dir.mkdir(exist_ok=True)
 
     params = {layer: DEFAULT_GAPS for layer in METALS}
+    params.update({layer: TM_DEFAULT_GAP for layer in TOPMETALS})
     history = []
     converged = False
 
     for iteration in range(1, max_iter + 1):
-        _run_generator(design, fill_only, params, workdir)
-        _merge(design, fill_only, combined)
+        _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined)
         state = _deck_state(combined, topcell, run_dir)
-        density = {layer: _density(combined, layer) for layer in METALS}
+        density = {layer: _density(combined, layer) for layer in STACK}
         history.append({"iter": iteration, "gaps": dict(params),
                         "density": dict(density), "state": dict(state)})
         log("iter {}: {}".format(
-            iteration, "  ".join(f"{METALS[l]}={density[l]:.1f}% [{state[l]}]" for l in METALS)))
-        if all(state[layer] == "ok" for layer in METALS):
+            iteration, "  ".join(f"{STACK[l]}={density[l]:.1f}% [{state[l]}]" for l in STACK)))
+        if all(state[layer] == "ok" for layer in STACK):
             converged = True
             break
-        params = {layer: _adjust(params[layer], state[layer]) for layer in METALS}
+        params = {layer: _adjust(layer, params[layer], state[layer]) for layer in STACK}
 
     Path(output).write_bytes(combined.read_bytes())
     return converged, history
@@ -250,9 +302,9 @@ def fill_stack(design, output, topcell="INTERPOSER", mode="single-pass",
     """Fill all four interposer metals (Metal4, Metal5, TopMetal1, TopMetal2) in one call.
 
     mode "single-pass" (default): run each generator once, merge, and grade coverage by
-    area against each metal's density band (fast, no DRC deck). mode "closure": drive
-    Metal4/Metal5 through the density-feedback loop (deck-verified) and add a single
-    TopMetal pass graded by area.
+    area against each metal's density band (fast, no DRC deck). mode "closure": drive all
+    four metals through the density-feedback loop, deck-verified each iteration (Metal4/
+    Metal5 densify or relax the lattice; TopMetal relaxes to hold under its 70% cap).
 
     Honors the keep-outs already in `design`: both generators subtract the per-metal
     nofill datatypes (<metal>/23) and NoMetFiller (160/0), and merging only adds fill,
@@ -266,7 +318,8 @@ def fill_stack(design, output, topcell="INTERPOSER", mode="single-pass",
          "converged": bool,                       # AND over the four metals
          "M4"/"M5"/"TM1"/"TM2": {"coverage_pct", "band": [min, max], "state", "converged"}}
     where "state" is "ok"/"under"/"over", plus "split" for a Metal4/Metal5 that the deck
-    finds both under and over across windows (closure mode only).
+    finds both under and over across windows (closure mode only). In closure mode every
+    metal's state comes from the deck; in single-pass it is graded by area.
     """
     if shutil.which("klayout") is None:
         raise RuntimeError("klayout binary not on PATH")
@@ -278,35 +331,28 @@ def fill_stack(design, output, topcell="INTERPOSER", mode="single-pass",
         report = {"mode": mode}
 
         if mode == "closure":
-            m45 = wd / "m45.gds"
-            _, history = close_fill(design, m45, topcell, max_iter, workdir=wd / "closure", log=log)
+            # The closure drives all four metals against the density deck and writes the
+            # merged design+fill straight to `output`; grade every metal by its verdict.
+            _, history = close_fill(design, output, topcell, max_iter,
+                                    workdir=wd / "closure", log=log)
             last = history[-1]
-            for layer in METALS:
+            for layer in STACK:
                 report[STACK[layer]] = _metal_entry(rules, layer,
-                                                     last["density"][layer], last["state"][layer])
-            base_for_tm = m45
+                                                    last["density"][layer], last["state"][layer])
         else:
             fill_m = wd / "fill_metal.gds"
             _run_generator(design, fill_m, {layer: DEFAULT_GAPS for layer in METALS}, wd)
             m45 = wd / "m45.gds"
             _merge(design, fill_m, m45)
-            base_for_tm = m45
-
-        # TopMetal on top of the (already Metal4/Metal5-filled) layout; the top metals
-        # live on their own layers, so this does not disturb the lower-metal result.
-        fill_tm = wd / "fill_topmetal.gds"
-        _run_topmetal(base_for_tm, fill_tm, wd)
-        combined = wd / "combined.gds"
-        _merge(base_for_tm, fill_tm, combined)
-
-        # Grade by area the metals the deck did not already decide.
-        area_layers = list(STACK) if mode == "single-pass" else [126, 134]
-        for layer in area_layers:
-            report[STACK[layer]] = _area_entry(rules, layer, _density(combined, layer))
+            fill_tm = wd / "fill_topmetal.gds"
+            _run_topmetal(m45, fill_tm, wd)
+            combined = wd / "combined.gds"
+            _merge(m45, fill_tm, combined)
+            for layer in STACK:
+                report[STACK[layer]] = _area_entry(rules, layer, _density(combined, layer))
+            Path(output).write_bytes(combined.read_bytes())
 
         report["converged"] = all(report[STACK[layer]]["converged"] for layer in STACK)
-
-        Path(output).write_bytes(combined.read_bytes())
         log("fill_stack ({}): {}".format(mode, "  ".join(
             f"{STACK[layer]}={report[STACK[layer]]['coverage_pct']:.1f}% "
             f"[{report[STACK[layer]]['state']}]" for layer in STACK)))
@@ -315,7 +361,7 @@ def fill_stack(design, output, topcell="INTERPOSER", mode="single-pass",
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Density-feedback fill closure for interposer Metal4/Metal5")
+        description="Density-feedback fill closure for all four interposer metals")
     parser.add_argument("input", help="input layout (GDS/OAS)")
     parser.add_argument("-o", "--output", required=True, help="output layout (design + fill)")
     parser.add_argument("--topcell", default="TOP")
@@ -329,12 +375,14 @@ def main(argv=None):
         converged, history = close_fill(args.input, args.output, args.topcell,
                                         args.max_iter, workdir=td, log=print)
 
+    rules = _rules()
     last = history[-1]
     print("\nFill closure " + ("CONVERGED" if converged
                                else f"did NOT converge in {args.max_iter} iterations"))
-    for layer, name in METALS.items():
+    for layer, name in STACK.items():
+        lo, hi = _band(rules, layer)
         print(f"  {name}: {last['density'][layer]:.1f}%  "
-              f"band[{GLOBAL_MIN:.0f},{GLOBAL_MAX:.0f}]  [{last['state'][layer]}]")
+              f"band[{lo:.0f},{hi:.0f}]  [{last['state'][layer]}]")
     print(f"  output: {args.output}")
     return 0 if converged else 1
 
