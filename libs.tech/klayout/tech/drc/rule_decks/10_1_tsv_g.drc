@@ -1,0 +1,139 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2026 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+
+# INTERPOSER_SCOPE: extension
+# INTERPOSER_SOURCE: SG13G2 Layout Rules Rev. 2.1
+# INTERPOSER_NOTE: TSV_G is retained intentionally as an SG13G2-derived interposer extension.
+# DEVIATION: the sg13g2 source guards the table with `TABLES.include?('tsv_g') || BEOL`.
+# The interposer engine has no TABLES selector, so this is reduced to `if BEOL`
+# (deck selection is handled by the runset's all_decks map).
+
+if BEOL
+  #================================================
+  #----------- 10.1. Through-Silicon Via ----------
+  #================================================
+
+  logger.info('Starting 10.1 TSV_G table')
+
+  deepvia_ring = deepvia_drw.interacting(deepvia_drw.holes)
+  deepvia_holes = deepvia_ring.holes
+  # Build a solid TSV body from valid rings so spacing/enclosure checks do not
+  # measure the ring opening or cascade from malformed DeepVia polygons.
+  tsv_fill = (deepvia_ring + deepvia_holes).merged
+
+  # Rule TSV_G.a: DeepVia has to be a ring structure
+  logger.info('Executing rule TSV_G.a')
+  tsvg_a_l = deepvia_drw.not(deepvia_ring)
+  tsvg_a_l.output('TSV_G.a', '10.1. TSV_G.a: DeepVia has to be a ring structure')
+  tsvg_a_l.forget
+
+  # Rule TSV_G.b: Min. and max. DeepVia width is 3.00 um
+  logger.info('Executing rule TSV_G.b')
+  tsvg_b_value = drc_rules['TSV_G_b'].to_f
+  tsvg_inner_diameter = (drc_rules['TSV_G_c'].to_f - 2.0 * tsvg_b_value)
+  tsvg_b_l1 = deepvia_holes.without_bbox_min(tsvg_inner_diameter.um)
+  tsvg_b_l2 = deepvia_holes.without_bbox_max(tsvg_inner_diameter.um)
+  tsvg_b_l = tsvg_b_l1.join(tsvg_b_l2)
+  tsvg_b_l.output('TSV_G.b', "10.1. TSV_G.b: Min. and max. DeepVia width is #{tsvg_b_value} um")
+  tsvg_b_l1.forget
+  tsvg_b_l2.forget
+  tsvg_b_l.forget
+
+  # Rule TSV_G.c: DeepVia ring diameter is 25.00 um
+  logger.info('Executing rule TSV_G.c')
+  tsvg_c_value = drc_rules['TSV_G_c'].to_f
+  tsvg_c_l1 = deepvia_ring.without_bbox_min(tsvg_c_value.um)
+  tsvg_c_l2 = deepvia_ring.without_bbox_max(tsvg_c_value.um)
+  tsvg_c_l = tsvg_c_l1.join(tsvg_c_l2)
+  tsvg_c_l.output('TSV_G.c', "10.1. TSV_G.c: DeepVia ring diameter is #{tsvg_c_value} um")
+  tsvg_c_l1.forget
+  tsvg_c_l2.forget
+  tsvg_c_l.forget
+
+  # Rule TSV_G.d: Min. DeepVia space is 25.00 um
+  logger.info('Executing rule TSV_G.d')
+  tsvg_d_value = drc_rules['TSV_G_d'].to_f
+  tsvg_d_l = tsv_fill.space(tsvg_d_value.um, euclidian)
+  tsvg_d_l.output('TSV_G.d', "10.1. TSV_G.d: Min. DeepVia space is #{tsvg_d_value} um")
+  tsvg_d_l.forget
+
+  # Rule TSV_G.e: Min. DeepVia space to Activ, Activ:filler, GatPoly, GatPoly:filler and Cont is 5.00 um
+  logger.info('Executing rule TSV_G.e')
+  tsvg_e_value = drc_rules['TSV_G_e'].to_f
+  tsvg_e_targets = activ_drw.join(activ_filler).join(gatpoly_drw).join(gatpoly_filler).join(cont_drw)
+  tsvg_e_l = deepvia_ring.sep(tsvg_e_targets, tsvg_e_value.um, euclidian)
+  tsvg_e_l.output('TSV_G.e',
+                  "10.1. TSV_G.e: Min. DeepVia space to Activ, Activ:filler, GatPoly, GatPoly:filler and Cont is #{tsvg_e_value} um")
+  tsvg_e_targets.forget
+  tsvg_e_l.forget
+
+  # Rule TSV_G.f: Min. PWell:block enclosure of DeepVia is 2.50 um
+  logger.info('Executing rule TSV_G.f')
+  tsvg_f_value = drc_rules['TSV_G_f'].to_f
+  tsvg_f_l = tsv_fill.drc(if_any(
+    primary - secondary(pwell_block),
+    enclosed(pwell_block) < tsvg_f_value.um
+  ))
+  tsvg_f_l.output('TSV_G.f', "10.1. TSV_G.f: Min. PWell:block enclosure of DeepVia is #{tsvg_f_value} um")
+  tsvg_f_l.forget
+
+  # Rule TSV_G.g: Min. Metal1 enclosure of DeepVia is 1.50 um
+  logger.info('Executing rule TSV_G.g')
+  tsvg_g_value = drc_rules['TSV_G_g'].to_f
+  tsvg_g_l = tsv_fill.drc(if_any(
+    primary - secondary(metal1_drw),
+    enclosed(metal1_drw) < tsvg_g_value.um
+  ))
+  tsvg_g_l.output('TSV_G.g', "10.1. TSV_G.g: Min. Metal1 enclosure of DeepVia is #{tsvg_g_value} um")
+  tsvg_g_l.forget
+
+  unless PRECHECK_DRC
+    chip_area = CHIP.area
+    chip_bbox = CHIP.bbox
+
+    # Rule TSV_G.i: Max. global DeepVia density [%] is 1.00
+    logger.info('Executing rule TSV_G.i')
+    tsvg_i_value = drc_rules['TSV_G_i'].to_f
+    deepvia_area = deepvia_drw.area
+    deepvia_ratio = chip_area.zero? ? 0.0 : deepvia_area / chip_area
+    CHIP.output('TSV_G.i', "10.1. TSV_G.i: Max. global DeepVia density [%] is #{tsvg_i_value * 100}") if deepvia_ratio > tsvg_i_value
+
+    # Rule TSV_G.j: Max. DeepVia coverage ratio for any 500.0 x 500.0 um2 chip area [%] is 10.00
+    logger.info('Executing rule TSV_G.j')
+    tsvg_j_value = drc_rules['TSV_G_j'].to_f
+    tsvg_j_window = 500.0
+    tsvg_size = tsvg_j_window.um
+    tsvg_step = 0.5 * tsvg_size
+    tsvg_org_x = chip_bbox.left + tsvg_step / 2
+    tsvg_org_y = chip_bbox.bottom + tsvg_step / 2
+    tsvg_tiles = tile_boundary(CHIP)
+    tsvg_j_l = deepvia_drw.with_density(tsvg_j_value..1.0,
+                                        tile_size(tsvg_size),
+                                        tile_step(tsvg_step),
+                                        tsvg_tiles,
+                                        tile_origin(tsvg_org_x, tsvg_org_y),
+                                        padding_ignore)
+    tsvg_j_l.output('TSV_G.j',
+                    "10.1. TSV_G.j: Max. DeepVia coverage ratio for any #{tsvg_j_window} x #{tsvg_j_window} um2 chip area [%] is #{tsvg_j_value * 100}")
+    tsvg_j_l.forget
+  end
+
+  deepvia_ring.forget
+  deepvia_holes.forget
+  tsv_fill.forget
+end
