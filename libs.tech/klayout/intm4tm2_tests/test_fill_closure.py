@@ -27,7 +27,10 @@ end to end against the real deck:
     densified into band, and the densified fill is still geometrically legal;
   - a TopMetal that is already dense in drawn metal, so the default fill would cross the
     70% cap, is relaxed (its lattice thinned) back into band. TopMetal is the metal that
-    can only be relaxed, never densified, so this exercises that branch specifically.
+    can only be relaxed, never densified, so this exercises that branch specifically;
+  - a TopMetal starved below the 25% floor (its fill blocked by a nofill box) cannot be
+    densified, so the closure reports it under and stops at the fixed point instead of
+    spinning the whole iteration budget re-running identical work.
 """
 
 import shutil
@@ -94,6 +97,20 @@ def _write_dense_topmetal(path):
     _box(ly, top, 50, 0, 20, 20, 60, 60)          # small M4/M5 blocks, easily in band
     _box(ly, top, 67, 0, 120, 120, 160, 160)
     _box(ly, top, 126, 0, 5, 5, 195, 135)         # 190 x 130 = 24700 um^2 over a 40000 chip
+    ly.write(str(path))
+
+
+def _write_starved_topmetal(path):
+    """TopMetal1 drawn tiny and its fill blocked by a full-interior nofill: stuck under 25%."""
+    ly = kdb.Layout()
+    ly.dbu = 0.001
+    top = ly.create_cell("TOP")
+    _seal(top, ly)
+    _box(ly, top, 50, 0, 20, 20, 60, 60)          # M4/M5 fill freely into band
+    _box(ly, top, 67, 0, 120, 120, 170, 170)
+    _box(ly, top, 126, 0, 20, 20, 45, 45)          # tiny drawn TopMetal1
+    _box(ly, top, 126, 23, 10, 10, 190, 190)       # nofill over the interior starves its fill
+    _box(ly, top, 134, 0, 120, 20, 170, 60)        # TopMetal2 fills freely into band
     ly.write(str(path))
 
 
@@ -165,6 +182,25 @@ def test_closure_relaxes_overfilled_topmetal_into_band(tmp_path):
     assert history[-1]["gaps"][126] > history[0]["gaps"][126], "the TopMetal lattice was not relaxed"
     assert history[-1]["state"][126] == "ok"
     assert history[-1]["density"][126] <= TM_MAX
-    # the lower metals were not disturbed by the TopMetal relax.
+    # the TopMetal relax touched only TopMetal1: every other metal's lattice is untouched.
+    for layer in fc.METALS:
+        assert history[-1]["gaps"][layer] == fc.DEFAULT_GAPS
+    assert history[-1]["gaps"][134] == fc.TM_DEFAULT_GAP
+
+
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+def test_closure_reports_starved_topmetal_and_stops_at_fixed_point(tmp_path):
+    """A TopMetal stuck under the 25% floor cannot be densified: report it, don't spin."""
+    design = tmp_path / "tmstarved.gds"
+    out = tmp_path / "tmstarved_out.gds"
+    _write_starved_topmetal(design)
+
+    converged, history = fc.close_fill(design, out, topcell="TOP", max_iter=8, workdir=tmp_path)
+
+    assert not converged, "a TopMetal below the floor with no fill room cannot converge"
+    assert history[-1]["state"][126] == "under"
+    # the un-chased TopMetal 'under' is a fixed point: the loop must stop on the first
+    # pass, not burn the whole max_iter budget re-running byte-identical work.
+    assert len(history) == 1, "an unfixable state must stop at the fixed point"
     for layer in (50, 67, 134):
         assert history[-1]["state"][layer] == "ok"

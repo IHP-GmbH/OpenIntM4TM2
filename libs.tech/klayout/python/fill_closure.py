@@ -187,9 +187,15 @@ def _density(gds, metal_layer):
         li = ly.find_layer(layer, dt)
         return kdb.Region() if li is None else kdb.Region(top.begin_shapes_rec(li))
 
+    # Chip-area priority matches the density deck: prBoundary (235/0) > EdgeSeal
+    # boundary (39/4) > layout extent. Using a different denominator here than the
+    # deck uses would let coverage_pct and the deck's in-band state disagree.
     prb = reg(235, 0)
+    esb = reg(39, 4)
     if not prb.is_empty():
         chip = prb.area() * dbu * dbu
+    elif not esb.is_empty():
+        chip = esb.area() * dbu * dbu
     else:
         bb = top.bbox()
         chip = bb.width() * bb.height() * dbu * dbu
@@ -259,10 +265,20 @@ def close_fill(design, output, topcell="TOP", max_iter=6, workdir=None, log=lamb
         return _close_fill(design, output, topcell, max_iter, wd, log)
 
 
-def _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined):
-    """Fill Metal4/Metal5 and TopMetal for one iteration and merge into `combined`."""
-    _run_generator(design, fill_m45, {l: params[l] for l in METALS}, workdir)
-    _run_topmetal(design, fill_tm, workdir, {l: params[l] for l in TOPMETALS})
+def _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined,
+               regen_m45=True, regen_tm=True):
+    """Fill Metal4/Metal5 and TopMetal for one iteration and merge into `combined`.
+
+    A generator is only re-invoked when its group's parameters changed since the
+    previous iteration (`regen_*`); an unchanged group reuses its prior fill GDS, so
+    a run that only adjusts one group does not needlessly re-fill the other. The merge
+    always consumes both fill files, so the skipped file must already exist (it does
+    from the first iteration, where both flags are True).
+    """
+    if regen_m45:
+        _run_generator(design, fill_m45, {l: params[l] for l in METALS}, workdir)
+    if regen_tm:
+        _run_topmetal(design, fill_tm, workdir, {l: params[l] for l in TOPMETALS})
     _merge(design, fill_m45, tmp)
     _merge(tmp, fill_tm, combined)
 
@@ -279,9 +295,14 @@ def _close_fill(design, output, topcell, max_iter, workdir, log):
     params.update({layer: TM_DEFAULT_GAP for layer in TOPMETALS})
     history = []
     converged = False
+    prev = None
 
     for iteration in range(1, max_iter + 1):
-        _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined)
+        regen_m45 = prev is None or any(params[l] != prev[l] for l in METALS)
+        regen_tm = prev is None or any(params[l] != prev[l] for l in TOPMETALS)
+        _run_stack(design, params, workdir, fill_m45, fill_tm, tmp, combined,
+                   regen_m45=regen_m45, regen_tm=regen_tm)
+        prev = dict(params)
         state = _deck_state(combined, topcell, run_dir)
         density = {layer: _density(combined, layer) for layer in STACK}
         history.append({"iter": iteration, "gaps": dict(params),
@@ -291,7 +312,13 @@ def _close_fill(design, output, topcell, max_iter, workdir, log):
         if all(state[layer] == "ok" for layer in STACK):
             converged = True
             break
-        params = {layer: _adjust(layer, params[layer], state[layer]) for layer in STACK}
+        nxt = {layer: _adjust(layer, params[layer], state[layer]) for layer in STACK}
+        if nxt == params:
+            # Fixed point: no metal moved (an un-chased TopMetal 'under', a 'split'
+            # window, or gaps clamped at their floor/cap). Further iterations would
+            # re-run identical work for byte-identical results, so stop and report.
+            break
+        params = nxt
 
     Path(output).write_bytes(combined.read_bytes())
     return converged, history
