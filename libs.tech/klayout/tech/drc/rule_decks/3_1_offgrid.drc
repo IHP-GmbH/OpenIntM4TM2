@@ -123,20 +123,54 @@ if BEOL
     # standard bump/pillar pattern is a circular TopMetal2 pad merged with its
     # routing bar; the merged polygon is no longer a circle, so the source's
     # merged-level exemption misses it and every legal pad would flag offgrid.
-    # Raw-level checking is otherwise equal or stricter (a drawn off-grid vertex
-    # hidden by a merge is still reported).
+    #
+    # Two passes, both emitted under the same rule id (the two outputs union
+    # into one lyrdb category):
+    #   pass 1 RAW    - every drawn polygon judged on its own, so an off-grid
+    #                   vertex hidden by a merge is still reported;
+    #   pass 2 MERGED - the outline the mask actually sees, with the pad rims
+    #                   exempted by area interaction.
+    #
+    # not_in is a per-polygon selection but DROPS the raw flag whenever the
+    # circle set is non-empty (KLayout 0.30.5), which would silently collapse
+    # the whole check to merged semantics on any layer carrying a circular pad
+    # (the dominant TopMetal2 case) and lose the per-polygon violations. Pass 1
+    # therefore re-asserts raw on the not_in result before ongrid.
+    #
+    # Residual: a real off-grid vertex sitting on or touching a pad rim is
+    # swallowed by the circle exemption in both passes (a thin blind ring around
+    # each pad); everything outside that ring is caught.
     #
     # raw/clean toggle a mode flag on the SHARED layer object (raw returns
     # self, not a copy), so the base layer must be restored with clean and
     # must NOT be forgotten here - other decks in the same run still use it.
+
+    # pass 1 RAW: every drawn polygon judged on its own.
     offgrid_layer.raw
-    offgrid_nc = offgrid_layer.not_in(get_circle(offgrid_layer))
+    offgrid_circles = get_circle(offgrid_layer)
+    offgrid_nc = offgrid_layer.not_in(offgrid_circles)
+    offgrid_nc.raw   # not_in dropped the raw flag; re-assert it
     offgrid_nc.ongrid(GRID).output(
       "#{offgrid_name}_Offgrid",
       "3.1 #{offgrid_name}_Offgrid: #{offgrid_name} layer is offgrid (drawing grid is 5 nm)"
     )
+    # Capture the pad footprint while the circles are still the raw as-drawn
+    # polygons; sized(1.nm) grows it so a marker sitting exactly on the rim is
+    # counted as interacting.
+    offgrid_circle_area = offgrid_circles.sized(1.nm)
     offgrid_layer.clean
+
+    # pass 2 MERGED: the outline the mask sees; exempt the pad rims by area.
+    # No .polygons between ongrid and not_interacting: ongrid yields the vertex
+    # markers directly and the area filter drops the ones on a pad rim.
+    offgrid_layer.ongrid(GRID).not_interacting(offgrid_circle_area).output(
+      "#{offgrid_name}_Offgrid",
+      "3.1 #{offgrid_name}_Offgrid: #{offgrid_name} layer is offgrid (drawing grid is 5 nm)"
+    )
+
     offgrid_nc.forget
+    offgrid_circles.forget
+    offgrid_circle_area.forget
   end
 end
 

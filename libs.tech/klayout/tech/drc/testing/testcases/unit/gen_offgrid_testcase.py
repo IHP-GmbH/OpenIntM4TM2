@@ -7,8 +7,16 @@ with intentional FAIL / PASS structures labeled by text on layer 63/0.
 
 Two top cells, each checked as a whole by run_regression.py:
   - offgrid_viol : off-grid vertices           -> expects {metal4_drw_Offgrid,
-                                                            via4_drw_Offgrid}
+                                                            via4_drw_Offgrid,
+                                                            topmetal2_drw_Offgrid}
   - offgrid_clean: on-grid shapes + a circle    -> expects {}
+
+The topmetal2_drw_Offgrid case is the discriminator for the not_in raw-drop bug:
+an off-grid vertex hidden by a merge (a small off-grid box fully inside a big
+on-grid box) that COEXISTS with a legal circular pad on the same layer. With the
+circle present, the buggy single-pass check drops the raw flag and merges the
+small box away (0 markers); the two-pass check re-asserts raw in pass 1 and still
+reports it. Removing that circle, or reintroducing the bug, makes this id vanish.
 
 The clean cell exercises on-grid geometry across the full scoped layer set
 (mim/vmim, the metal/via stacks up to TopMetal2, thinfilmres, lbe, a metal
@@ -101,6 +109,19 @@ def build():
     # via4_drw_Offgrid: via cut with one vertex off the 5 nm grid.
     _poly(viol, v4, [(5.0, 0.0), (5.19, 0.0), (5.19, 0.19), (5.0 + OFFGRID_X, 0.19)])
     _text(viol, tx, 5.0, 0.8, "via4_drw_Offgrid FAIL")
+
+    # topmetal2_drw_Offgrid: RAW-only off-grid vertex COEXISTING with a circle.
+    # A small box with two off-grid vertices (x = 44.002) sits fully inside a big
+    # on-grid box, so its off-grid vertices vanish when the layer is merged. A
+    # legal circular pad shares the layer, so get_circle(tm2) is non-empty and the
+    # buggy single-pass check drops raw and merges the small box away (reports
+    # nothing). Pass 1 RAW must still report the off-grid vertex; the circle and
+    # the big box stay clean. This is the regression guard for the raw-drop bug.
+    _box(viol, tm2, 40.0, 0.0, 48.0, 3.0)  # big on-grid box (absorbs the small one)
+    _poly(viol, tm2, [(42.0, 1.0), (44.0 + OFFGRID_X, 1.0),
+                      (44.0 + OFFGRID_X, 2.0), (42.0, 2.0)])  # off-grid, buried inside
+    _circle(viol, tm2, 44.0, 6.0, 1.0)  # legal circular pad on the same layer (exempt)
+    _text(viol, tx, 40.0, 3.5, "tm2 offgrid-in-box + circle FAIL (raw only)")
 
     # ---- clean structures ------------------------------------------------ #
     clean = layout.create_cell("offgrid_clean")
