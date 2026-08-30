@@ -14,9 +14,10 @@ The layout has two top cells, each checked as a whole by run_regression.py:
 The deck (6_9_ubm_floor.drc) derives `ubm_open = passiv_pillar.join(passiv_sbump)`,
 i.e. the union of the Cu-pillar opening datatype 9/35 and the solder-bump opening
 datatype 9/36, then checks a minimum opening width (PadU.w) and a minimum
-opening-to-opening space (PadU.s), both PROVISIONAL values from Pas.a (2.10 um) /
-Pas.b (3.50 um). The values carry a 10 nm tolerance for the polygon
-discretization of circular openings; circles here use 256 points to match it.
+opening-to-opening space (PadU.s), both the method-independent 5.27 passivation-
+opening litho floor values Pas.a (2.10 um) / Pas.b (3.50 um). The values carry a
+10 nm tolerance for the polygon discretization of circular openings; circles here
+use 256 points to match it.
 
 The PadU.s structure straddles both datatypes (one opening on 9/35, one on 9/36)
 so it also proves the cross-datatype 35-to-36 separation that nothing else checks.
@@ -37,7 +38,7 @@ L_PASSIV_PILLAR = (9, 35)
 L_PASSIV_SBUMP = (9, 36)
 L_TEXT = (63, 0)
 
-# Rule values from interposer_tech_default.json (PROVISIONAL, from Pas.a / Pas.b)
+# Rule values from interposer_tech_default.json (5.27 litho floor, from Pas.a / Pas.b)
 PADU_W = 2.10    # min UBM/passivation opening width (um)
 PADU_S = 3.50    # min UBM/passivation opening space (um)
 
