@@ -32,7 +32,8 @@ GOLDEN = {
     'angle': {
         'deck': 'angle',
         'cells': {
-            'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute'},
+            'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute',
+                            'topmetal2_drw_Acute', 'topmetal2_drw_Angle45'},
             'angle_clean': set(),
         },
     },
@@ -107,7 +108,7 @@ GOLDEN = {
     'offgrid': {
         'deck': 'offgrid',
         'cells': {
-            'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid'},
+            'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid', 'topmetal2_drw_Offgrid'},
             'offgrid_clean': set(),
         },
     },

@@ -136,8 +136,24 @@ if BEOL
   # standard bump/pillar pattern is a circular TopMetal2 pad merged with its
   # routing bar; the merged polygon is no longer a circle, so the source's
   # merged-level exemption misses it and every legal pad would flag Angle45.
-  # Raw-level checking is otherwise equal or stricter (drawn edges hidden by a
-  # merge are still checked). Same deviation as in 3_1_offgrid.drc.
+  # Same deviation as in 3_1_offgrid.drc.
+  #
+  # Each check runs two passes, both emitted under the same rule id (the two
+  # outputs union into one lyrdb category):
+  #   pass 1 RAW    - every drawn polygon judged on its own, so a corner/edge
+  #                   hidden by a merge is still reported;
+  #   pass 2 MERGED - the outline the mask actually sees, with the pad rims
+  #                   exempted by area interaction.
+  #
+  # not_in is a per-polygon selection but DROPS the raw flag whenever the circle
+  # set is non-empty (KLayout 0.30.5), which would silently collapse the whole
+  # check to merged semantics on any layer carrying a circular pad (the dominant
+  # TopMetal2 case) and lose the per-polygon violations. Pass 1 therefore
+  # re-asserts raw on the not_in result before the angle/edge checks.
+  #
+  # Residual: a real bad corner/edge sitting on or touching a pad rim is
+  # swallowed by the circle exemption in both passes (a thin blind ring around
+  # each pad); everything outside that ring is caught.
   #
   # raw/clean toggle a mode flag on the SHARED layer object (raw returns self,
   # not a copy), so each base layer must be restored with clean and must NOT be
@@ -149,44 +165,81 @@ if BEOL
   #    with_angle(0, limit) returns the corners whose inner angle is below limit.
   ang_acute_scope.each do |ang_name, ang_layer|
     logger.info("Executing rule #{ang_name}_Acute")
+    # pass 1 RAW: acute corner of every drawn polygon judged on its own.
     ang_layer.raw
-    ang_acute_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_acute_circles = get_circle(ang_layer)
+    ang_acute_nc = ang_layer.not_in(ang_acute_circles)
+    ang_acute_nc.raw   # not_in dropped the raw flag; re-assert it
     ang_acute_nc.with_angle(0.0, ang_acute_limit).output(
       "#{ang_name}_Acute",
       "3.2 #{ang_name}_Acute: acute corner below #{ang_acute_limit} degree is not allowed"
     )
+    ang_acute_area = ang_acute_circles.sized(1.nm)
     ang_layer.clean
+    # pass 2 MERGED: acute corners of the merged outline, pad rims exempted.
+    ang_layer.with_angle(0.0, ang_acute_limit).not_interacting(ang_acute_area).output(
+      "#{ang_name}_Acute",
+      "3.2 #{ang_name}_Acute: acute corner below #{ang_acute_limit} degree is not allowed"
+    )
     ang_acute_nc.forget
+    ang_acute_circles.forget
+    ang_acute_area.forget
   end
 
   # 2) Orthogonal-only layers: any edge that is neither 0 nor 90 degree (absolute).
   ang_ortho_only.each do |ang_name, ang_layer|
     logger.info("Executing rule #{ang_name}_Angle90")
+    # pass 1 RAW: non-orthogonal edge of every drawn polygon judged on its own.
     ang_layer.raw
-    ang_o90_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_o90_circles = get_circle(ang_layer)
+    ang_o90_nc = ang_layer.not_in(ang_o90_circles)
+    ang_o90_nc.raw   # not_in dropped the raw flag; re-assert it
     ang_o90_edges = ang_o90_nc.edges.without_angle(0, absolute).without_angle(90, absolute)
     ang_o90_edges.output(
       "#{ang_name}_Angle90",
       "3.2 #{ang_name}_Angle90: only orthogonal edges (0/90 degree) are allowed"
     )
-    ang_o90_edges.forget
+    ang_o90_area = ang_o90_circles.sized(1.nm)
     ang_layer.clean
+    # pass 2 MERGED: non-orthogonal edges of the merged outline, rims exempted.
+    ang_o90_medges = ang_layer.edges.without_angle(0, absolute).without_angle(90, absolute).not_interacting(ang_o90_area)
+    ang_o90_medges.output(
+      "#{ang_name}_Angle90",
+      "3.2 #{ang_name}_Angle90: only orthogonal edges (0/90 degree) are allowed"
+    )
+    ang_o90_edges.forget
+    ang_o90_medges.forget
     ang_o90_nc.forget
+    ang_o90_circles.forget
+    ang_o90_area.forget
   end
 
   # 3) 0/45/90 layers: any edge that is not 0, 45 or 90 degree (absolute).
   ang_ortho_45.each do |ang_name, ang_layer|
     logger.info("Executing rule #{ang_name}_Angle45")
+    # pass 1 RAW: non-0/45/90 edge of every drawn polygon judged on its own.
     ang_layer.raw
-    ang_o45_nc = ang_layer.not_in(get_circle(ang_layer))
+    ang_o45_circles = get_circle(ang_layer)
+    ang_o45_nc = ang_layer.not_in(ang_o45_circles)
+    ang_o45_nc.raw   # not_in dropped the raw flag; re-assert it
     ang_o45_edges = ang_o45_nc.edges.without_angle(0, absolute).without_angle(45, absolute).without_angle(90, absolute)
     ang_o45_edges.output(
       "#{ang_name}_Angle45",
       "3.2 #{ang_name}_Angle45: only 0/45/90 degree edges are allowed"
     )
-    ang_o45_edges.forget
+    ang_o45_area = ang_o45_circles.sized(1.nm)
     ang_layer.clean
+    # pass 2 MERGED: non-0/45/90 edges of the merged outline, rims exempted.
+    ang_o45_medges = ang_layer.edges.without_angle(0, absolute).without_angle(45, absolute).without_angle(90, absolute).not_interacting(ang_o45_area)
+    ang_o45_medges.output(
+      "#{ang_name}_Angle45",
+      "3.2 #{ang_name}_Angle45: only 0/45/90 degree edges are allowed"
+    )
+    ang_o45_edges.forget
+    ang_o45_medges.forget
     ang_o45_nc.forget
+    ang_o45_circles.forget
+    ang_o45_area.forget
   end
 end
 
