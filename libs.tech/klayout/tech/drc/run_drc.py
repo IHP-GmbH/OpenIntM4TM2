@@ -28,7 +28,7 @@ AVAILABLE_DECKS = [
     'via4', 'topvia1',
     'topmetal1', 'topmetal1filler',
     'topvia2', 'topmetal2', 'topmetal2filler',
-    'passiv', 'pad', 'copperpillar', 'solderbump',
+    'passiv', 'pad', 'copperpillar', 'solderbump', 'ubm_floor',
     'sealring', 'mim', 'metalslits', 'lbe',
     'density',
 ]

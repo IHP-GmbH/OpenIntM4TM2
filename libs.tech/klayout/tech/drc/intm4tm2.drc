@@ -139,6 +139,7 @@ all_decks = {
   'pad'             => '6_9_pad.drc',
   'copperpillar'    => '6_9_copperpillar.drc',
   'solderbump'      => '6_9_solderbump.drc',
+  'ubm_floor'       => '6_9_ubm_floor.drc',
   'sealring'        => '6_10_sealring.drc',
   'mim'             => '6_11_mim.drc',
   'metalslits'      => '7_3_metalslits.drc',
