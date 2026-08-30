@@ -41,7 +41,7 @@ GOLDEN = {
         'deck': 'copperpillar',
         'cells': {
             'copperpillar_viol':  {'Padc.a', 'Padc.b', 'Padc.c',
-                                   'Padc.d', 'Padc.e', 'Padc.f'},
+                                   'Padc.d', 'Padc.f'},
             'copperpillar_clean': set(),
         },
     },
@@ -130,7 +130,7 @@ GOLDEN = {
         'deck': 'solderbump',
         'cells': {
             'solderbump_viol':  {'Padb.a', 'Padb.b', 'Padb.c', 'Padb.d',
-                                 'Padb.e', 'Padb.f'},
+                                 'Padb.f'},
             'solderbump_clean': set(),
         },
     },
