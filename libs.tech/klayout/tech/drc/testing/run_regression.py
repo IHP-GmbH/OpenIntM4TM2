@@ -133,6 +133,13 @@ GOLDEN = {
             'solderbump_clean': set(),
         },
     },
+    'ubm_floor': {
+        'deck': 'ubm_floor',
+        'cells': {
+            'ubm_floor_viol':  {'PadU.w', 'PadU.s'},
+            'ubm_floor_clean': set(),
+        },
+    },
     'topmetal1filler': {
         'deck': 'topmetal1filler',
         'cells': {
