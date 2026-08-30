@@ -32,7 +32,9 @@
 #   Padb_b = 70 um  (min. SBumpPad space)
 #   Padb_c = 10 um  (min. TopMetal2 enclosure of SBumpPad)
 #   Padb_d = 50 um  (min. SBumpPad space to EdgeSeal)
-#   Padb_e = 130 um (min. SBumpPad pitch; interposer-only key, see Padb.e note)
+#   Padb_e = 130 um (min. SBumpPad pitch; interposer-only key, retained in JSON
+#                    for the bump_mirror consumer but NOT checked by this deck;
+#                    see the Padb.e note below)
 #=========================================================================================
 
 if BEOL
@@ -76,21 +78,13 @@ if BEOL
   padb_b_l.output('Padb.b', "6.9. Padb.b : Min. SBumpPad space is #{padb_b_value} um")
   padb_b_l.forget
 
-  # Rule Padb.e: Min. SBumpPad pitch is 130 um.
-  # Deviation from sg13g2 source: this rule is NOT present in the sg13g2 source deck;
-  # it is an interposer-only key. Implemented like Padc.e in the copper-pillar deck:
-  # DRCLayer#pitch is unavailable, so pitch is converted to an edge-to-edge spacing
-  # check via  min_spacing = min_pitch - pad_size = Padb_e - Padb_a.
-  # NOTE: Padb_e - Padb_a = 130 - 60 = 70 um, arithmetically identical to the Padb.b
-  # minimum space (70 um), so on nominal-size openings Padb.e is redundant with Padb.b.
-  # The 130 um pitch value needs spec confirmation.
-  logger.info('Executing rule Padb.e')
-  padb_e_value = fetch_rule(drc_rules, 'Padb_e')
-  padb_e_tol = 0.01  # 10 nm tolerance for circle-approximated spacing (see Padb.b)
-  padb_e_min_space = (padb_e_value - padb_a_value).um - padb_e_tol
-  padb_e_l = sbumppad.space(padb_e_min_space, euclidian)
-  padb_e_l.output('Padb.e', "6.9. Padb.e : Min. SBumpPad pitch is #{padb_e_value} um")
-  padb_e_l.forget
+  # Rule Padb.e (SBumpPad pitch): NOT checked in this deck.
+  # It is redundant with Padb.b by construction: pitch - pad_size = 130 - 60 =
+  # 70 um, identical to the Padb.b minimum space, so a pitch-as-spacing check
+  # produces a marker set byte-identical to Padb.b's. It was an interposer-only
+  # addition (absent from the sg13g2 source) with an unconfirmed 130 um spec.
+  # Multi-method assembly-carrier pitch is handled per-method at the assembly
+  # (IXN) sign-off stage, which mirrors these interposer Padb defaults.
 
   # Rule Padb.c: Min. TopMetal2 (within dfpad) enclosure of SBumpPad is 10 um.
   # enclosed() catches insufficient enclosure; the miss branch catches SBumpPad area
