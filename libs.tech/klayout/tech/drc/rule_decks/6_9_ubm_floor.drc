@@ -15,20 +15,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #=========================================================================================
-# Interposer UBM / passivation-opening fabrication floor (PROVISIONAL)
+# Interposer passivation-opening lithographic floor
+# Based on IHP SG13G2 Layout Rules Rev 2.1, Sections 5.27 / 6.9
 #
-# Pas.a/Pas.b (5_27_passiv.drc) run on passiv_drw = polygons(9,0) ONLY. The
-# Cu-pillar and solder-bump passivation openings live on their own datatypes,
-# Passiv:pillar = polygons(9,35) (passiv_pillar) and Passiv:sbump = polygons(9,36)
-# (passiv_sbump). Those opening datatypes had NO fabricated-geometry floor:
-# Padc.b/Padb.b are attachment-method spacings, not a wafer/UBM litho limit.
+# Pas.a/Pas.b (5_27_passiv.drc, rule table 5.27) run on passiv_drw =
+# polygons(9,0) ONLY. The Cu-pillar and solder-bump passivation openings live on
+# their own datatypes, Passiv:pillar = polygons(9,35) (passiv_pillar) and
+# Passiv:sbump = polygons(9,36) (passiv_sbump), which the 5.27 rule never reaches.
+# Padc.b/Padb.b on those datatypes are per-method attachment spacings, not the
+# lithographic opening limit.
 #
-# This deck adds the missing minimum opening WIDTH and opening-to-opening SPACE
-# on the opening datatypes, including the 9/35-to-9/36 cross-datatype separation
-# that nothing checks today. The floor values are PROVISIONAL, derived from the
-# passivation limits Pas.a (2.10 um) and Pas.b (3.50 um), pending the fab's
-# UBM-specific numbers. The rule ids (PadU.w, PadU.s) are STABLE so the value can
-# be swapped later without renaming, so waivers and testcases survive.
+# This deck applies the SAME method-independent passivation-opening litho floor
+# that 5.27 enforces on 9/0, Pas.a (2.10 um min width) and Pas.b (3.50 um min
+# space), to the pad-opening datatypes 9/35 and 9/36, including the 9/35-to-9/36
+# cross-datatype separation that nothing else checks. It is the always-on
+# manufacturability base underneath the per-method Padc.*/Padb.* attachment
+# checks. The rule ids (PadU.w, PadU.s) are STABLE so the value can be swapped
+# later without renaming, so waivers and testcases survive.
 #=========================================================================================
 
 if BEOL
@@ -40,13 +43,13 @@ if BEOL
   logger.info('Executing rule PadU.w')
   padu_w_value = fetch_rule(drc_rules, 'PadU_w')
   padu_w = ubm_open.width(padu_w_value.um - ubm_tol, euclidian)
-  padu_w.output('PadU.w', "6.9. PadU.w [PROVISIONAL, from Pas.a] : Min. UBM/passivation opening width is #{padu_w_value} um")
+  padu_w.output('PadU.w', "6.9. PadU.w [5.27 litho floor, from Pas.a] : Min. UBM/passivation opening width is #{padu_w_value} um")
   padu_w.forget
 
   logger.info('Executing rule PadU.s')
   padu_s_value = fetch_rule(drc_rules, 'PadU_s')
   padu_s = ubm_open.space(padu_s_value.um - ubm_tol, euclidian)
-  padu_s.output('PadU.s', "6.9. PadU.s [PROVISIONAL, from Pas.b] : Min. UBM/passivation opening space is #{padu_s_value} um")
+  padu_s.output('PadU.s', "6.9. PadU.s [5.27 litho floor, from Pas.b] : Min. UBM/passivation opening space is #{padu_s_value} um")
   padu_s.forget
 
   ubm_open.forget
