@@ -7,7 +7,7 @@ intentional PASS / FAIL structures labeled by text on layer 63/0.
 
 The layout has two top cells, each checked as a whole by run_regression.py:
   - solderbump_viol : one violating structure per rule
-                      -> expects {Padb.a, Padb.b, Padb.c, Padb.d, Padb.e, Padb.f}
+                      -> expects {Padb.a, Padb.b, Padb.c, Padb.d, Padb.f}
   - solderbump_clean: near-limit legal versions -> expects {}
 
 Device recognition (layers_def.drc): sbumppad = passiv_sbump(9/36) AND dfpad_sbump(41/36).
@@ -123,14 +123,14 @@ def build():
     tm2_cover_box(viol, tm2, ax, 0.0, ax + s55, s55, TM2_ENC)
     text(viol, tx, ax, s55 + 8.0, "Padb.a FAIL (55 octagon)")
 
-    # (b) Padb.b + Padb.e: two 60 octagons at 60 um edge-to-edge (< 70 space,
-    #     < 70 pitch-derived space). Each gets its own legal TM2 enclosure 10.
+    # (b) Padb.b: two 60 octagons at 60 um edge-to-edge (< 70 um space). The Padb.e
+    #     pitch rule is no longer emitted by the deck. Each gets its own legal TM2 enclosure 10.
     bx1 = 300.0
     bx2 = bx1 + PAD + 60.0  # 60 um edge-to-edge gap
     for bx in (bx1, bx2):
         draw_opening(viol, sbump, octagon_points(bx, 0.0, PAD, OCT_C))
         tm2_cover_box(viol, tm2, bx, 0.0, bx + PAD, PAD, TM2_ENC)
-    text(viol, tx, bx1, PAD + 8.0, "Padb.b/Padb.e FAIL (60 spaced 60)")
+    text(viol, tx, bx1, PAD + 8.0, "Padb.b FAIL (60 spaced 60)")
 
     # (c) Padb.c: 60 octagon with only 5 um TopMetal2 enclosure (< 10).
     cx = 650.0
@@ -175,16 +175,16 @@ def build():
     text(clean, tx, ox, PAD + 8.0, "Padb.* PASS (60 octagon, enc 10, 50 to seal)")
 
     # Legal 60 circle, TM2 enclosure exactly 10, EXACTLY 70 um edge-to-edge from the
-    # octagon so pitch = PAD + 70 = 130.0 um exactly. This exercises Padb.b (min space
-    # 70 um) and Padb.e (min pitch 130 um -> min space 70 um) at-limit legal: the
-    # measured spacing equals the nominal minimum, above the 69.99 um rule threshold.
-    circ_left = ox + PAD + 70.0     # exactly 70 um edge-to-edge -> pitch exactly 130 um
+    # octagon. This exercises Padb.b (min space 70 um) at-limit legal: the measured
+    # spacing equals the nominal minimum, above the 69.99 um rule threshold. The Padb.e
+    # pitch rule is no longer emitted by the deck.
+    circ_left = ox + PAD + 70.0     # exactly 70 um edge-to-edge
     cxc = circ_left + PAD / 2.0     # center x
     cyc = PAD / 2.0                 # center y
     draw_opening(clean, sbump, circle_points(cxc, cyc, PAD / 2.0, 256))
     tm2_cover_box(clean, tm2, cxc - PAD / 2.0, cyc - PAD / 2.0,
                   cxc + PAD / 2.0, cyc + PAD / 2.0, TM2_ENC)
-    text(clean, tx, circ_left, PAD + 8.0, "Padb.b/Padb.e PASS (60 circle, 70 space, pitch 130)")
+    text(clean, tx, circ_left, PAD + 8.0, "Padb.b PASS (60 circle, 70 space)")
 
     return layout
 
