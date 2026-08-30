@@ -8,8 +8,18 @@ intentional FAIL / PASS structures labeled by text on layer 63/0.
 Two top cells, each checked as a whole by run_regression.py:
   - angle_viol : bad-angle shapes  -> expects {via4_drw_Angle90,
                                                metal4_drw_Angle45,
-                                               metal4_drw_Acute}
+                                               metal4_drw_Acute,
+                                               topmetal2_drw_Acute,
+                                               topmetal2_drw_Angle45}
   - angle_clean: legal shapes       -> expects {}
+
+The topmetal2_* pair is the discriminator for the not_in raw-drop bug: an acute
+triangle (also carrying a non-0/45/90 hypotenuse) hidden by a merge (fully inside
+a big on-grid box) that COEXISTS with a legal circular pad on the same layer. With
+the circle present, the buggy single-pass check drops the raw flag and merges the
+triangle away (0 markers); the two-pass check re-asserts raw in pass 1 and still
+reports both the acute corners and the bad edge. Reintroducing the bug makes these
+two ids vanish.
 
 The via4 pentagon has a 45-degree chamfer edge (illegal on an orthogonal-only
 layer -> Angle90) but only 90/135-degree corners (no Acute). The metal4 triangle
@@ -94,6 +104,19 @@ def build():
     # (~16.7 degree) hypotenuse -> edge not 0/45/90, and acute corners.
     _poly(viol, m4, [(5.0, 0.0), (6.0, 0.0), (6.0, 0.3)])
     _text(viol, tx, 5.0, 1.3, "metal4_drw_Angle45+Acute FAIL")
+
+    # topmetal2_drw_Acute + topmetal2_drw_Angle45: RAW-only violations COEXISTING
+    # with a circle. An acute triangle (corners ~5.7 and ~84.3 degree, and a
+    # ~5.7-degree hypotenuse that is not 0/45/90) sits fully inside a big on-grid
+    # box, so both its acute corners and its bad edge vanish when the layer is
+    # merged. A legal circular pad shares the layer, so get_circle(tm2) is
+    # non-empty and the buggy single-pass check drops raw and merges the triangle
+    # away (reports nothing). Pass 1 RAW must still report both ids; the circle
+    # and the box stay clean. This is the regression guard for the raw-drop bug.
+    _box(viol, tm2, 40.0, 0.0, 48.0, 3.0)  # big on-grid box (absorbs the triangle)
+    _poly(viol, tm2, [(42.0, 1.0), (46.0, 1.0), (46.0, 1.4)])  # acute + bad edge, buried
+    _circle(viol, tm2, 44.0, 6.0, 1.0)  # legal circular pad on the same layer (exempt)
+    _text(viol, tx, 40.0, 3.5, "tm2 acute-in-box + circle FAIL (raw only)")
 
     # ---- clean structures ------------------------------------------------ #
     clean = layout.create_cell("angle_clean")
