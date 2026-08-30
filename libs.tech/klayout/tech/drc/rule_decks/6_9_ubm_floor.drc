@@ -1,0 +1,53 @@
+# frozen_string_literal: true
+
+#=========================================================================================
+# Copyright 2025 IHP PDK Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#=========================================================================================
+# Interposer UBM / passivation-opening fabrication floor (PROVISIONAL)
+#
+# Pas.a/Pas.b (5_27_passiv.drc) run on passiv_drw = polygons(9,0) ONLY. The
+# Cu-pillar and solder-bump passivation openings live on their own datatypes,
+# Passiv:pillar = polygons(9,35) (passiv_pillar) and Passiv:sbump = polygons(9,36)
+# (passiv_sbump). Those opening datatypes had NO fabricated-geometry floor:
+# Padc.b/Padb.b are attachment-method spacings, not a wafer/UBM litho limit.
+#
+# This deck adds the missing minimum opening WIDTH and opening-to-opening SPACE
+# on the opening datatypes, including the 9/35-to-9/36 cross-datatype separation
+# that nothing checks today. The floor values are PROVISIONAL, derived from the
+# passivation limits Pas.a (2.10 um) and Pas.b (3.50 um), pending the fab's
+# UBM-specific numbers. The rule ids (PadU.w, PadU.s) are STABLE so the value can
+# be swapped later without renaming, so waivers and testcases survive.
+#=========================================================================================
+
+if BEOL
+  logger.info('Starting 6.9 UBM / passivation-opening floor table')
+
+  ubm_open = passiv_pillar.join(passiv_sbump)
+  ubm_tol = 0.01  # circle-discretization tolerance (see Padc.b rationale)
+
+  logger.info('Executing rule PadU.w')
+  padu_w_value = fetch_rule(drc_rules, 'PadU_w')
+  padu_w = ubm_open.width(padu_w_value.um - ubm_tol, euclidian)
+  padu_w.output('PadU.w', "6.9. PadU.w [PROVISIONAL, from Pas.a] : Min. UBM/passivation opening width is #{padu_w_value} um")
+  padu_w.forget
+
+  logger.info('Executing rule PadU.s')
+  padu_s_value = fetch_rule(drc_rules, 'PadU_s')
+  padu_s = ubm_open.space(padu_s_value.um - ubm_tol, euclidian)
+  padu_s.output('PadU.s', "6.9. PadU.s [PROVISIONAL, from Pas.b] : Min. UBM/passivation opening space is #{padu_s_value} um")
+  padu_s.forget
+
+  ubm_open.forget
+end

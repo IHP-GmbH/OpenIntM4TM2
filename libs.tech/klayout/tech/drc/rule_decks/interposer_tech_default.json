@@ -1,6 +1,6 @@
 {
-    "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95. LBE_b2, Slt_h4 and Padb_e have no upstream JSON key; see the corresponding rule decks for their derivation notes. TM1Fil_b/TM2Fil_b (TopMetal filler-to-filler space) added so the TopMetal fill generator has a checked minimum.",
-    "version": "1.5",
+    "description": "Interposer IHP DRC rule values. Cu Pillar values from Table 6.1 Option 1 (35 um opening). For Option 2 (40 um): Padc_a=40, Padc_b=40, Padc_e=80. For Option 3 (45 um): Padc_a=45, Padc_b=50, Padc_e=95. LBE_b2, Slt_h4 and Padb_e have no upstream JSON key; see the corresponding rule decks for their derivation notes. TM1Fil_b/TM2Fil_b (TopMetal filler-to-filler space) added so the TopMetal fill generator has a checked minimum. PadU_w/PadU_s are a PROVISIONAL fab/UBM opening floor on the 9/35 and 9/36 opening datatypes derived from Pas.a/Pas.b, pending the fab's UBM-specific values, with stable rule ids so the value can be swapped without renaming.",
+    "version": "1.6",
     "based_on": "IHP SG13G2 Layout Rules Rev 2.1 (2024-12-19)",
     "rules": {
         "Pad_aR": 30.00,
@@ -24,6 +24,8 @@
         "Pas_a": 2.10,
         "Pas_b": 3.50,
         "Pas_c": 2.10,
+        "PadU_w": 2.10,
+        "PadU_s": 3.50,
         "LBE_a": 100.00,
         "LBE_b": 1500.00,
         "LBE_b1": 250000.00,
