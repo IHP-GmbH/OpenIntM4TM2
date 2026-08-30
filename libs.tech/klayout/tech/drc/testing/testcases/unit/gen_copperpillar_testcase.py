@@ -7,7 +7,7 @@ table GDS with intentional PASS / FAIL structures labeled by text on layer 63/0.
 
 The layout has two top cells, each checked as a whole by run_regression.py:
   - copperpillar_viol : one structure per rule ->
-        expects {Padc.a, Padc.b, Padc.c, Padc.d, Padc.e, Padc.f}
+        expects {Padc.a, Padc.b, Padc.c, Padc.d, Padc.f}
   - copperpillar_clean: the corresponding legal structures -> expects {}
 
 A CuPillarPad is Passiv:pillar (9/35) AND dfpad:pillar (41/35); the deck derives
@@ -15,10 +15,10 @@ A CuPillarPad is Passiv:pillar (9/35) AND dfpad:pillar (41/35); the deck derives
 opening at radius r on 9/35, and dfpad + TopMetal2 at r + enclosure on 41/35 and
 134/0, so the recognised pad is the passivation circle and the TM2 enclosure equals
 the drawn margin. Circles use 256 points to match the deck's circle-discretization
-tolerances (Padc.b/.c/.e carry a 10 nm tolerance for exactly this reason).
+tolerances (Padc.b/.c carry a 10 nm tolerance for exactly this reason).
 
 Structures are placed on a wide stride so no two pads from different structures fall
-within a spacing rule (Padc.b/.e = 40 um) or the EdgeSeal rule (Padc.d = 30 um).
+within a spacing rule (Padc.b = 40 um) or the EdgeSeal rule (Padc.d = 30 um).
 
 Regenerate with:  python gen_copperpillar_testcase.py   (writes copperpillar.gds here)
 """
@@ -40,9 +40,8 @@ PADC_A = 35.0    # CuPillarPad size (um)          -> pad diameter
 PADC_B = 40.0    # min pad space (um)
 PADC_C = 7.5     # min TM2 enclosure of opening (um)
 PADC_D = 30.0    # min pad-to-EdgeSeal space (um)
-PADC_E = 75.0    # min pad pitch (um)
 
-STRIDE = 300.0   # between independent structures (>> Padc.b/e = 40, Padc.d = 30)
+STRIDE = 300.0   # between independent structures (>> Padc.b = 40, Padc.d = 30)
 NPTS = 256       # circle approximation points (matches the deck tolerances)
 
 
@@ -103,12 +102,12 @@ def build():
     _pad(viol, tm2, passiv, dfpad, ox, 0.0, diameter=PADC_A, encl=5.0)
     _text(viol, tx, ox, 30.0, "Padc.c FAIL (encl 5um)")
 
-    # Padc.b / Padc.e FAIL: two legal pads 30 um edge-to-edge (< 40, and pitch 65 < 75).
-    # Both rules share the 40 um spacing threshold, so both fire.
+    # Padc.b FAIL: two legal pads 30 um edge-to-edge (< 40 um space). The Padc.e
+    # pitch rule is no longer emitted by the deck, so only Padc.b fires here.
     ox = 2 * STRIDE
     _pad(viol, tm2, passiv, dfpad, ox - 32.5, 0.0)
     _pad(viol, tm2, passiv, dfpad, ox + 32.5, 0.0)
-    _text(viol, tx, ox, 30.0, "Padc.b/e FAIL (30um gap)")
+    _text(viol, tx, ox, 30.0, "Padc.b FAIL (30um gap)")
 
     # Padc.d FAIL: legal pad 20 um from EdgeSeal (< 30 um).
     ox = 3 * STRIDE
@@ -130,11 +129,11 @@ def build():
     _pad(clean, tm2, passiv, dfpad, ox, 0.0)
     _text(clean, tx, ox, 30.0, "Padc.a/c/f PASS")
 
-    # Legal pair: 45 um edge-to-edge (> 40) so Padc.b/.e stay clean.
+    # Legal pair: 45 um edge-to-edge (> 40) so Padc.b stays clean.
     ox = STRIDE
     _pad(clean, tm2, passiv, dfpad, ox - 40.0, 0.0)
     _pad(clean, tm2, passiv, dfpad, ox + 40.0, 0.0)
-    _text(clean, tx, ox, 30.0, "Padc.b/e PASS (45um gap)")
+    _text(clean, tx, ox, 30.0, "Padc.b PASS (45um gap)")
 
     # Legal pad 35 um from EdgeSeal (> 30) so Padc.d stays clean.
     ox = 2 * STRIDE

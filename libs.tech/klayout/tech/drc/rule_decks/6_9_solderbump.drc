@@ -32,9 +32,11 @@
 #   Padb_b = 70 um  (min. SBumpPad space)
 #   Padb_c = 10 um  (min. TopMetal2 enclosure of SBumpPad)
 #   Padb_d = 50 um  (min. SBumpPad space to EdgeSeal)
-#   Padb_e = 130 um (min. SBumpPad pitch; interposer-only key, retained in JSON
-#                    for the bump_mirror consumer but NOT checked by this deck;
-#                    see the Padb.e note below)
+#   Padb_e = 130 um (min. SBumpPad pitch; interposer-only key, NOT checked by this
+#                    deck. The Padc_e/Padb_e JSON keys are retained as cross-repo
+#                    API, read by the assembly-stage mirror in the sibling repos,
+#                    not by this interposer deck; the in-repo bump_mirror.py reads
+#                    Padc_e. See the Padb.e note below.)
 #=========================================================================================
 
 if BEOL
