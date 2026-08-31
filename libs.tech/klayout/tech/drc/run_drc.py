@@ -21,29 +21,10 @@ import concurrent.futures
 import traceback
 from typing import Dict, List, Set, Union, Tuple
 
-# Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
-AVAILABLE_DECKS = [
-    'offgrid', 'angle',
-    'metaln', 'metalnfiller',
-    'via4', 'topvia1',
-    'topmetal1', 'topmetal1filler',
-    'topvia2', 'topmetal2', 'topmetal2filler',
-    'passiv', 'pad', 'copperpillar', 'solderbump', 'ubm_floor',
-    'sealring', 'mim', 'metalslits', 'lbe',
-    'density',
-]
-
-# Decks excluded from the default "all" run (must match intm4tm2.drc).
-# Density carries global minimum-density rules that fail on partial layouts;
-# opt in with --density or an explicit --deck density.
-DEFAULT_SKIP_DECKS = {'density'}
-
-# Decks that have been moved out of the interposer PDK. Recognised here so
-# that a stale CLI invocation prints a useful redirect instead of "unknown".
-RELOCATED_DECKS = {
-    'assembly': "Promoted to the ADK. Use adk/klayout/drc/run_drc.py "
-                "with --interposer-adapter <name>.",
-}
+# Deck registry (deck names, default-skip, relocation) shared with the runset's
+# Ruby side (intm4tm2_decks.rb) and the registry CI check via intm4tm2_decks.py,
+# so the Python and Ruby halves cannot drift.
+from intm4tm2_decks import AVAILABLE_DECKS, DEFAULT_SKIP_DECKS, RELOCATED_DECKS
 
 
 # ================================================================

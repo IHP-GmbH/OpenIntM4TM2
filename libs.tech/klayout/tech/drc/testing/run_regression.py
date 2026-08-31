@@ -21,7 +21,9 @@ import argparse
 import sys
 from pathlib import Path
 
-import klayout.db as db
+# NB: klayout.db is imported lazily inside run_table (it is only needed to read
+# the testcase GDS), so this module stays importable without a KLayout install,
+# e.g. by the deck-registry CI check that reads GOLDEN / KNOWN_UNTESTED_DECKS.
 
 # Reference expectations: table -> {deck, cells: {top_cell: expected_violated_rule_set}}.
 # A clean cell must yield an empty set (also guards against false positives on the
@@ -171,9 +173,16 @@ GOLDEN = {
     },
 }
 
+# Decks intentionally without a regression fixture yet (tracked coverage debt).
+# The deck-registry CI check asserts that the decks covered by GOLDEN plus this
+# set exactly equal the full deck registry, so a NEW deck cannot be added
+# without either a fixture in GOLDEN or an explicit acknowledgement here.
+KNOWN_UNTESTED_DECKS = frozenset({'topvia1', 'topmetal1', 'topvia2', 'passiv'})
+
 
 def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
               run_deck, get_rules_with_violations, drc_script: str) -> bool:
+    import klayout.db as db  # deferred: keeps this module importable without klayout
     gds = unit_dir / f"{table}.gds"
     if not gds.is_file():
         print(f"  FAIL {table}: testcase not found: {gds} (run gen_{table}_testcase.py)")
