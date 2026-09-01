@@ -134,6 +134,14 @@ unknown_decks.each { |name|
   logger.warn("Unknown deck '#{name}'. Available: #{IntM4TM2Decks::ALL_DECKS.keys.join(', ')}")
 }
 
+# drc_files is the sanctioned deck selection: compose it ONLY through
+# deck_files() above, never by filtering or appending to it here. The
+# deck-registry check validates what deck_files() emits and compares the
+# registry against rule_decks/ on disk; it never inspects this runtime array,
+# so a post-call filter or append is invisible to it (the symmetric counterpart
+# of the documented Python read-then-filter residual). The one adjacent guard is
+# unrelated: a *.drc dropped into rule_decks/ that no deck registers is flagged
+# as an orphan, whether or not anything appends it here.
 drc_source = drc_files.map { |f|
   path = File.join(rule_deck_path, f)
   unless File.exist?(path)
