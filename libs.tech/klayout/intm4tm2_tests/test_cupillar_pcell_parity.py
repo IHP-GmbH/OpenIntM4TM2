@@ -145,6 +145,8 @@ def _run_pcell_batch(out_dir, cases):
 
 
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+@pytest.mark.skipif(not os.environ.get("INTERCONNECT_PDK_ROOT"),
+                    reason="needs interconnect PDK sibling (INTERCONNECT_PDK_ROOT)")
 def test_pcell_matches_generator():
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
