@@ -87,8 +87,9 @@ it, never a value re-parsed out of a large source file:
     --help/diagnostic-read residual described below.
   * Golden truth  -- ``<drc>/testing/run_regression.py`` imported for GOLDEN and
     KNOWN_UNTESTED_DECKS. That module is klayout-free at import time (it moves
-    ``import klayout.db`` inside ``run_table``), and it imports this checker only
-    inside its own ``main()``, so there is no import cycle.
+    ``import klayout.db`` inside ``run_table``), and it does not import this
+    checker at all -- the dependency is one-way (this checker imports
+    run_regression), so there is no import cycle.
   * Disk truth    -- the actual ``*.drc`` files in ``<drc>/rule_decks/``.
 
 There is exactly one guard that is not emission-based, ASSERT-8, and it exists
@@ -1078,7 +1079,8 @@ def check_no_shadow(run_drc_ast, main_drc_text, run_drc: Path, main_drc: Path) -
             "`from intm4tm2_decks import ...`, shadowing the import"
         )
 
-    if re.search(r"all_decks\s*=\s*\{", main_drc_text):
+    # Case-insensitive: a re-inlined `ALL_DECKS = {` must not evade this guard.
+    if re.search(r"all_decks\s*=\s*\{", main_drc_text, re.IGNORECASE):
         fail(f"{main_drc.name} re-inlines an `all_decks = {{` hash literal")
     if "intm4tm2_decks" not in main_drc_text:
         fail(f"{main_drc.name} does not mention intm4tm2_decks (the require is gone)")

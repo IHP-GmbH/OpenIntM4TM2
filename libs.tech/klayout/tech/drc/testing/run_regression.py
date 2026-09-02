@@ -179,6 +179,13 @@ GOLDEN = {
 # without either a fixture in GOLDEN or an explicit acknowledgement here.
 KNOWN_UNTESTED_DECKS = frozenset({'topvia1', 'topmetal1', 'topvia2', 'passiv'})
 
+# Coverage debt, distinct from the fixture debt above: ThinFilmRes (layer 146)
+# is present in the module layer map but has no geometry deck, so its rule
+# family is unchecked. That is a different gap from a deck without a fixture,
+# and the deck-registry check above cannot see it: registered-vs-on-disk
+# completeness is not coverage-vs-oracle completeness. Preexisting and
+# inherited; a ThinFilmRes deck is the natural next addition.
+
 
 def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
               run_deck, get_rules_with_violations, drc_script: str) -> bool:
