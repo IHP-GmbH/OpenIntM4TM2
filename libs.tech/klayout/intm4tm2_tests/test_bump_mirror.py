@@ -43,6 +43,23 @@ if GDS_TO_KICAD_DIR is not None:
 
 
 # ---------------------------------------------------------------------------
+# Sibling-dependency skip marks -- keyed on the env vars CI already exports, so
+# a bare checkout SKIPS (collection-visible) exactly the tests that need a
+# sibling and still runs the hermetic ones. gds2kicad supplies PinList; the
+# interconnect PDK supplies the 3D bump bodies (bump_mirror._get_bump3d).
+# Stacking BOTH marks on one test makes pytest OR them, so it runs only when
+# both roots are present -- intended for the full-generation CLI paths.
+# ---------------------------------------------------------------------------
+
+needs_gds2kicad = pytest.mark.skipif(
+    not os.environ.get("GDS_TO_KICAD_ROOT"),
+    reason="needs gds2kicad sibling (GDS_TO_KICAD_ROOT)")
+needs_interconnect = pytest.mark.skipif(
+    not os.environ.get("INTERCONNECT_PDK_ROOT"),
+    reason="needs interconnect PDK sibling (INTERCONNECT_PDK_ROOT)")
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -194,6 +211,7 @@ class TestValidation:
         report = validator.validate(bumps)
         assert report.passed
 
+    @needs_interconnect
     def test_gds_output_has_expected_layers(self):
         """Generated GDS contains fab layers 9/35, 41/35, 134/0, 99/35."""
         import klayout.db as kdb
@@ -252,6 +270,7 @@ class TestValidation:
         finally:
             os.unlink(path)
 
+    @needs_gds2kicad
     def test_validate_only_no_gds(self):
         """CLI --validate-only creates report but no GDS file."""
         pins_path = _make_pin_list_json([
@@ -360,6 +379,7 @@ class TestAdditionalValidation:
         # Report should still pass (warnings don't block)
         assert report.passed
 
+    @needs_gds2kicad
     def test_rotation_transform(self):
         """Pin at (40000, 0) dbu + 90deg rotation -> (0, 40) um offset."""
         if GDS_TO_KICAD_DIR is None:
@@ -404,6 +424,7 @@ class TestAdditionalValidation:
 
 class TestCuPillarGenerator:
 
+    @needs_interconnect
     def test_cell_hierarchy(self):
         """Generated GDS has TOP > CUPILLARS_U1 > CUPILLAR_49um_opt2 instances."""
         import klayout.db as kdb
@@ -432,6 +453,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_bump_count(self):
         """add_bumps returns correct count."""
         bumps = [
@@ -441,6 +463,7 @@ class TestCuPillarGenerator:
         gen = CuPillarGenerator()
         assert gen.add_bumps(bumps) == 5
 
+    @needs_interconnect
     def test_custom_bodies_select_method_layers(self):
         """bodies= draws the method's 3D layers (e.g. a vendor's 510/511)
         instead of the default IHP cu-pillar pair."""
@@ -469,6 +492,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_written_gds_rereads_static_without_library_context(self):
         """Written GDS re-reads in a fresh Layout with no library context.
 
@@ -502,6 +526,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_foreign_lyp_env_cannot_poison_fab_layers(self):
         """KLAYOUT_LYP_FILE must not reach the PCell library registration.
 
@@ -577,6 +602,7 @@ class TestCuPillarGenerator:
         with pytest.raises(RuntimeError, match="instead of the fabrication"):
             gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
 
+    @needs_interconnect
     def test_write_infers_format_from_suffix(self):
         """write() keeps stream-format inference from the file suffix
         (an .oas path must produce OASIS bytes, not GDS2)."""
@@ -604,6 +630,7 @@ class TestCuPillarGenerator:
         with pytest.raises(RuntimeError, match="interconnect_pdk not found"):
             gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)])
 
+    @needs_interconnect
     def test_manifest_opening_enables_non_table_diameter(self):
         """A diameter outside Table 6.1 draws with the method-supplied
         passivation opening (manifest fab_params); Table 6.1 still wins
@@ -645,6 +672,8 @@ class TestCuPillarGenerator:
 
 class TestCLI:
 
+    @needs_gds2kicad
+    @needs_interconnect
     def test_full_generation(self):
         """End-to-end CLI test: pins + position -> GDS output."""
         pins_path = _make_pin_list_json([
@@ -668,6 +697,7 @@ class TestCLI:
                 if Path(p).exists():
                     os.unlink(p)
 
+    @needs_gds2kicad
     def test_validation_failure_blocks_gds(self):
         """--no-auto-resolve + pitch violation -> exit 1, no GDS.
 
@@ -695,6 +725,8 @@ class TestCLI:
                 if Path(p).exists():
                     os.unlink(p)
 
+    @needs_gds2kicad
+    @needs_interconnect
     def test_default_auto_resolve_recovers_and_writes_gds(self):
         """Default contract (auto-resolve ON): a pitch violation within the
         displacement budget is shifted until DRC passes and GDS is written."""
@@ -833,6 +865,7 @@ class TestPerDeviceDimensions:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_mixed_option_gds_has_two_pillar_cells(self):
         """Mixed opt1 + opt2 assembly creates two different pillar cells."""
         import klayout.db as kdb
@@ -859,6 +892,7 @@ class TestPerDeviceDimensions:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_pillar_cell_caching(self):
         """Same body_diameter + with_cap reuses cached pillar cell."""
         gen = CuPillarGenerator()
@@ -872,6 +906,7 @@ class TestPerDeviceDimensions:
         assert len(gen._pillar_cells) == 1
         assert (49, True) in gen._pillar_cells
 
+    @needs_interconnect
     def test_nocap_creates_separate_cell(self):
         """with_cap=False creates a different cell without SnAgCap layer."""
         import klayout.db as kdb
@@ -979,6 +1014,7 @@ class TestRobustness:
         with pytest.raises(CliInputError):
             parse_rotations(["U1=spin"], pos)    # non-numeric angle
 
+    @needs_gds2kicad
     def test_diameter_no_table_match_errors(self):
         """An unmatched --diameter hard-errors (exit 1, no GDS) instead of
         silently validating against a fallback diameter the user did not ask
@@ -1036,6 +1072,7 @@ class TestRobustness:
         assert d01 > 1e-6                            # no longer stuck-coincident
         assert report["coincident_skipped"] is False
 
+    @needs_interconnect
     def test_bump3d_signature_contract(self):
         """The interposer calls bump3d_generator.add_3d_bodies(layout, cell,
         body_radius_um, bodies=, with_cap=, num_points=) across the repo split.

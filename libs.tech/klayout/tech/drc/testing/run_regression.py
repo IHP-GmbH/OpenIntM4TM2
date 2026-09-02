@@ -18,12 +18,99 @@ Usage:
 """
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
 # NB: klayout.db is imported lazily inside run_table (it is only needed to read
 # the testcase GDS), so this module stays importable without a KLayout install,
 # e.g. by the deck-registry CI check that reads GOLDEN / KNOWN_UNTESTED_DECKS.
+
+# ---------------------------------------------------------------------------
+# Provenance pin -- canonical run configuration the GOLDEN sets were validated
+# under. The GOLDEN marker sets were captured under exactly ONE KLayout version
+# and ONE run_mode/thread configuration; a different KLayout, run_mode or thread
+# count can shift which markers a deck emits, and a mismatched-but-self-
+# consistent run would still compare green against GOLDEN. So the run is pinned
+# to that configuration, never merely recorded.
+#
+# The two halves are pinned differently, and the difference is deliberate.
+# run_mode and threads are pinned BY CONSTRUCTION: run_table passes the
+# constants below to every deck run and nothing can vary them, so there is
+# nothing left to assert. The KLayout version is the half that can drift under
+# the run, so it is the half asserted at startup (a cheap metadata check, not a
+# second regression), and it is read from the BINARY that produces the markers,
+# never from the like-named Python module.
+#
+# CANONICAL_KLAYOUT_VERSION must track the ecosystem pin: the CI env in
+# .github/workflows/tests.yml sets KLAYOUT_VERSION="0.30.5". run_table below
+# takes its run_mode/threads from these constants, so there is exactly one
+# authority for all three.
+CANONICAL_KLAYOUT_VERSION = "0.30.5"
+CANONICAL_RUN_MODE = "flat"
+CANONICAL_THREADS = 2
+
+
+def _detect_klayout_version():
+    """Read the version of the KLayout BINARY the deck runs will spawn.
+
+    The markers GOLDEN is compared against are produced by the `klayout`
+    binary: run_drc.run_deck builds `["klayout", "-b", "-r", ...]` and each
+    deck runs in that subprocess. The pip `klayout` Python module is a
+    different artefact that merely shares the name, and the two routinely
+    differ on one host, so reading the module proves nothing about the run: it
+    can refuse a correct setup and it can pass a mismatched one. Read the
+    producer.
+
+    Returns the version string, or None if it cannot be read at all (no binary
+    on PATH, no output, unparseable output). None is a fail-closed signal for
+    assert_canonical_config; it is never treated as a match.
+    """
+    try:
+        completed = subprocess.run(
+            ["klayout", "-b", "-v"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    output = (completed.stdout or "").strip()
+    if not output:
+        return None
+    # `klayout -b -v` prints e.g. "KLayout 0.30.5"; the version is the last field.
+    return output.split()[-1] or None
+
+
+def assert_canonical_config(running_version):
+    """Fail loudly unless the running KLayout is the pinned one.
+
+    run_mode and threads are not arguments here on purpose: run_table passes
+    CANONICAL_RUN_MODE and CANONICAL_THREADS to every deck run and the CLI
+    exposes no way to change them, so a check against those same constants
+    could never fail and would be a check that does not discriminate. If either
+    ever becomes configurable, this assertion must take the value the run will
+    actually use, not the constant.
+
+    Args:
+        running_version: the version of the KLayout binary the runs will spawn,
+            or None when it could not be determined (fail closed).
+
+    Raises:
+        RuntimeError naming BOTH the expected and the actual value on any
+        divergence, and on an undeterminable version. Never warns-and-continues.
+    """
+    if not running_version:
+        raise RuntimeError(
+            "provenance pin: could not determine the running KLayout version "
+            f"(expected {CANONICAL_KLAYOUT_VERSION!r}). Refusing to compare "
+            "against GOLDEN under an unknown KLayout; put the pinned 'klayout' "
+            "binary on PATH and re-run.")
+    if running_version != CANONICAL_KLAYOUT_VERSION:
+        raise RuntimeError(
+            f"provenance pin: running KLayout version {running_version!r} != "
+            f"pinned {CANONICAL_KLAYOUT_VERSION!r}. GOLDEN was validated under "
+            "the pinned version; a different KLayout can shift deck markers and "
+            "pass a mismatched run green. Install the pinned KLayout, or update "
+            "GOLDEN and the pin together in the same change.")
 
 # Reference expectations: table -> {deck, cells: {top_cell: expected_violated_rule_set}}.
 # A clean cell must yield an empty set (also guards against false positives on the
@@ -207,7 +294,8 @@ def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
             continue
         extra_defines = spec.get('defines', {}).get(cell)
         report = run_deck(drc_script, spec['deck'], str(gds), cell,
-                          run_dir, threads=2, run_mode="flat",
+                          run_dir, threads=CANONICAL_THREADS,
+                          run_mode=CANONICAL_RUN_MODE,
                           extra_defines=extra_defines)
         violated = get_rules_with_violations(report)
         if violated == expected:
@@ -230,6 +318,15 @@ def main():
     parser.add_argument("--table", default=None,
                         help="Run a single rule table (default: all). e.g. --table via4")
     args = parser.parse_args()
+
+    # Provenance pin: verify the running KLayout and the run configuration match
+    # the canonical one GOLDEN was validated under, BEFORE running any table. On
+    # any divergence this raises (naming expected vs actual) rather than letting
+    # a mismatched-but-self-consistent run pass green.
+    running_version = _detect_klayout_version()
+    assert_canonical_config(running_version)
+    print(f"Provenance pin OK: KLayout {running_version}, "
+          f"run_mode={CANONICAL_RUN_MODE}, threads={CANONICAL_THREADS}")
 
     testing_dir = Path(__file__).resolve().parent
     drc_dir = testing_dir.parent                       # .../tech/drc
