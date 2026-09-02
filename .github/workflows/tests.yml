@@ -71,14 +71,20 @@ jobs:
       # rather than degrading when either is absent: for the interconnect PDK on
       # purpose ("pads without their bodies would be an incomplete attachment
       # that no downstream DRC can flag"), and for gds2kicad because the
-      # chiplet-mode CLI imports PinList to read a .pins.json. No test can
-      # self-skip its way around either, so this repository's suite has never
-      # been runnable on a bare clone of it and CI has to supply both.
+      # chiplet-mode CLI imports PinList to read a .pins.json.
       #
-      # This is more sibling checkout than a per-repository job should carry,
-      # and the way to shrink it is to make the PinList import lazy so the
-      # chiplet-mode tests can skip. Until then, checking them out is honest and
-      # excluding the tests would not be.
+      # The tests that need a sibling now carry a skipif on the env vars this
+      # job exports, so a bare clone runs the sibling-free tests instead of
+      # failing to collect. That is a local-development property: this job still
+      # checks both out and still exports both roots, so nothing skips HERE and
+      # the guards are inert in CI by design.
+      #
+      # Dropping the checkouts would make the guards live and shrink the job,
+      # and it is deliberately NOT done here, because the tradeoff is real and
+      # belongs in its own change: the integration job that would inherit the
+      # coverage lives in adk-tools and does not run on this repository's pull
+      # requests, so an interposer change that breaks a chiplet-mode path would
+      # go green here and surface only later, somewhere else.
       #
       # Tracking `dev` rather than a pin means a broken sibling dev turns this
       # repository red. That is the real coupling: a pin here would only hide
