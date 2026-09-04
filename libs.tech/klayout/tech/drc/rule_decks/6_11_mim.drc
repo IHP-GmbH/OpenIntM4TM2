@@ -18,7 +18,7 @@
 
 # DEVIATION: the sg13g2 source guards the table with `TABLES.include?('mim') || BEOL`.
 # The interposer engine has no TABLES selector, so this is reduced to `if BEOL`
-# (deck selection is handled by the runset's all_decks map).
+# (deck selection is handled by the shared deck registry in intm4tm2_decks.rb).
 if BEOL
   #================================================
   #--------------------- 6.11 MIM -----------------
