@@ -122,55 +122,33 @@ end
 # main scope and separate eval() calls don't share locals.
 #
 # Deck selection: pass -rd deck=<name>[,<name>...] to run specific decks only.
-# Without $deck, all decks are loaded (backward compatible).
-all_decks = {
-  'offgrid'         => '3_1_offgrid.drc',
-  'angle'           => '3_2_angle.drc',
-  'metaln'          => '5_17_metaln.drc',
-  'metalnfiller'    => '5_18_metalnfiller.drc',
-  'via4'            => '5_20_via4.drc',
-  'topvia1'         => '5_21_topvia1.drc',
-  'topmetal1'       => '5_22_topmetal1.drc',
-  'topmetal1filler' => '5_23_topmetal1filler.drc',
-  'topvia2'         => '5_24_topvia2.drc',
-  'topmetal2'       => '5_25_topmetal2.drc',
-  'topmetal2filler' => '5_26_topmetal2filler.drc',
-  'passiv'          => '5_27_passiv.drc',
-  'pad'             => '6_9_pad.drc',
-  'copperpillar'    => '6_9_copperpillar.drc',
-  'solderbump'      => '6_9_solderbump.drc',
-  'ubm_floor'       => '6_9_ubm_floor.drc',
-  'sealring'        => '6_10_sealring.drc',
-  'mim'             => '6_11_mim.drc',
-  'metalslits'      => '7_3_metalslits.drc',
-  'lbe'             => '9_1_lbe.drc',
-  'density'         => 'density.drc',
+# Without $deck, all decks bar DEFAULT_SKIP_DECKS are loaded (backward
+# compatible). The deck registry and the file-selection logic live in
+# intm4tm2_decks.rb, shared verbatim with the Python tooling and the registry
+# CI check so the two halves cannot drift.
+require File.join(File.dirname(__FILE__), 'intm4tm2_decks')
+
+requested = ($deck && !$deck.empty?) ? $deck.split(',').map(&:strip) : nil
+drc_files, unknown_decks = IntM4TM2Decks.deck_files(requested)
+unknown_decks.each { |name|
+  logger.warn("Unknown deck '#{name}'. Available: #{IntM4TM2Decks::ALL_DECKS.keys.join(', ')}")
 }
 
-# Decks skipped by the default "all" run. Density carries global MINIMUM
-# density rules that are meaningless on partial layouts and unit fixtures;
-# select it explicitly with -rd deck=density (CLI: --density / --deck density).
-DEFAULT_SKIP_DECKS = ['density']
-
-if $deck && !$deck.empty?
-  selected = $deck.split(',')
-  drc_files = ['layers_def.drc']
-  selected.each { |name|
-    stripped = name.strip
-    if all_decks.key?(stripped)
-      drc_files << all_decks[stripped]
-    else
-      logger.warn("Unknown deck '#{stripped}'. Available: #{all_decks.keys.join(', ')}")
-    end
-  }
-else
-  drc_files = ['layers_def.drc'] +
-              all_decks.reject { |name, _| DEFAULT_SKIP_DECKS.include?(name) }.values
-end
-
+# drc_files is the sanctioned deck selection: compose it ONLY through
+# deck_files() above, never by filtering or appending to it here. The
+# deck-registry check validates what deck_files() emits and compares the
+# registry against rule_decks/ on disk; it never inspects this runtime array,
+# so a post-call filter or append is invisible to it (the symmetric counterpart
+# of the documented Python read-then-filter residual). The one adjacent guard is
+# unrelated: a *.drc dropped into rule_decks/ that no deck registers is flagged
+# as an orphan, whether or not anything appends it here.
 drc_source = drc_files.map { |f|
   path = File.join(rule_deck_path, f)
-  File.exist?(path) ? File.read(path) : ""
+  unless File.exist?(path)
+    raise "DRC rule deck not found: #{path} " \
+          "(registered in intm4tm2_decks.rb but missing from rule_decks/)"
+  end
+  File.read(path)
 }.join("\n")
 eval(drc_source)
 

@@ -61,6 +61,20 @@ jobs:
         run: pytest libs.tech/klayout/intm4tm2_tests/test_layer_parity.py
                     libs.tech/klayout/intm4tm2_tests/test_em_stackup.py -q
 
+      - name: Deck registry is single-sourced and self-consistent
+        # run_drc.py and the intm4tm2.drc runset share one registry,
+        # intm4tm2_decks.py / .rb. The checker asserts the two sides still agree
+        # by comparing what each owner emits, never by re-parsing source; its own
+        # hermetic self-test then covers the checker. Ruby is already installed by
+        # the deck-parse step above and neither needs a KLayout binary, which is
+        # why both belong here and not in the `decks` job. The self-test is named
+        # explicitly because pytest.ini's testpaths would exclude it from a bare
+        # `pytest` run.
+        run: |
+          python3 libs.tech/klayout/tech/drc/testing/check_deck_registry.py \
+            libs.tech/klayout/tech/drc
+          pytest libs.tech/klayout/tech/drc/testing/test_deck_registry.py -q
+
   # The rest of the pytest suite that runs without the KLayout CLI.
   unit:
     runs-on: ubuntu-24.04
