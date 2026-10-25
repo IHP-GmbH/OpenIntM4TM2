@@ -76,8 +76,26 @@ class cmim(DloGen):
         x2 = self.xcont_cnt
         y1 = self.techparams['Mim_d']-self.techparams['TV1_d']+self.yoffset
         y2 = self.ycont_cnt
+
+        # The via-array extent alone can leave TopMetal1 narrower than the
+        # TM1.a minimum width: at w = l = 1.14 um it lands on 1.26 um, which
+        # our own DRC deck (5_22_topmetal1.drc, TM1_a = 1.64) rejects. Grow
+        # the box symmetrically to TM1_a in each direction independently, so
+        # a rectangular cmim only widens on the axis that is short.
+        tm1_min = self.techparams['TM1_a']
+
+        tm1_min_x1 = GridFix((self.w - tm1_min) / 2)
+        tm1_min_y1 = GridFix((self.l - tm1_min) / 2)
+        tm1_min_x2 = tm1_min_x1 + tm1_min
+        tm1_min_y2 = tm1_min_y1 + tm1_min
+
         caplayerBBox = Box(0, 0, self.w, self.l)
-        topMetalBBox = Box(x1, y1, x2, y2)
+        topMetalBBox = Box(
+            min(x1, tm1_min_x1),
+            min(y1, tm1_min_y1),
+            max(x2, tm1_min_x2),
+            max(y2, tm1_min_y2),
+        )
         bottomMetalBBox = Box(-self.techparams['Mim_c'], -self.techparams['Mim_c'], self.w + self.techparams['Mim_c'], self.l + self.techparams['Mim_c'])
 
         Rect(Layer('MIM'), caplayerBBox)

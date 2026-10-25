@@ -96,7 +96,7 @@ def _reg(ly, top, layer, dt):
     return kdb.Region() if li is None else kdb.Region(top.begin_shapes_rec(li))
 
 
-def _chip(ly, top):
+def chip_area(ly, top):
     """(chip area um^2, source label). prBoundary (235/0) > EdgeSeal boundary (39/4) > extent."""
     dbu2 = ly.dbu * ly.dbu
     prb = _reg(ly, top, 235, 0)
@@ -127,16 +127,16 @@ def measure(source, topcell=None, tech_json=TECH_JSON):
     top = _top(ly, topcell)
     dbu2 = ly.dbu * ly.dbu
 
-    chip_area, chip_source = _chip(ly, top)
+    chip, chip_source = chip_area(ly, top)
     report = {
         "topcell": top.name,
-        "chip_area_um2": round(chip_area, 3),
+        "chip_area_um2": round(chip, 3),
         "chip_source": chip_source,
         "metals": {},
         "lbe": None,
         "slits": {},
     }
-    if chip_area <= 0:
+    if chip <= 0:
         return report
 
     # --- global metal density: (drawn + filler) - slit, over the chip ---
@@ -144,13 +144,13 @@ def measure(source, topcell=None, tech_json=TECH_JSON):
         lo, hi = float(rules[lo_key]) * 100.0, float(rules[hi_key]) * 100.0
         covered = (_reg(ly, top, layer, 0) + _reg(ly, top, layer, 22)
                    - _reg(ly, top, layer, 24)).area() * dbu2
-        pct = 100.0 * covered / chip_area
+        pct = 100.0 * covered / chip
         report["metals"][key] = {"coverage_pct": round(pct, 2), "band": [lo, hi],
                                  "state": _band_state(pct, lo, hi)}
 
     # --- global LBE density against the LBE_i maximum ---
     lbe_max = float(rules["LBE_i"]) * 100.0
-    lbe_pct = 100.0 * _reg(ly, top, *LBE_LAYER).area() * dbu2 / chip_area
+    lbe_pct = 100.0 * _reg(ly, top, *LBE_LAYER).area() * dbu2 / chip
     report["lbe"] = {"coverage_pct": round(lbe_pct, 2), "max_pct": lbe_max,
                      "state": "over" if lbe_pct > lbe_max else "ok"}
 

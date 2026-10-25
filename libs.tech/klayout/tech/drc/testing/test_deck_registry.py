@@ -207,8 +207,10 @@ CORRECT_DESTRUCTIVE_SELECT_REQUESTED = _requested_branch(
 # Treats an EMPTY request as "no request": a SEPARATOR-ONLY `-rd deck=,` (the
 # runset splits on ',' and `",".split(",")` is []) would silently run the whole
 # default deck set instead of nothing. A bare `-rd deck=` does NOT reach this: the
-# runset's `!$deck.empty?` guard short-circuits it to nil, the default run. Every
-# non-empty probe agrees with this producer, so only the empty probe can see it.
+# runset's `!$deck.empty?` guard short-circuits it to nil, the default run. The
+# runset now refuses [] before it uses the answer, so this guards the contract,
+# not a live run. Every non-empty probe agrees with this producer, so only the
+# empty probe can see it.
 EMPTY_FALLBACK_REQUESTED = _requested_branch(
     "    return deck_files(nil) if requested.empty?\n"
     "    unknown = requested.reject { |d| ALL_DECKS.key?(d) }\n"
@@ -1172,8 +1174,8 @@ def test_48_deduplicating_producer_is_green_and_documented_as_residual(tmp_path)
 #
 # `deck_files(nil)` returns a PAIR, and while only its first element was emitted
 # the second was never looked at: a nil branch that reported a bogus unknown name
-# sat at exit 0 while intm4tm2.drc's `unknown_decks.each { |name|
-# logger.warn(...) }` warned about a deck nobody asked for on EVERY default run.
+# sat at exit 0 while intm4tm2.drc, which raises on any unknown name, would
+# refuse EVERY default run over a deck nobody asked for.
 # The contract literal is `return [PREAMBLE + selected, []]`, so the expectation
 # is a constant the shipped producer already satisfies: no legitimate producer
 # puts a name there, hence no false-fail risk.
@@ -1226,12 +1228,12 @@ def test_50_nil_branch_unknown_half_is_emitted_and_empty(tmp_path):
 #
 # Every probe used to interleave at most ONE synthetic unknown, so a producer
 # that keeps only the FIRST unknown name it finds agreed with all of them:
-# `-rd deck=typo1,typo2` would warn about one bad name and silently drop the
-# other deck. The full-registry probe now interleaves TWO distinct synthetic
+# `-rd deck=typo1,typo2` would name only one of the two bad names in its
+# refusal. The full-registry probe now interleaves TWO distinct synthetic
 # unknowns, and the unknown half is compared as a MULTISET: the drop changes the
 # length, so it is caught, while a producer that merely SORTS or REVERSES its
-# warnings is not failed (the runset consumes that list only as a per-name
-# logger.warn loop, so its order is cosmetic; the .rb doc attaches
+# unknown names is not failed (the runset consumes that list only to name it
+# in its refusal, so its order is cosmetic; the .rb doc attaches
 # "order-preserving" to the FILES half, which stays order-exact).
 # ---------------------------------------------------------------------------
 
@@ -1288,8 +1290,8 @@ def test_52_first_unknown_only_on_the_real_deck_set(tmp_path):
 def test_53_reordering_the_unknown_half_is_green(tmp_path, body):
     """
     The false-FAIL side of the multiset comparison, and the reason it is not an
-    order-exact one. The runset only loops `logger.warn` over the unknown names,
-    so their order carries nothing; a producer that sorts or reverses its warnings
+    order-exact one. The runset only names the unknown names in its refusal,
+    so their order carries nothing; a producer that sorts or reverses them
     is legitimate and must stay green on every probe, on the real deck set too.
     """
     out = expect(
@@ -1351,7 +1353,7 @@ def test_55_second_probe_name_is_a_real_deck_is_no_verdict(tmp_path):
 # precedes its own extensions, so no probe built out of registry names alone ever
 # requests a strict partial of one. A producer that matches a PREFIX, a SUFFIX or
 # a separator-stripped form was therefore green: `-rd deck=top` would silently run
-# topvia1 with no unknown-deck warning at all. The fifth probe requests manglings
+# topvia1 with no unknown-deck refusal at all. The fifth probe requests manglings
 # derived from real names and verified absent from the registry, each expected
 # UNKNOWN, so the shipped exact-match producer passes and a lenient one diverges.
 # ---------------------------------------------------------------------------

@@ -152,6 +152,7 @@ def test_cap_cmim_symbol_contract():
     assert "@m * (@w * @l * 1.5e-3 + 2*( @w + @l ) * 40e-12)" in text
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(XSCHEM_BIN is None, reason="xschem binary not on PATH")
 def test_cap_cmim_symbol_netlists():
     """Headless xschem batch netlist of a schematic using the symbol."""

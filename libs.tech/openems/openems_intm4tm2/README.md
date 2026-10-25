@@ -9,9 +9,9 @@ files (`.lyp`, DRC, LVS) do not carry.
 
 | Path | Tool | Notes |
 |---|---|---|
-| `libs.tech/openems/openems_intm4tm2/workflow/INTM4TM2.xml` | openEMS | 300 um Si carrier (default) |
+| `libs.tech/openems/openems_intm4tm2/workflow/INTM4TM2.xml` | openEMS | bulk Si carrier (default) |
 | `libs.tech/openems/openems_intm4tm2/workflow/INTM4TM2_nosub.xml` | openEMS | no lossy substrate (2 um SiO2 spacer) |
-| `libs.tech/palace/workflow/INTM4TM2.xml` | Palace | 300 um Si carrier, backside ground sheet |
+| `libs.tech/palace/workflow/INTM4TM2.xml` | Palace | bulk Si carrier, backside ground sheet |
 | `libs.tech/palace/workflow/INTM4TM2_nosub.xml` | Palace | no substrate |
 | `libs.tech/parasitics/itf/intm4tm2_typ.itf` | RC extraction | typical corner, single stack |
 
@@ -41,18 +41,23 @@ the carrier surface.
 | Metal4    | 50  | 0.6400 | 1.1300  | 0.490 |
 | MIM       | 36  | 2.16   | 3.0103  | (cap between M5 and TM1) |
 
-Passivation above TopMetal2: 1.5 um oxide + 0.4 um SiN. Total build-up from the
-carrier surface to the top of passivation is ~12.71 um. The inter-metal gaps
+Passivation above TopMetal2: 1.5 um oxide + 0.4 um SiN, as `beol.passivation`
+in `libs.tech/intm4tm2_stack.json` declares; `test_body_thickness.py` checks the
+SiO2 and Passive slabs against it. Total build-up from the carrier surface to
+the top of passivation is ~12.71 um. The inter-metal gaps
 reproduce the module spec exactly: Metal4->Metal5 = 0.54, Metal5->TopMetal1 =
 0.85, TopMetal1->TopMetal2 = 2.80 um.
 
 ## Substrate variants
 
-- **`INTM4TM2.xml`** - 300 um bulk Si carrier (the IHP post-thinning value).
+- **`INTM4TM2.xml`** - bulk Si carrier, as thick as the PDK's declared
+  substrate (`substrate.thickness_um` in `libs.tech/intm4tm2_stack.json`, with
+  its source). `Substrate`, its `Offset` and the Palace `BACKSIDEGND` follow
+  the key, and `test_body_thickness.py` fails if they do not.
 - **`INTM4TM2_nosub.xml`** - no substrate; the carrier is replaced by a 2 um
   SiO2 spacer. Use when a ground plane shields the substrate, for a smaller,
   faster mesh. openEMS models the carrier as an open/floating lossy dielectric;
-  the Palace 300 um variant terminates the carrier backside with a ground sheet,
+  the Palace substrate variant terminates the carrier backside with a ground sheet,
   following each solver's convention.
 
 Substrate resistivity uses the public SG13G2 value (11.9 relative permittivity,

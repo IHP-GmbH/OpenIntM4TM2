@@ -5,13 +5,25 @@ Generate the angle DRC unit testcase (`angle.gds`) for the interposer, following
 the IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS with
 intentional FAIL / PASS structures labeled by text on layer 63/0.
 
-Two top cells, each checked as a whole by run_regression.py:
-  - angle_viol : bad-angle shapes  -> expects {via4_drw_Angle90,
-                                               metal4_drw_Angle45,
-                                               metal4_drw_Acute,
-                                               topmetal2_drw_Acute,
-                                               topmetal2_drw_Angle45}
-  - angle_clean: legal shapes       -> expects {}
+Three top cells, each checked as a whole by run_regression.py:
+  - angle_viol    : bad-angle shapes        -> expects {via4_drw_Angle90,
+                                                        metal4_drw_Angle45,
+                                                        metal4_drw_Acute,
+                                                        topmetal2_drw_Acute,
+                                                        topmetal2_drw_Angle45}
+  - angle_crossing: crossing 45-degree bars -> expects {metal5_drw_Acute,
+                                                        metal5_drw_Angle45}
+  - angle_clean   : legal shapes            -> expects {}
+
+run_regression.py also pins the marker count per rule, one marker per bad
+corner or edge. The deck runs a raw and a merged pass into one category, and
+outputs append, so a violation both passes see would otherwise be counted twice.
+
+angle_crossing covers what only the merged pass sees. Two 45-degree bars cross
+at points that fall on half a database unit; the merge rounds them, which tilts
+the four edges ending there slightly off 45 degrees (4 Angle45 markers, none of
+them in any drawn polygon). The bars' 45-degree end corners are acute and both
+passes see them (4 Acute markers, not 8).
 
 The topmetal2_* pair is the discriminator for the not_in raw-drop bug: an acute
 triangle (also carrying a non-0/45/90 hypotenuse) hidden by a merge (fully inside
@@ -117,6 +129,13 @@ def build():
     _poly(viol, tm2, [(42.0, 1.0), (46.0, 1.0), (46.0, 1.4)])  # acute + bad edge, buried
     _circle(viol, tm2, 44.0, 6.0, 1.0)  # legal circular pad on the same layer (exempt)
     _text(viol, tx, 40.0, 3.5, "tm2 acute-in-box + circle FAIL (raw only)")
+
+    # ---- crossing bars: edges only the merged pass sees -------------------- #
+    crossing = layout.create_cell("angle_crossing")
+    _text(crossing, tx, 10.0, -1.5, "3.2 Angle crossing - FAIL")
+    _poly(crossing, m5, [(10.0, 0.0), (10.01, 0.0), (12.01, 2.0), (12.0, 2.0)])
+    _poly(crossing, m5, [(12.005, 0.0), (12.015, 0.0), (10.015, 2.0), (10.005, 2.0)])
+    _text(crossing, tx, 10.0, 2.5, "metal5 crossing bars FAIL (4 Acute, 4 Angle45)")
 
     # ---- clean structures ------------------------------------------------ #
     clean = layout.create_cell("angle_clean")

@@ -132,6 +132,7 @@ def load_tech(tech_path):
         "Mim_d": _num(params["Mim_d"]),
         "TV1_a": _num(params["TV1_a"]),
         "TV1_d": _num(params["TV1_d"]),
+        "TM1_a": _num(params["TM1_a"]),
         "grid": _num(params["grid"]),
         "epsilon1": _num(params["epsilon1"]),
         # Capacitance specs (display only), matching CbCapCalc unit handling:
@@ -150,8 +151,8 @@ def load_tech(tech_path):
 # PCell numeric helpers (re-implemented from utility_functions.py)
 # ---------------------------------------------------------------------------
 def _fix(value):
-    """PCell fix(): int(floor(value)). Equals truncate-toward-zero for the
-    strictly-positive arguments used in the cmim geometry."""
+    """PCell fix(): int(floor(value)). It floors, it does not truncate: the
+    TopMetal1 growth passes a negative value when w or l is under TM1_a."""
     return int(math.floor(value))
 
 
@@ -189,6 +190,7 @@ def cmim_footprint_boxes(w_um, l_um, tech):
     mim_d = tech["Mim_d"]
     tv1_a = tech["TV1_a"]
     tv1_d = tech["TV1_d"]
+    tm1_a = tech["TM1_a"]
     grid = tech["grid"]
     eps = tech["epsilon1"]
 
@@ -217,11 +219,13 @@ def cmim_footprint_boxes(w_um, l_um, tech):
     xcont_end = xcont_cnt + tv1_d - cont_dist
     ycont_end = ycont_cnt + tv1_d - cont_dist
 
-    # --- TopMetal1 (PLUS) box ---
-    px1 = mim_d - tv1_d + xoffset
-    py1 = mim_d - tv1_d + yoffset
-    px2 = xcont_end
-    py2 = ycont_end
+    # --- TopMetal1 (PLUS) box: the via array, grown per axis to the TM1.a width ---
+    tm1_x1 = _grid_fix((w_um - tm1_a) / 2, grid, eps)
+    tm1_y1 = _grid_fix((l_um - tm1_a) / 2, grid, eps)
+    px1 = min(mim_d - tv1_d + xoffset, tm1_x1)
+    py1 = min(mim_d - tv1_d + yoffset, tm1_y1)
+    px2 = max(xcont_end, tm1_x1 + tm1_a)
+    py2 = max(ycont_end, tm1_y1 + tm1_a)
 
     # --- Metal5 (MINUS) box ---
     mx1 = -mim_c

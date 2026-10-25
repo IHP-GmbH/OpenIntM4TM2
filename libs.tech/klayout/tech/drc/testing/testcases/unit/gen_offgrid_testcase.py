@@ -5,11 +5,24 @@ Generate the offgrid DRC unit testcase (`offgrid.gds`) for the interposer,
 following the IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS
 with intentional FAIL / PASS structures labeled by text on layer 63/0.
 
-Two top cells, each checked as a whole by run_regression.py:
-  - offgrid_viol : off-grid vertices           -> expects {metal4_drw_Offgrid,
-                                                            via4_drw_Offgrid,
-                                                            topmetal2_drw_Offgrid}
-  - offgrid_clean: on-grid shapes + a circle    -> expects {}
+Three top cells, each checked as a whole by run_regression.py:
+  - offgrid_viol    : off-grid vertices        -> expects {metal4_drw_Offgrid,
+                                                           via4_drw_Offgrid,
+                                                           topmetal2_drw_Offgrid}
+  - offgrid_crossing: crossing 45-degree bars  -> expects {metal5_drw_Offgrid}
+  - offgrid_clean   : on-grid shapes + a circle -> expects {}
+
+run_regression.py also pins the marker count per rule, one marker per off-grid
+vertex. The deck runs a raw and a merged pass into one category, and outputs
+append, so a vertex both passes see (every vertex in offgrid_viol except the
+buried ones) would otherwise be counted twice.
+
+offgrid_crossing covers the vertices only the merged pass sees. Two 45-degree
+bars with every vertex on the 5 nm grid cross at four points that fall on half a
+database unit; the merge rounds them to off-grid vertices. A buried off-grid
+triangle sits one database unit from one of those crossings. Dropping the merged
+pass loses the four crossings (3 markers instead of 7), and a deduplication that
+tolerates one database unit swallows the crossing next to the triangle (6).
 
 The topmetal2_drw_Offgrid case is the discriminator for the not_in raw-drop bug:
 an off-grid vertex hidden by a merge (a small off-grid box fully inside a big
@@ -122,6 +135,16 @@ def build():
                       (44.0 + OFFGRID_X, 2.0), (42.0, 2.0)])  # off-grid, buried inside
     _circle(viol, tm2, 44.0, 6.0, 1.0)  # legal circular pad on the same layer (exempt)
     _text(viol, tx, 40.0, 3.5, "tm2 offgrid-in-box + circle FAIL (raw only)")
+
+    # ---- crossing bars: off-grid vertices only the merged pass sees -------- #
+    crossing = layout.create_cell("offgrid_crossing")
+    _text(crossing, tx, 10.0, -1.0, "3.1 Offgrid crossing - FAIL")
+    _poly(crossing, m5, [(10.0, 0.0), (10.01, 0.0), (12.01, 2.0), (12.0, 2.0)])
+    _poly(crossing, m5, [(12.005, 0.0), (12.015, 0.0), (10.015, 2.0), (10.005, 2.0)])
+    # Buried inside the first bar; (11.003, 1.002) is one database unit from the
+    # crossing the merge rounds to (11.002, 1.002).
+    _poly(crossing, m5, [(11.003, 1.002), (11.006, 1.002), (11.006, 1.0)])
+    _text(crossing, tx, 10.0, 2.5, "metal5 crossing bars + buried triangle FAIL (7)")
 
     # ---- clean structures ------------------------------------------------ #
     clean = layout.create_cell("offgrid_clean")

@@ -44,6 +44,8 @@ FILL_METAL_MACRO = REPO_KLAYOUT / "tech" / "macros" / "interposer_filler_metal.l
 TECH_JSON = REPO_KLAYOUT / "tech" / "drc" / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 # The marked region (a 160/0 box) and the metals the emitter can target.
 MARKER = (40.0, 40.0, 60.0, 60.0)

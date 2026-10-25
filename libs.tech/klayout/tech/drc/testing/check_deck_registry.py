@@ -30,9 +30,9 @@ it, never a value re-parsed out of a large source file:
     The nil branch is emitted whole because half a return value is half a check:
     the contract literal is ``return [PREAMBLE + selected, []]``, so its unknown
     half is asserted EMPTY. A nil branch that put a name there would make
-    intm4tm2.drc's ``unknown_decks.each { |name| logger.warn(...) }`` warn on
-    EVERY default run, and no legitimate producer puts a name there, so the
-    expectation is a constant the shipped producer already satisfies.
+    intm4tm2.drc, which raises on any unknown name, refuse EVERY default run,
+    and no legitimate producer puts a name there, so the expectation is a
+    constant the shipped producer already satisfies.
     The second, strict subset probe exists because a full-registry request is the
     least discriminating one for any bug that EXPANDS a selection: a
     ``deck_files`` that auto-adds a prerequisite deck, or falls back to every deck
@@ -72,10 +72,10 @@ it, never a value re-parsed out of a large source file:
     Known residual classes (NOT an exhaustive list): a REPEATED name
     (contract-ambiguous -- collapsing ``-rd deck=pad,pad`` to one deck is arguably
     hardening rather than a defect, so it is deliberately not probed and a
-    ``.uniq`` producer stays green here); the ORDER of the unknown/warning list
-    (cosmetic rather than contractual -- the runset consumes it only as a per-name
-    ``logger.warn`` loop, so the unknown half is compared as a MULTISET and a
-    producer that sorts or reverses its warnings stays green); behaviour
+    ``.uniq`` producer stays green here); the ORDER of the unknown list
+    (cosmetic rather than contractual -- the runset consumes it only to name it
+    in its refusal, so the unknown half is compared as a MULTISET and a
+    producer that sorts or reverses it stays green); behaviour
     conditional on a request LENGTH or composition that the finite probe set never
     makes (no finite set of probes closes that statically); UNICODE case-folding
     on non-ASCII input (unreachable here -- every real deck name is ASCII and the
@@ -141,8 +141,8 @@ from pathlib import Path
 #
 # There are TWO of them, and the full-registry probe interleaves BOTH, because a
 # single unknown name cannot see a producer that keeps only the FIRST unknown it
-# finds (`requested.reject { ... }.first(1)`): `-rd deck=typo1,typo2` would warn
-# about one bad name and silently drop the other. They are distinct, so no probe
+# finds (`requested.reject { ... }.first(1)`): `-rd deck=typo1,typo2` would name
+# only one of the two bad names in its refusal. They are distinct, so no probe
 # repeats a name and the deliberately-unprobed dedup question (see the residual
 # list in the module docstring) is not raised here.
 PROBE_UNKNOWN_NAME = "__deck_check_bogus_zzz__"
@@ -160,8 +160,8 @@ PROBE_UNKNOWN_NAME2 = "__deck_check_bogus_two__"
 #          show an order slip in the unknown/known split). The FULL-registry
 #          probe. Two rather than one because a producer that keeps only the
 #          first unknown name it finds (`.first(1)`) agrees with every
-#          single-unknown probe while `-rd deck=typo1,typo2` silently drops a
-#          deck; with two interleaved the unknown half differs in LENGTH, which
+#          single-unknown probe while `-rd deck=typo1,typo2` names only one bad
+#          name; with two interleaved the unknown half differs in LENGTH, which
 #          the multiset comparison in assert 5 sees.
 #   sub  = the first two entries of ks, same unknown interleaved -- a STRICT,
 #          non-empty subset of the registry. The full probe names every deck, so
@@ -177,7 +177,9 @@ PROBE_UNKNOWN_NAME2 = "__deck_check_bogus_two__"
 #          `!$deck.empty?` short-circuits that to nil.) A
 #          `return deck_files(nil) if requested.empty?` producer
 #          silently promotes "no decks" into "every deck" and agrees with all
-#          three non-empty probes; only this one sees it. No synthetic unknown is
+#          three non-empty probes; only this one sees it. The runset refuses []
+#          before it uses the answer, so this keeps the contract exact rather
+#          than guarding a live run. No synthetic unknown is
 #          interleaved here -- the empty list itself is the whole point.
 #   cf   = [k0.upcase, k0] -- the CASE-FOLD probe, k0 being the first registry
 #          name whose upcased form is both different from it and absent from the
@@ -202,7 +204,7 @@ PROBE_UNKNOWN_NAME2 = "__deck_check_bogus_two__"
 #          exact key precedes its own extensions, so no probe made of registry
 #          names alone ever constructs a strict partial and a producer matching a
 #          normalised form -- `ALL_DECKS.keys.any? { |k| k.start_with?(name) }`,
-#          under which `-rd deck=top` silently runs topvia1 with no warning --
+#          under which `-rd deck=top` silently runs topvia1 with no refusal --
 #          stays green. "known" is derived from the emitted EXACT-match
 #          ALL_DECKS, so every mangling is expected UNKNOWN: the shipped producer
 #          passes and a lenient one diverges on both halves. `find` per form and
@@ -875,8 +877,8 @@ def check_all(drc_dir: Path) -> list:
     # contract literal is `return [PREAMBLE + selected, []]`, so the unknown half
     # of the DEFAULT run is a constant the shipped producer already satisfies and
     # no legitimate producer puts a name there. A nil branch that did would make
-    # intm4tm2.drc's `unknown_decks.each { |name| logger.warn(...) }` warn about a
-    # deck nobody asked for on EVERY default run.
+    # intm4tm2.drc, which raises on any unknown name, refuse EVERY default run
+    # over a deck nobody asked for.
     expected_all = list(preamble) + [f for n, f in rb["decks"].items() if n not in ruby_skip]
     if rb["all_files"] != expected_all:
         fail(
@@ -888,8 +890,8 @@ def check_all(drc_dir: Path) -> list:
         fail(
             5,
             "deck_files(nil)[1] must be empty: the default run requests nothing by "
-            "name, so nothing can be an unknown deck name, and every name it "
-            "reports is warned about by the runset on every default run; emitted "
+            "name, so nothing can be an unknown deck name, and any name it "
+            "reports makes the runset refuse every default run; emitted "
             f"{rb['all_unknown']!r}, expected []",
         )
 
@@ -934,17 +936,16 @@ def check_all(drc_dir: Path) -> list:
                 f"emitted {rb[probe_key]['files']!r}, expected {expected_req_files!r}",
             )
         # The unknown half is compared as a MULTISET (sorted lists), the files half
-        # order-exact. The runset consumes the unknown list only as a per-name
-        # `unknown_decks.each { |name| logger.warn(...) }` loop, so its ORDER is
-        # cosmetic, and the .rb doc attaches "order-preserving" to the FILES, not
-        # to the unknown names: a producer that sorts or reverses its warnings is
-        # legitimate and must not be failed here. A multiset still catches a DROP
-        # (`.first(1)` on the unknown list: `-rd deck=typo1,typo2` warns about one
-        # bad name and silently drops the other deck) because the length and the
-        # multiplicities differ, and it still catches a mis-classification because
-        # the membership differs. A SET would not: it would miss a dropped
-        # duplicate. Repeated names are a deliberately unprobed residual, so no
-        # probe requests one.
+        # order-exact. The runset consumes the unknown list only to name it in
+        # its refusal, so its ORDER is cosmetic, and the .rb doc attaches
+        # "order-preserving" to the FILES, not to the unknown names: a producer
+        # that sorts or reverses them is legitimate and must not be failed here.
+        # A multiset still catches a DROP (`.first(1)` on the unknown list:
+        # `-rd deck=typo1,typo2` names only one of the two bad names in its
+        # refusal) because the length and the multiplicities differ, and it still
+        # catches a mis-classification because the membership differs. A SET
+        # would not: it would miss a dropped duplicate. Repeated names are a
+        # deliberately unprobed residual, so no probe requests one.
         if sorted(rb[probe_key]["unknown"]) != sorted(expected_req_unknown):
             fail(
                 5,

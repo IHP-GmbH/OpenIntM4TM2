@@ -18,13 +18,19 @@ testing/
 
 Each testcase GDS has two top cells that are checked as a whole:
 
-- `<table>_viol`  — one violating structure per rule; must produce exactly that rule set.
-- `<table>_clean` — the corresponding legal structures; must be clean (this also guards
+- `<table>_viol`: one violating structure per rule; must produce exactly that rule set.
+- `<table>_clean`: the corresponding legal structures; must be clean (this also guards
   against false positives on the other rules of the deck).
 
 Structures are laid out several um apart so they never interact, and are labeled by
 text on layer `63/0` (`<rule> PASS` / `<rule> FAIL`) for readability. The expected
 ("golden") violated-rule set per top cell is declared in `run_regression.py:GOLDEN`.
+
+A table may add further top cells when one rule needs several structures to be
+told apart, and may pin exact marker counts per rule with a `counts` entry where
+presence alone cannot catch a defect (the offgrid and angle decks run a raw and a
+merged pass into one category, so a double-reported violation still yields the
+same rule set).
 
 ## Usage
 
@@ -46,5 +52,5 @@ the GDS whenever you change the corresponding `gen_*` script.
 1. Add `testcases/unit/gen_<table>_testcase.py` that writes `<table>.gds` with
    `<table>_viol` / `<table>_clean` top cells.
 2. Generate the GDS and commit it.
-3. Add a `GOLDEN['<table>']` entry (deck name + expected set per top cell) in
-   `run_regression.py`.
+3. Add a `GOLDEN['<table>']` entry (deck name + expected set per top cell, and
+   optionally `counts`) in `run_regression.py`.

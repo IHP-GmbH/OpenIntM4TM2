@@ -19,12 +19,12 @@
 
 The interposer density deck enforces a minimum on Metal4/Metal5 (M4.j/M5.j 35%
 global, MnFil.h 25% per 800x800 um window) but nothing in the open flow could
-create that fill until this generator. This test proves the generator is a real,
-DRC-clean artifact: it builds a stress design (a solid block, a field of thin
-sparse lines the large fill cannot enter, a designer nofill box, and a legal
-pre-existing filler shape), runs the macro headlessly, merges the fill back into
-the design the way the interactive flow does, and then signs it off with the
-interposer's own decks.
+create that fill until this generator. This test builds a stress design (a solid
+block, a field of thin sparse lines the large fill cannot enter, a designer
+nofill box, and a legal pre-existing filler shape), runs the macro headlessly,
+merges the fill back into the design the way the interactive flow does, and then
+checks the result with two of the interposer's decks: metalnfiller, and the
+Metal4/Metal5 rules of the density deck. The other decks are not run here.
 
 The macro is a KLayout DRC-DSL macro. `target()` writes only the generated fill,
 so the fill-only output is merged back into the design before DRC; that combined
@@ -32,8 +32,8 @@ layout is exactly what a designer gets after running the macro on an open layout
 
 Two region paths are exercised: a design bounded only by an EdgeSeal ring
 (fill region = seal interior) and one that also carries a prBoundary
-(fill region = prBoundary), matching the generator's prBoundary > seal > extent
-fallback.
+(fill region = prBoundary AND seal interior). Fill around the seal-ring PCell
+and the generator's refusals are tested in test_sealring_pcell.py.
 
 Asserts, per path: no Metal4/Metal5 density violation, no filler-geometry
 violation (MFil.c / MFil.a2, which also covers merge with the pre-existing
@@ -57,6 +57,8 @@ DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 # density.drc Metal4/Metal5 global band (interposer_tech_default.json Mn_j / Mn_k).
 DENSITY_MIN = 35.0
@@ -157,7 +159,7 @@ def _density(gds: Path, metal_layer: int) -> float:
 
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 @pytest.mark.parametrize("with_prboundary", [False, True], ids=["seal", "prboundary"])
-def test_metal_fill_is_drc_clean_and_in_band(with_prboundary, tmp_path):
+def test_metal_fill_clears_filler_and_density_decks(with_prboundary, tmp_path):
     design = tmp_path / "design.gds"
     fill_only = tmp_path / "fill_only.gds"
     combined = tmp_path / "combined.gds"

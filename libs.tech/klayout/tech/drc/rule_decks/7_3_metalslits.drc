@@ -155,10 +155,12 @@ if BEOL
       if slt_g_applies
         logger.info("Executing rule Slt.g_#{slt_abbrev}")
         slt_g_sep = slt_met_slit.sep(mim_drw, slt_g_value.um, euclidian).polygons
-        slt_g_l = slt_g_sep.join(slt_met_slit.and(mim_drw))
+        slt_g_over = slt_met_slit.and(mim_drw)
+        slt_g_l = slt_g_sep.join(slt_g_over)
         slt_g_l.output("Slt.g_#{slt_abbrev}",
                        "7.3. Slt.g_#{slt_abbrev} : Min. #{slt_abbrev}:slit space to MIM: #{slt_g_value} um")
         slt_g_sep.forget
+        slt_g_over.forget
         slt_g_l.forget
       end
 

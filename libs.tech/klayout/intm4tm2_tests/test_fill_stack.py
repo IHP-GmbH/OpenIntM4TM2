@@ -102,6 +102,7 @@ def _drawn_area(gds, layer):
     return kdb.Region(top.begin_shapes_rec(li)).area() * ly.dbu * ly.dbu
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_single_pass_fills_all_four_in_band(tmp_path):
     design = tmp_path / "design.gds"
@@ -123,6 +124,7 @@ def test_single_pass_fills_all_four_in_band(tmp_path):
         assert _has_fill(out, layer), f"no fill emitted on {layer}/22"
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_closure_mode_reports_in_band_metals_as_converged(tmp_path):
     """On an open design, closure grades every metal ok/converged with in-band percents.
@@ -150,6 +152,7 @@ def test_closure_mode_reports_in_band_metals_as_converged(tmp_path):
         assert _has_fill(out, layer), f"no fill emitted on {layer}/22"
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_closure_mode_flags_underfilled_metal(tmp_path):
     """A deck-flagged under-filled Metal4/Metal5 must surface as not-converged.
@@ -172,6 +175,7 @@ def test_closure_mode_flags_underfilled_metal(tmp_path):
     assert report["converged"] is False
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_prestamped_nofill_is_honored(tmp_path):
     """Fill stays out of a Metal4 nofill (50/23) that was already in the design."""
@@ -187,6 +191,7 @@ def test_prestamped_nofill_is_honored(tmp_path):
         "fill_stack put Metal4 fill inside a pre-stamped 50/23 nofill"
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_in_place_output_and_workdir_none(tmp_path):
     """output may equal input; workdir=None uses a temp dir. Drawn metal survives."""
@@ -202,9 +207,8 @@ def test_in_place_output_and_workdir_none(tmp_path):
     assert report["converged"] is True
 
 
-@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_unknown_mode_raises(tmp_path):
     design = tmp_path / "design.gds"
     _build_open_design(design)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unknown mode"):
         fc.fill_stack(str(design), str(tmp_path / "out.gds"), mode="bogus")

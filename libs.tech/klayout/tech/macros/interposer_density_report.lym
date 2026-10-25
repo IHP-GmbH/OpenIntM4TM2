@@ -15,7 +15,7 @@
  <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").end</menu-path>
  <interpreter>python</interpreter>
  <dsl-interpreter-name/>
- <text># One-click interposer density report.
+ <text><![CDATA[# One-click interposer density report.
 #
 # The density deck (density.drc) measures global metal density, LBE density and
 # per-plate slit adequacy, but only emits them as violation markers. This macro
@@ -72,3 +72,5 @@ def run():
 
 
 run()
+]]></text>
+</klayout-macro>

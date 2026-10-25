@@ -46,9 +46,9 @@
 	#   - no TRANS (26/0) reference: TRANS is a front-end marker absent from the
 	#     interposer layer map, so a TRANS keep-out would be permanently empty and
 	#     is meaningless on an interposer with no transistors;
-	#   - the fill region falls back prBoundary &gt; EdgeSeal interior &gt; layout extent
-	#     instead of only EdgeSeal.holes, so a layout without a closed seal ring is
-	#     still filled rather than silently skipped.
+	#   - the fill region is prBoundary, else the layout extent, cut to the EdgeSeal
+	#     interior when a seal ring is drawn, so a layout without a ring is still
+	#     filled; a ring that cannot bound the fill stops the run (see below).
 
 	require 'json'
 
@@ -81,15 +81,25 @@
 	  67 =&gt; { :lg =&gt; ($m5_large_gap || "0.84").to_f, :sg =&gt; ($m5_small_gap || "0.60").to_f },
 	}
 
-	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
+	# --- fill region: prBoundary (235/0), else the extent, inside the seal ring ---
+	# prBoundary normally sits on the board outline, outside the ring, so with an
+	# EdgeSeal (39/0) ring the region is cut to the ring interior: no fill on the ring
+	# or in the margin outside it. Where ring metal covers the EdgeSeal footprint (the
+	# sealring PCell's does), the MFil.c keep-out below also holds fill off its inner
+	# edge. The run stops instead of filling when the ring has no interior, when drawn
+	# Metal4/Metal5 lies outside it (fill would stay inside and leave the design bare;
+	# SEAL.REQ.4 reports the same shapes under require_sealring), or when prBoundary
+	# misses the interior.
 	prb  = source.input("235/0")
 	seal = source.input("39/0")
-	if prb.count &gt; 0
-	  base = prb
-	elsif seal.count &gt; 0
-	  base = seal.holes
-	else
-	  base = extent
+	base = prb.count &gt; 0 ? prb : extent
+	if seal.count &gt; 0
+	  core = seal.holes - seal
+	  raise "interposer_filler_metal: EdgeSeal (39/0) has no interior; close the seal ring" if core.is_empty?
+	  stray = (source.input("50/0") | source.input("67/0")) - (seal | core)
+	  raise "interposer_filler_metal: drawn Metal4/Metal5 outside the seal ring, within #{stray.bbox}" unless stray.is_empty?
+	  base = base &amp; core
+	  raise "interposer_filler_metal: prBoundary (235/0) does not overlap the seal-ring interior" if base.is_empty?
 	end
 
 	# --- per-metal fill: Metal4 (50), Metal5 (67) ---

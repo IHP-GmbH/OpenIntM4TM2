@@ -1,0 +1,11 @@
+{
+  "format": "intm4tm2.fill_halo_widths",
+  "version": 1,
+  "note": "The fill keep-out around a routed interposer net, one width per fill metal, in um: the widest halo at which the fill still met the PDK's own filler and density decks, from a density-ladder measurement on a reference route over halos of 0, 20, 30, 45 and 60 um. Metal4 and Metal5 failed their local density windows (M4Fil.h, M5Fil.h) from 30 um up. TopMetal1 and TopMetal2 passed at every rung, so 60 um is the top of the ladder, not a limit it found. These are the widths routed_load.py halo takes as --halo-um; each is on the 0.005 um grid.",
+  "halo_um": {
+    "M4": 20,
+    "M5": 20,
+    "TM1": 60,
+    "TM2": 60
+  }
+}

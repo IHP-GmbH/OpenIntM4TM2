@@ -19,11 +19,22 @@ $ sg13g2_typ.itf). The IntM4TM2 interposer is a reduced back-end: Metal4 is the
 $ lowest routing metal, sitting on the carrier base oxide (dummyOx). The Metal4,
 $ Metal5, TopMetal1, TopMetal2 conductor/dielectric/via values are taken verbatim
 $ from the SG13G2 ITF; the Metal1..Metal3, GatPoly and Activ layers are removed,
-$ and the dielectric below Metal4 is the carrier base oxide. Below dummyOx is the
-$ Si carrier, which serves as the extraction ground reference.
+$ and the dielectric below Metal4 is the carrier base oxide. Its 0.64 um is the
+$ SG13G2 dummyOx (the dielectric under Metal1 there), reused for the carrier, as
+$ no IntM4TM2-specific value is published. Below dummyOx is the Si carrier, which
+$ serves as the extraction ground reference.
 $
 $ Deviation from source: the upstream SG13G2 ITF lists oxTopMetal2 twice above
-$ TopMetal2; this file keeps a single 1.5 um passivation oxide.
+$ TopMetal2, 1.5 + 1.5 um, which ends the oxide at TopMetal2's top with nitTop
+$ directly on it; the public SG13G2 process specification (p. 17) and EM stack
+$ put 1.5 um of oxide over that top.
+$ This file follows the EM stack and beol.passivation in
+$ libs.tech/intm4tm2_stack.json: one oxTopMetal2 of 4.5 um from TopMetal2's
+$ bottom, ending 1.5 um over its top, then nitTop. Like the EM stacks, this is
+$ a flat approximation. The process specification draws the passivation
+$ following the metal: a wide gap between TopMetal2 lines holds 1.5 um of oxide
+$ and 0.4 um of nitride with air above, where this file has oxide all the way
+$ up, so coupling across wide TopMetal2 gaps reads high.
 $
 
 TECHNOLOGY = intm4tm2
@@ -31,7 +42,7 @@ TECHNOLOGY = intm4tm2
 
 DIELECTRIC air              {THICKNESS=5.0    ER=1.0  }
 DIELECTRIC nitTop           {THICKNESS=0.4    ER=6.6  }
-DIELECTRIC oxTopMetal2      {THICKNESS=1.5    ER=4.1  }
+DIELECTRIC oxTopMetal2      {THICKNESS=4.5    ER=4.1  }
 CONDUCTOR TopMetal2         {THICKNESS=3.0    WMIN=2.0 SMIN=2.0 RPSQ=0.011 }
 DIELECTRIC oxTopMetal1      {THICKNESS=4.8    ER=4.1 }
 CONDUCTOR TopMetal1         {THICKNESS=2.0    WMIN=1.5 SMIN=1.5 RPSQ=0.018 }

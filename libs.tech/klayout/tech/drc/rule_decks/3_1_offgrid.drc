@@ -124,12 +124,15 @@ if BEOL
     # routing bar; the merged polygon is no longer a circle, so the source's
     # merged-level exemption misses it and every legal pad would flag offgrid.
     #
-    # Two passes, both emitted under the same rule id (the two outputs union
-    # into one lyrdb category):
+    # Two passes, both emitted under the same rule id:
     #   pass 1 RAW    - every drawn polygon judged on its own, so an off-grid
     #                   vertex hidden by a merge is still reported;
     #   pass 2 MERGED - the outline the mask actually sees, with the pad rims
     #                   exempted by area interaction.
+    # Two outputs into one category APPEND, they do not union, so a vertex both
+    # passes see would be reported twice. Pass 2 therefore reports only the
+    # vertices pass 1 did not (in practice the off-grid intersections a merge
+    # creates where non-orthogonal edges cross).
     #
     # not_in is a per-polygon selection but DROPS the raw flag whenever the
     # circle set is non-empty (KLayout 0.30.5), which would silently collapse
@@ -150,7 +153,8 @@ if BEOL
     offgrid_circles = get_circle(offgrid_layer)
     offgrid_nc = offgrid_layer.not_in(offgrid_circles)
     offgrid_nc.raw   # not_in dropped the raw flag; re-assert it
-    offgrid_nc.ongrid(GRID).output(
+    offgrid_raw_markers = offgrid_nc.ongrid(GRID)
+    offgrid_raw_markers.output(
       "#{offgrid_name}_Offgrid",
       "3.1 #{offgrid_name}_Offgrid: #{offgrid_name} layer is offgrid (drawing grid is 5 nm)"
     )
@@ -163,11 +167,17 @@ if BEOL
     # pass 2 MERGED: the outline the mask sees; exempt the pad rims by area.
     # No .polygons between ongrid and not_interacting: ongrid yields the vertex
     # markers directly and the area filter drops the ones on a pad rim.
-    offgrid_layer.ongrid(GRID).not_interacting(offgrid_circle_area).output(
+    # ongrid markers are dots (degenerate edge pairs), so their edges are dots
+    # too and the second filter drops exactly the vertices pass 1 already
+    # reported, not a neighbour one database unit away.
+    offgrid_merged_markers = offgrid_layer.ongrid(GRID).not_interacting(offgrid_circle_area)
+    offgrid_merged_markers.not_interacting(offgrid_raw_markers.edges).output(
       "#{offgrid_name}_Offgrid",
       "3.1 #{offgrid_name}_Offgrid: #{offgrid_name} layer is offgrid (drawing grid is 5 nm)"
     )
 
+    offgrid_raw_markers.forget
+    offgrid_merged_markers.forget
     offgrid_nc.forget
     offgrid_circles.forget
     offgrid_circle_area.forget

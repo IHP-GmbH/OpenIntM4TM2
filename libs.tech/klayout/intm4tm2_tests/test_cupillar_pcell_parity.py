@@ -64,6 +64,8 @@ FAB_LAYERS = [(134, 0), (41, 35), (99, 35), (9, 35)]
 NOFILL_LAYERS = [(50, 23), (67, 23), (126, 23), (134, 23)]
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 PCELL_BATCH_SCRIPT = textwrap.dedent("""\
     import sys

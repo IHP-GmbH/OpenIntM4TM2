@@ -9,6 +9,7 @@
         "grid": 0.005,
         "TV1_a": 0.42,
         "TV1_d": 0.42,
+        "TM1_a": 1.64,
         "Mim_c": 0.6,
         "Mim_d": 0.36,
         "cmim_model": "cap_cmim",

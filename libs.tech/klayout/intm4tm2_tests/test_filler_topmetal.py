@@ -24,8 +24,9 @@ legal pre-existing filler bar; after the macro runs and the fill is merged back
 in, the now-checked TM(n)Fil.b rule (5_23 / 5_26) must stay clean, and the top
 metals must land inside their 25..70 % density band.
 
-Two region paths are exercised (EdgeSeal-only and prBoundary), matching the
-generator's prBoundary > seal > extent fallback.
+Two region paths are exercised (EdgeSeal-only, and prBoundary AND the seal
+interior). Fill around the seal-ring PCell and the generator's refusals are
+tested in test_sealring_pcell.py.
 """
 
 import json
@@ -45,6 +46,8 @@ DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 # density.drc TopMetal band (interposer_tech_default.json TM1_c/TM1_d, TM2_c/TM2_d).
 DENSITY_MIN = 25.0
@@ -123,7 +126,7 @@ def _density(gds, metal_layer):
 
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 @pytest.mark.parametrize("with_prboundary", [False, True], ids=["seal", "prboundary"])
-def test_topmetal_fill_is_drc_clean_and_in_band(with_prboundary, tmp_path):
+def test_topmetal_fill_clears_filler_and_density_decks(with_prboundary, tmp_path):
     design = tmp_path / "design.gds"
     fill_only = tmp_path / "fill_only.gds"
     combined = tmp_path / "combined.gds"

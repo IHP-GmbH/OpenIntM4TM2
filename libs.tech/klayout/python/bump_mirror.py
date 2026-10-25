@@ -27,11 +27,13 @@ except ImportError:
 
 
 class CliInputError(ValueError):
-    """Malformed user input (bad REF=path / coordinate / diameter).
+    """Input the CLI refuses, such as a malformed argument (a REF=path,
+    coordinate or diameter) or an environment it cannot honour (no usable
+    gds_to_kicad, or a second gds_to_kicad checkout in one process).
 
-    Raised by the importable parsers so a caller (test harness, the wider
-    suite, an embedded interpreter) is not killed by a bare sys.exit; main()
-    catches it and returns a non-zero exit code.
+    Raised by the importable parsers and the gds_to_kicad loader so a caller
+    (test harness, the wider suite, an embedded interpreter) is not killed by
+    a bare sys.exit; main() catches it and returns a non-zero exit code.
     """
 
 # ---------------------------------------------------------------------------
@@ -100,47 +102,69 @@ DEFAULT_DRC_PARAMS = {
 # complete GDS that looks fabricable while silently missing the interconnect,
 # so cell generation fails loud when the PDK is absent.
 _bump3d_cache = None
+_bump3d_cache_root = None
 
 
 def _get_bump3d():
     """Import the interconnect PDK's bump3d_generator.py, or None if absent.
 
     Lives at <interconnect PDK>/libs.tech/klayout/python/ (IHP layout, same
-    as this file in the interposer). $INTERCONNECT_PDK_ROOT first, then the
-    sibling-checkout walk; a set-but-invalid env falls through to the walk.
-    The walk accepts the canonical ecosystem name first, then the upstream
-    repository name, so default GitHub clones resolve too.
+    as this file in the interposer). A NON-EMPTY $INTERCONNECT_PDK_ROOT decides
+    the answer: it is honoured when it holds the generator and refused by name
+    when it does not. It never falls through to the sibling walk, because a
+    typo in the variable would otherwise draw the bodies from whatever
+    interconnect checkout happens to sit next to this one, and the resulting
+    GDS would look correct. An EMPTY value counts as unconfigured, not as an
+    invalid selection, the same convention _import_pinlist and the sibling door
+    in the tests use; exporting the variable empty is how a shell says "not set".
+    The walk runs only when the variable is unset or empty, and accepts the
+    canonical ecosystem name first, then the upstream repository name, so
+    default GitHub clones resolve too.
 
     Only the filesystem discovery is guarded: if a bump3d_generator.py is found
     but fails to import (missing dep, syntax error), that error propagates with
     its real traceback instead of being masked as 'interconnect_pdk not found'.
     A genuine absence caches a negative result; a failed import is NOT cached,
-    so it can be retried once the environment is fixed.
+    so it can be retried once the environment is fixed. The cache also records
+    the root it was built under, so a later change to $INTERCONNECT_PDK_ROOT is
+    never answered from a selection made for a different one.
     """
-    global _bump3d_cache
-    if _bump3d_cache is not None:
+    global _bump3d_cache, _bump3d_cache_root
+
+    env = os.environ.get("INTERCONNECT_PDK_ROOT")
+    if _bump3d_cache is not None and _bump3d_cache_root == env:
         return _bump3d_cache or None
 
     py_subdir = ("libs.tech", "klayout", "python")
     cand_dir = None
-    try:
-        candidates = []
-        env = os.environ.get("INTERCONNECT_PDK_ROOT")
-        if env:
-            candidates.append(Path(env).joinpath(*py_subdir))
-        here = Path(__file__).resolve()
-        for base in here.parents:
-            for name in ("interconnect_pdk", "IHP-Interconnect-IntM4TM2"):
-                candidates.append((base / name).joinpath(*py_subdir))
-        for cand in candidates:
-            if (cand / "bump3d_generator.py").is_file():
-                cand_dir = cand
-                break
-    except Exception:
-        cand_dir = None
+    if env:
+        cand = Path(env).joinpath(*py_subdir)
+        if not (cand / "bump3d_generator.py").is_file():
+            raise RuntimeError(
+                "INTERCONNECT_PDK_ROOT=%r does not hold the interconnect PDK: "
+                "no %s under it. Refusing to fall back to a sibling checkout, "
+                "because the 3D bodies would then come from a tree nobody "
+                "selected and the GDS would still look complete. Fix the "
+                "variable, or unset it to use sibling discovery."
+                % (env, Path(*py_subdir) / "bump3d_generator.py"))
+        cand_dir = cand
+    else:
+        try:
+            here = Path(__file__).resolve()
+            for base in here.parents:
+                for name in ("interconnect_pdk", "IHP-Interconnect-IntM4TM2"):
+                    cand = (base / name).joinpath(*py_subdir)
+                    if (cand / "bump3d_generator.py").is_file():
+                        cand_dir = cand
+                        break
+                if cand_dir is not None:
+                    break
+        except Exception:
+            cand_dir = None
 
     if cand_dir is None:
         _bump3d_cache = False   # genuinely absent
+        _bump3d_cache_root = env
         return None
 
     # Add the dir so the module's own siblings (interconnect_manifest) resolve,
@@ -154,6 +178,7 @@ def _get_bump3d():
     sys.modules["bump3d_generator"] = mod
     spec.loader.exec_module(mod)
     _bump3d_cache = mod
+    _bump3d_cache_root = env
     return mod
 
 
@@ -779,39 +804,81 @@ class CuPillarGenerator:
 # Input loading
 # ---------------------------------------------------------------------------
 
+# The pin_list.py this process is bound to, as a resolved path: the first one
+# it ran or reused. It binds even when the run failed, because pin_list may
+# already have imported _paths. Kept apart from the loaded module's __file__,
+# which is resolved anew on each call: a symlinked checkout retargeted since
+# the load would otherwise match the new target.
+_pinlist_file = None
+
+
 def _import_pinlist():
     """Locate the gds_to_kicad sibling and return its PinList class.
 
-    Resolution: $GDS_TO_KICAD_ROOT first, then an upward walk from this file
-    for a sibling checkout named gds_to_kicad/ (canonical) or gds-to-kicad/
-    (upstream repository name) that actually contains pin_list.py -- ecosystem
-    discovery convention, no fixed-depth path arithmetic. The directory is
-    added to sys.path (idempotently) so pin_list's own imports resolve, and
-    pin_list.py is loaded from that exact file so an unrelated pin_list earlier
-    on sys.path cannot shadow it.
+    Resolution: a NON-EMPTY $GDS_TO_KICAD_ROOT decides, as $INTERCONNECT_PDK_ROOT
+    does for _get_bump3d: it is honoured when it holds pin_list.py and refused
+    by name when it does not, never answered from a sibling nobody selected.
+    Unset or empty, an upward walk from this file looks for a sibling checkout
+    named gds_to_kicad/ (canonical) or gds-to-kicad/ (upstream repository name)
+    that actually contains pin_list.py. The directory is added to sys.path
+    (idempotently) so pin_list's own imports resolve, and pin_list.py is loaded
+    from that exact file so an unrelated pin_list earlier on sys.path cannot
+    shadow it. Both are used as found; only the identity checks below resolve.
+
+    One process takes pin_list from one file. A pin_list already in
+    sys.modules and the file this process is bound to must both be the file
+    the root selects, or the call is refused; the binding holds even when its
+    run failed. Whatever pin_list imported (_paths) stays with the first
+    checkout, so a switch would only be half done.
     """
-    if "pin_list" in sys.modules:
-        return sys.modules["pin_list"].PinList
-    candidates = []
+    global _pinlist_file
     env = os.environ.get("GDS_TO_KICAD_ROOT")
     if env:
-        candidates.append(Path(env))
-    here = Path(__file__).resolve()
-    candidates.extend(base / name for base in here.parents
-                      for name in ("gds_to_kicad", "gds-to-kicad"))
-    for cand in candidates:
-        pin_list_py = cand / "pin_list.py"
-        if pin_list_py.is_file():
-            if str(cand) not in sys.path:
-                sys.path.insert(0, str(cand))
-            spec = importlib.util.spec_from_file_location("pin_list", pin_list_py)
-            mod = importlib.util.module_from_spec(spec)
-            sys.modules["pin_list"] = mod
-            spec.loader.exec_module(mod)
-            return mod.PinList
-    raise CliInputError(
-        "gds_to_kicad not found: cannot import PinList. Set GDS_TO_KICAD_ROOT "
-        "or clone gds_to_kicad as a sibling checkout.")
+        candidates = [Path(env)]
+    else:
+        here = Path(__file__).resolve()
+        candidates = [base / name for base in here.parents
+                      for name in ("gds_to_kicad", "gds-to-kicad")]
+    pin_list_py = next((c / "pin_list.py" for c in candidates
+                        if (c / "pin_list.py").is_file()), None)
+    if pin_list_py is None:
+        if env:
+            raise CliInputError(
+                "GDS_TO_KICAD_ROOT=%r does not hold gds_to_kicad: no pin_list.py "
+                "under it. Refusing to fall back to a sibling checkout; fix the "
+                "variable, or unset it to use sibling discovery." % env)
+        raise CliInputError(
+            "gds_to_kicad not found: cannot import PinList. Set GDS_TO_KICAD_ROOT "
+            "or clone gds_to_kicad as a sibling checkout.")
+    wanted = pin_list_py.resolve()
+    loaded = sys.modules.get("pin_list")
+    bound = []
+    if loaded is not None:
+        source = getattr(loaded, "__file__", None)
+        bound.append(Path(source).resolve() if source
+                     else "a module with no source file")
+    if _pinlist_file is not None:
+        bound.append(_pinlist_file)
+    for other in bound:
+        if other != wanted:
+            raise CliInputError(
+                "pin_list is already bound to %s, not to %s; this process cannot "
+                "switch gds_to_kicad checkouts. Run it again in a new process."
+                % (other, wanted))
+    _pinlist_file = wanted
+    if loaded is not None:
+        return loaded.PinList
+    if str(pin_list_py.parent) not in sys.path:
+        sys.path.insert(0, str(pin_list_py.parent))
+    spec = importlib.util.spec_from_file_location("pin_list", pin_list_py)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["pin_list"] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop("pin_list", None)   # a half-run module must not pass for the file
+        raise
+    return mod.PinList
 
 
 def load_pin_lists(pin_args: List[str]) -> Dict[str, 'PinList']:
@@ -824,7 +891,8 @@ def load_pin_lists(pin_args: List[str]) -> Dict[str, 'PinList']:
         Dict mapping device ref to loaded PinList
 
     Raises:
-        CliInputError on a malformed REF=path token or a missing pin file.
+        CliInputError on a malformed REF=path token, a missing pin file, no
+        usable gds_to_kicad, or a second gds_to_kicad checkout in one process.
     """
     PinList = _import_pinlist()
 

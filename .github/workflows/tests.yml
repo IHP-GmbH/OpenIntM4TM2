@@ -56,10 +56,12 @@ jobs:
 
       - name: Layer and stackup consistency
         # test_layer_parity diffs the .lyp against the canonical layer list;
-        # test_em_stackup validates the openEMS and Palace XML. Neither needs a
-        # KLayout binary, and both guard artifacts that are read by other repos.
+        # test_em_stackup validates the openEMS and Palace XML; test_body_thickness
+        # checks every copy of intm4tm2_stack.json. None needs a KLayout binary,
+        # and all guard artifacts that are read by other repos.
         run: pytest libs.tech/klayout/intm4tm2_tests/test_layer_parity.py
-                    libs.tech/klayout/intm4tm2_tests/test_em_stackup.py -q
+                    libs.tech/klayout/intm4tm2_tests/test_em_stackup.py
+                    libs.tech/klayout/intm4tm2_tests/test_body_thickness.py -q
 
       - name: Deck registry is single-sourced and self-consistent
         # run_drc.py and the intm4tm2.drc runset share one registry,
@@ -68,8 +70,8 @@ jobs:
         # hermetic self-test then covers the checker. Ruby is already installed by
         # the deck-parse step above and neither needs a KLayout binary, which is
         # why both belong here and not in the `decks` job. The self-test is named
-        # explicitly because pytest.ini's testpaths would exclude it from a bare
-        # `pytest` run.
+        # explicitly because pyproject.toml's testpaths would exclude it from a
+        # bare `pytest` run.
         run: |
           python3 libs.tech/klayout/tech/drc/testing/check_deck_registry.py \
             libs.tech/klayout/tech/drc
@@ -87,11 +89,11 @@ jobs:
       # that no downstream DRC can flag"), and for gds2kicad because the
       # chiplet-mode CLI imports PinList to read a .pins.json.
       #
-      # The tests that need a sibling now carry a skipif on the env vars this
-      # job exports, so a bare clone runs the sibling-free tests instead of
-      # failing to collect. That is a local-development property: this job still
-      # checks both out and still exports both roots, so nothing skips HERE and
-      # the guards are inert in CI by design.
+      # The tests that need a sibling carry needs_sibling_sources and read it
+      # from the env vars this job exports (or from $HCDP_ROOT/<id>), so a bare
+      # clone skips them instead of failing to collect. That is a
+      # local-development property: this job still checks both out and still
+      # exports both roots, so nothing skips HERE.
       #
       # Dropping the checkouts would make the guards live and shrink the job,
       # and it is deliberately NOT done here, because the tradeoff is real and
@@ -127,8 +129,10 @@ jobs:
         # real use of the tool should take.
         run: pip install pytest PyYAML "klayout==${KLAYOUT_VERSION}"
 
-      # The KLayout-gated modules self-skip here and run in the `decks` job
-      # below, with a real CLI. -ra (from pytest.ini) prints which ones and why.
+      # The cases that start the klayout binary, ngspice or xschem (live_tool)
+      # are deselected by pyproject.toml's default options here, and run in
+      # the `decks` job below, with a real CLI. So are the long field solves
+      # (slow).
       - name: Run tests
         env:
           INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
@@ -196,10 +200,11 @@ jobs:
         # --break-system-packages and without shadowing the interpreter KLayout
         # expects. --system-site-packages is not needed: nothing here imports a
         # distro package.
-        # python3-tk: the vendored pycell4klayout API imports tkinter, so
-        # without it every PCell test errors at setup with a message about the
-        # PCell library being unregisterable, which reads like a broken PDK. The
-        # adk-tools runtime image installs it for the same reason.
+        # python3-tk: the vendored pycell4klayout API runs the PCell parameter
+        # callbacks (the cmim one) through Tcl from tkinter. Without it the
+        # PCells still draw, but the callback is skipped and so is the test
+        # that checks it runs. The adk-tools runtime image installs it for the
+        # same reason.
         run: |
           sudo apt-get install -y --no-install-recommends python3-venv python3-tk ngspice
           python3 -m venv .venv
@@ -208,11 +213,13 @@ jobs:
       - name: Full pytest suite
         # -ra prints the reason for anything that skips, so a new one is visible
         # rather than absorbed into the passed count. xschem has no Ubuntu
-        # package, so the symbol test is expected to stay skipped.
+        # package, so the symbol test is expected to stay skipped. -m ""
+        # replaces the default "not live_tool and not slow", so the tool cases
+        # and the long field solves run here.
         env:
           INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
           GDS_TO_KICAD_ROOT: ${{ github.workspace }}/.siblings/gds_to_kicad
-        run: .venv/bin/pytest -q
+        run: .venv/bin/pytest -q -m ""
 
       # The regression drivers import klayout.db, which lives in the venv, so
       # they run on the venv interpreter. The KLayout processes they spawn are

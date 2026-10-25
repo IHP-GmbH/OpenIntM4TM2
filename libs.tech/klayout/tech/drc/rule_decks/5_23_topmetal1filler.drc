@@ -34,6 +34,16 @@ if BEOL
   tm1fil_c_l.output('TM1Fil.c', "5.23. TM1Fil.c : Min. TopMetal1:filler space to TopMetal1 is #{tm1fil_c_val} um")
   tm1fil_c_l.forget
 
+  # Rule TM1Fil.iso : TopMetal1:filler must not touch or overlap TopMetal1.
+  # DEVIATION, same reasoning as M{n}Fil.iso in 5_18_metalnfiller.drc: TM1Fil.c
+  # is a separation rule and is therefore silent on filler that overlaps drawn
+  # metal, including a filler bridging two drawn polygons. Read that comment for
+  # what was measured here and what is inference awaiting confirmation.
+  logger.info('Executing rule TM1Fil.iso')
+  tm1fil_iso_l = topmetal1_filler.interacting(topmetal1_drw)
+  tm1fil_iso_l.output('TM1Fil.iso', '5.23. TM1Fil.iso : TopMetal1:filler must not touch or overlap TopMetal1 (isolation)')
+  tm1fil_iso_l.forget
+
   unless PRECHECK_DRC
     # Rule TM1Fil.a1 : Max. TopMetal1:filler width is 10.00 um
     logger.info('Executing rule TM1Fil.a1')

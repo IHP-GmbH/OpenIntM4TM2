@@ -33,9 +33,9 @@
 	#   - no TRANS (26/0) or other front-end layers: those markers are absent from the
 	#     interposer layer map, so their keep-outs were permanently empty. Only the
 	#     layers that exist on an interposer are referenced.
-	#   - the fill region falls back prBoundary &gt; EdgeSeal interior (holes) &gt; layout
-	#     extent instead of only EdgeSeal.holes, so a layout without a closed seal ring
-	#     is still filled rather than silently skipped.
+	#   - the fill region is prBoundary, else the layout extent, cut to the EdgeSeal
+	#     interior when a seal ring is drawn, so a layout without a ring is still
+	#     filled; a ring that cannot bound the fill stops the run (see below).
 
 	require 'json'
 
@@ -64,15 +64,20 @@
 	# it cannot densify below the minimum spacing, so an under-band case is a design issue.
 	tm_gap = { "TM1" =&gt; ($tm1_gap || "0.0").to_f, "TM2" =&gt; ($tm2_gap || "0.0").to_f }
 
-	# --- fill region: prBoundary (235/0) &gt; EdgeSeal interior (39/0 holes) &gt; extent ---
+	# --- fill region: prBoundary (235/0), else the extent, inside the seal ring ---
+	# Same region and the same three stops as interposer_filler_metal.lym, on the
+	# TopMetal layers. Where the ring's TopMetal covers the EdgeSeal footprint, the
+	# TM(n)Fil.c keep-out below also holds fill off its inner edge.
 	prb  = source.input("235/0")
 	seal = source.input("39/0")
-	if prb.count &gt; 0
-	  base = prb
-	elsif seal.count &gt; 0
-	  base = seal.holes
-	else
-	  base = extent
+	base = prb.count &gt; 0 ? prb : extent
+	if seal.count &gt; 0
+	  core = seal.holes - seal
+	  raise "interposer_filler_topmetal: EdgeSeal (39/0) has no interior; close the seal ring" if core.is_empty?
+	  stray = (source.input("126/0") | source.input("134/0")) - (seal | core)
+	  raise "interposer_filler_topmetal: drawn TopMetal1/TopMetal2 outside the seal ring, within #{stray.bbox}" unless stray.is_empty?
+	  base = base &amp; core
+	  raise "interposer_filler_topmetal: prBoundary (235/0) does not overlap the seal-ring interior" if base.is_empty?
 	end
 
 	# --- per-metal fill: TopMetal1 (126, vias 125/133), TopMetal2 (134, via 133) ---

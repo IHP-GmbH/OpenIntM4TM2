@@ -28,16 +28,20 @@ devices as 'C1 <top> <btm> cap_cmim w=.. l=.. m=..' (the value-first
 The command line is parsed with the standard library ``argparse`` (no
 third-party dependency, so a standalone PDK checkout runs as-is); invoke
 with ``--help`` for the full option list.
+
+Exit 0 means the requested scoped check completed and passed, 1 means
+completed checks found an open, short or reference mismatch, and 2 means
+invalid input, execution failure, incomplete evidence or an empty label census.
 """
 
 import argparse
 import os
+import re
 import shlex
 import sys
 import logging
-import klayout.db
 from datetime import datetime, timezone
-from subprocess import check_call, run as _run
+from subprocess import STDOUT, PIPE, SubprocessError, run as _run
 import time
 
 
@@ -52,13 +56,13 @@ def check_klayout_version():
         ).stdout
     except Exception as e:
         logging.error(f"Error while checking KLayout version: {e}")
-        sys.exit(1)
+        sys.exit(2)
 
     klayout_v_ = klayout_v_.split("\n")[0].strip()
 
     if klayout_v_ == "":
         logging.error("Klayout is not found. Please make sure klayout is installed.")
-        sys.exit(1)
+        sys.exit(2)
 
     version_str = klayout_v_.split(" ")[-1]
     # Tolerate dev/packaging suffixes on each component (e.g. '0.29.11-dev').
@@ -66,11 +70,11 @@ def check_klayout_version():
         parts = [int(p.split("-")[0]) for p in version_str.split(".")]
     except (ValueError, IndexError):
         logging.error(f"Was not able to parse klayout version: '{klayout_v_}'")
-        sys.exit(1)
+        sys.exit(2)
 
     if not 1 <= len(parts) <= 3:
         logging.error("Was not able to get klayout version properly.")
-        sys.exit(1)
+        sys.exit(2)
 
     major = parts[0]
     minor = parts[1] if len(parts) > 1 else 0
@@ -80,7 +84,7 @@ def check_klayout_version():
         logging.error(
             "Using this klayout version has not been assessed. Limits are unknown"
         )
-        sys.exit(1)
+        sys.exit(2)
 
     logging.info(f"Your Klayout version is: {klayout_v_}")
 
@@ -104,13 +108,13 @@ def check_layout_type(layout_path):
         logging.error(
             f"GDS file path {layout_path} provided doesn't exist or not a file."
         )
-        sys.exit(1)
+        sys.exit(2)
 
     if ".gds" not in layout_path and ".oas" not in layout_path:
         logging.error(
             f"Layout {layout_path} is not in GDS2 or OASIS format, please recheck."
         )
-        sys.exit(1)
+        sys.exit(2)
 
     return layout_path
 
@@ -129,6 +133,8 @@ def get_top_cell_names(gds_path):
     List of string
         Names of the top cell in the layout.
     """
+    import klayout.db
+
     layout = klayout.db.Layout()
     layout.read(gds_path)
     top_cells = [t.name for t in layout.top_cells()]
@@ -159,11 +165,11 @@ def get_run_top_cell_name(arguments, layout_path):
         topcell = arguments["--topcell"]
     else:
         layout_topcells = get_top_cell_names(layout_path)
-        if len(layout_topcells) > 1:
+        if len(layout_topcells) != 1:
             logging.error(
-                "Layout has multiple topcells. Use --topcell to determine which topcell you want."
+                "Layout must have exactly one topcell, or select one with --topcell."
             )
-            sys.exit(1)
+            sys.exit(2)
         else:
             topcell = layout_topcells[0]
 
@@ -195,7 +201,7 @@ def generate_klayout_switches(arguments, layout_path, netlist_path):
         run_mode = arguments["--run_mode"]
     else:
         logging.error("Allowed klayout modes are (flat , deep) only")
-        sys.exit(1)
+        sys.exit(2)
 
     switches = {
         "run_mode": run_mode,
@@ -240,12 +246,46 @@ def check_lvs_results(results_files: list):
         A list of paths that the LVS run must have produced.
     """
 
-    missing = [f for f in results_files if not os.path.isfile(f)]
+    missing = [f for f in results_files
+               if not os.path.isfile(f) or os.path.getsize(f) == 0]
     if missing:
         logging.error(
             f"Klayout did not generate the expected results: {missing}. Please check run logs"
         )
-        sys.exit(1)
+        raise RuntimeError("Missing or empty LVS artifacts")
+
+
+COMPLETION = "LVS check complete for interposer backend layers and MIM capacitors"
+RESULT = re.compile(
+    r"^INTERPOSER_LVS_RESULT mode=(reference|connectivity) "
+    r"status=(PASS|FAIL|INCONCLUSIVE) labeled_nets=(\d+) opens=(\d+) shorts=(\d+)$",
+    re.MULTILINE,
+)
+
+
+def result_exit_code(output, reference):
+    """Validate the deck's completed, non-vacuous verdict, never a process exit alone."""
+    rows = RESULT.findall(output)
+    if (output.count(COMPLETION) != 1 or len(rows) != 1 or
+            output.count("INTERPOSER_LVS_RESULT") != 1):
+        raise RuntimeError("Missing or ambiguous interposer LVS completion/result")
+    mode, status, labeled, opens, shorts = rows[0]
+    if mode != ("reference" if reference else "connectivity"):
+        raise RuntimeError("Interposer LVS result mode differs from the requested check")
+    labeled, opens, shorts = int(labeled), int(opens), int(shorts)
+    if (opens != output.count("Connectivity OPEN:") or
+            shorts != output.count("Connectivity SHORT:")):
+        raise RuntimeError("Interposer LVS finding census disagrees with the log")
+    matched = output.count("LVS netlists match")
+    mismatched = output.count("LVS netlists do NOT match")
+    if (matched + mismatched != int(reference) or
+            output.count("No schematic provided - connectivity check only") != int(not reference)):
+        raise RuntimeError("Missing or inconsistent interposer reference-comparison result")
+    expected = ("INCONCLUSIVE" if not labeled else
+                "FAIL" if opens or shorts or mismatched else "PASS")
+    if status != expected:
+        raise RuntimeError("Interposer LVS verdict contradicts its population/findings")
+    return {"PASS": 0, "FAIL": 1, "INCONCLUSIVE": 2}[status]
 
 
 def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
@@ -265,8 +305,8 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
 
     Returns
     -------
-    list
-        Paths of the results the run is expected to produce.
+    int
+        Scoped verdict: 0 pass, 1 findings, 2 inconclusive.
 
     """
 
@@ -279,6 +319,9 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
     report_path = os.path.join(run_dir, f"{layout_base_name}.lvsdb")
     log_path = os.path.join(run_dir, f"{layout_base_name}.log")
     ext_net_path = os.path.join(run_dir, f"{layout_base_name}_extracted.cir")
+    for output in (report_path, log_path, ext_net_path):
+        if os.path.lexists(output):
+            raise RuntimeError(f"Refusing to reuse LVS output {output}; choose a fresh run directory")
     new_sws["report"] = report_path
     new_sws["log"] = log_path
     new_sws["target_netlist"] = ext_net_path
@@ -288,7 +331,12 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
     # are passed verbatim and cannot be word-split or shell-interpreted.
     cmd = ["klayout", "-b", "-r", str(lvs_file)] + build_switches_args(new_sws)
     logging.debug("Command: %s", " ".join(shlex.quote(c) for c in cmd))
-    check_call(cmd)
+    proc = _run(cmd, stdout=PIPE, stderr=STDOUT, text=True)
+    with open(log_path, "w") as stream:
+        stream.write(proc.stdout)
+    print(proc.stdout, end="", flush=True)
+    if proc.returncode:
+        raise RuntimeError(f"KLayout LVS execution failed with exit {proc.returncode}; see {log_path}")
 
     # The KLayout LVS database is only written when a schematic compare runs;
     # connectivity-only runs produce the extracted netlist.
@@ -296,7 +344,8 @@ def run_check(lvs_file: str, path: str, run_dir: str, sws: dict):
     if "schematic" in sws:
         expected.append(report_path)
 
-    return expected
+    check_lvs_results(expected)
+    return result_exit_code(proc.stdout, reference="schematic" in sws)
 
 
 def main(lvs_run_dir: str, arguments: dict):
@@ -322,20 +371,23 @@ def main(lvs_run_dir: str, arguments: dict):
         logging.error(
             f"The input GDS file path {layout_path} doesn't exist, please recheck."
         )
-        sys.exit(1)
+        sys.exit(2)
 
     # Check layout type
     layout_path = check_layout_type(layout_path)
 
     # Check optional reference netlist existence
     netlist_path = arguments["--netlist"]
-    if netlist_path:
+    if netlist_path is not None:
+        if not netlist_path:
+            logging.error("An explicit --netlist must name a nonempty SPICE file.")
+            sys.exit(2)
         netlist_path = os.path.abspath(os.path.expanduser(netlist_path))
-        if not os.path.exists(netlist_path):
+        if not os.path.isfile(netlist_path) or os.path.getsize(netlist_path) == 0:
             logging.error(
-                f"The input netlist file path {netlist_path} doesn't exist, please recheck."
+                f"The input netlist {netlist_path} is missing, empty or not a file."
             )
-            sys.exit(1)
+            sys.exit(2)
     else:
         logging.info("No reference netlist provided - connectivity check only.")
 
@@ -347,10 +399,7 @@ def main(lvs_run_dir: str, arguments: dict):
     switches = generate_klayout_switches(arguments, layout_path, netlist_path)
 
     # Run LVS check
-    results_files = run_check(lvs_rule_deck, layout_path, lvs_run_dir, switches)
-
-    # Check run
-    check_lvs_results(results_files)
+    return run_check(lvs_rule_deck, layout_path, lvs_run_dir, switches)
 
 
 # ================================================================
@@ -427,13 +476,18 @@ if __name__ == "__main__":
     else:
         lvs_run_dir = os.path.abspath(arguments["--run_dir"])
 
-    os.makedirs(lvs_run_dir, exist_ok=True)
+    try:
+        os.makedirs(lvs_run_dir, exist_ok=True)
+        log_handler = logging.FileHandler(os.path.join(lvs_run_dir, "{}.log".format(now_str)))
+    except OSError as exc:
+        print(f"Interposer LVS output directory is unusable: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     # logs format
     logging.basicConfig(
         level=logging.DEBUG,
         handlers=[
-            logging.FileHandler(os.path.join(lvs_run_dir, "{}.log".format(now_str))),
+            log_handler,
             logging.StreamHandler(),
         ],
         format="%(asctime)s | %(levelname)-7s | %(message)s",
@@ -444,7 +498,12 @@ if __name__ == "__main__":
     t0 = time.time()
 
     # Calling main function
-    main(lvs_run_dir, arguments)
+    try:
+        status = main(lvs_run_dir, arguments)
+    except (OSError, RuntimeError, ValueError, ImportError, SubprocessError) as exc:
+        logging.error("Interposer LVS is undecidable: %s", exc)
+        status = 2
 
     #  End of execution time
     logging.info("Total execution time {}s".format(time.time() - t0))
+    sys.exit(status)

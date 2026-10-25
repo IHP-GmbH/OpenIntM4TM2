@@ -40,7 +40,8 @@ import traceback
 moduleNames = [
         'CuPillarPad_code',
         'cmim_code',
-        'bondpad_code'
+        'bondpad_code',
+        'sealring_code'
 ]
 
 def getProcessNames():

@@ -6,7 +6,7 @@ Slim DRC regression runner for the interposer, following the IHP-SG13G2
 top cell is run through its deck and the set of violated rules is compared
 against the reference ("golden") expectation declared below.
 
-This reuses the interposer's own `run_drc.run_deck` / `get_rules_with_violations`
+This reuses the interposer's own `run_drc.run_deck` / `get_violation_counts`
 (one klayout -b invocation per top cell) instead of a standalone harness, so the
 DRC tests are exercised through the same runner as sign-off.
 
@@ -46,6 +46,11 @@ from pathlib import Path
 # .github/workflows/tests.yml sets KLAYOUT_VERSION="0.30.5". run_table below
 # takes its run_mode/threads from these constants, so there is exactly one
 # authority for all three.
+#
+# The decks run flat whatever the run mode says, so that pin binds nothing. The
+# thread count binds since the main deck hands it to the engine; before that
+# every deck ran on one thread, which is how the GOLDEN sets were captured, and
+# they hold unchanged at CANONICAL_THREADS.
 CANONICAL_KLAYOUT_VERSION = "0.30.5"
 CANONICAL_RUN_MODE = "flat"
 CANONICAL_THREADS = 2
@@ -117,13 +122,26 @@ def assert_canonical_config(running_version):
 # other rules of that deck); a violation cell must yield exactly its rule set.
 # The optional 'defines' key maps a top cell to extra `-rd key=value` defines for
 # its run (e.g. density_sanity=true for the DEN.BND.* boundary sanity rules).
+# The optional 'counts' key maps a top cell to {rule: exact marker count} for
+# rules whose marker count matters, not just their presence. Every rule named
+# there must also be in that cell's expected set.
 GOLDEN = {
     'angle': {
         'deck': 'angle',
         'cells': {
             'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute',
                             'topmetal2_drw_Acute', 'topmetal2_drw_Angle45'},
+            'angle_crossing': {'metal5_drw_Acute', 'metal5_drw_Angle45'},
             'angle_clean': set(),
+        },
+        # One marker per bad corner or edge. The deck runs a raw and a merged
+        # pass into the same category; outputs append, so a violation both
+        # passes see must still be counted once.
+        'counts': {
+            'angle_viol': {'via4_drw_Angle90': 1, 'metal4_drw_Angle45': 1,
+                           'metal4_drw_Acute': 2, 'topmetal2_drw_Acute': 2,
+                           'topmetal2_drw_Angle45': 1},
+            'angle_crossing': {'metal5_drw_Acute': 4, 'metal5_drw_Angle45': 4},
         },
     },
     'copperpillar': {
@@ -167,6 +185,21 @@ GOLDEN = {
         'deck': 'metalnfiller',
         'cells': {
             'metalnfiller_viol':  {'M4Fil.c', 'M4Fil.a2', 'M5Fil.c', 'M5Fil.a2'},
+            # One cell per contact shape. Combined, they would be
+            # indistinguishable: all four emit the same M{n}Fil.iso name, so a
+            # containment-only implementation would produce the same set as a
+            # correct one and the bridging case would stop discriminating.
+            # The edge and corner cells expect M{n}Fil.c as well, and that is
+            # correct rather than tolerated: touching is zero space, which is
+            # below the 0.42 um separation limit, so the separation rule is
+            # right to report it. They still discriminate, because a
+            # containment-only implementation would emit the .c markers alone.
+            'metalnfiller_iso_contained': {'M4Fil.iso', 'M5Fil.iso'},
+            'metalnfiller_iso_bridge':    {'M4Fil.iso', 'M5Fil.iso'},
+            'metalnfiller_iso_edge':      {'M4Fil.c', 'M4Fil.iso',
+                                           'M5Fil.c', 'M5Fil.iso'},
+            'metalnfiller_iso_corner':    {'M4Fil.c', 'M4Fil.iso',
+                                           'M5Fil.c', 'M5Fil.iso'},
             'metalnfiller_clean': set(),
         },
     },
@@ -198,7 +231,15 @@ GOLDEN = {
         'deck': 'offgrid',
         'cells': {
             'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid', 'topmetal2_drw_Offgrid'},
+            'offgrid_crossing': {'metal5_drw_Offgrid'},
             'offgrid_clean': set(),
+        },
+        # One marker per off-grid vertex, for the same reason as the angle
+        # table: the raw and merged passes must not both report a vertex.
+        'counts': {
+            'offgrid_viol': {'metal4_drw_Offgrid': 1, 'via4_drw_Offgrid': 1,
+                             'topmetal2_drw_Offgrid': 2},
+            'offgrid_crossing': {'metal5_drw_Offgrid': 7},
         },
     },
     'pad': {
@@ -213,6 +254,32 @@ GOLDEN = {
         'cells': {
             'sealring_viol':  {'Seal.k', 'Seal.l', 'Seal.m', 'Seal.n'},
             'sealring_clean': set(),
+            'sealreq_clean': set(),
+            'sealreq_sub_cell': set(),
+            'sealreq_touching_core': set(),
+            'sealreq_markers': set(),
+            'sealreq_crossbar_ES': set(),
+            'sealreq_no_edgeseal': {'SEAL.REQ.1'},
+            'sealreq_no_boundary': {'SEAL.REQ.2'},
+            'sealreq_es_open': {'SEAL.REQ.3_ES'},
+            'sealreq_break_M4': {'SEAL.REQ.3_M4'},
+            'sealreq_break_V4': {'SEAL.REQ.3_V4'},
+            'sealreq_break_M5': {'SEAL.REQ.3_M5'},
+            'sealreq_break_TV1': {'SEAL.REQ.3_TV1'},
+            'sealreq_break_TM1': {'SEAL.REQ.3_TM1'},
+            'sealreq_break_TV2': {'SEAL.REQ.3_TV2'},
+            'sealreq_break_TM2': {'SEAL.REQ.3_TM2'},
+            'sealreq_point_contact_M5': {'SEAL.REQ.3_M5'},
+            'sealreq_gap_5nm_TM1': {'SEAL.REQ.3_TM1'},
+            'sealreq_neck_M4': {'SEAL.REQ.3_M4'},
+            'sealreq_missing_TV2': {'SEAL.REQ.3_TV2'},
+            'sealreq_corner_ring': {'SEAL.REQ.4'},
+            'sealreq_fill_in_margin': {'SEAL.REQ.4'},
+            'sealreq_stray_passiv': {'SEAL.REQ.4'},
+            'sealreq_passiv_loop': {'SEAL.REQ.4'},
+            'sealreq_trace_crossing': {'SEAL.REQ.4'},
+            'sealreq_nested_ring': {'Seal.m'},
+            'sealreq_off_no_seal': set(),
         },
     },
     'solderbump': {
@@ -234,6 +301,10 @@ GOLDEN = {
         'deck': 'topmetal1filler',
         'cells': {
             'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1', 'TM1Fil.b'},
+            'topmetal1filler_iso_contained': {'TM1Fil.iso'},
+            'topmetal1filler_iso_bridge':    {'TM1Fil.iso'},
+            'topmetal1filler_iso_edge':      {'TM1Fil.c', 'TM1Fil.iso'},
+            'topmetal1filler_iso_corner':    {'TM1Fil.c', 'TM1Fil.iso'},
             'topmetal1filler_clean': set(),
         },
     },
@@ -248,6 +319,10 @@ GOLDEN = {
         'deck': 'topmetal2filler',
         'cells': {
             'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1', 'TM2Fil.b'},
+            'topmetal2filler_iso_contained': {'TM2Fil.iso'},
+            'topmetal2filler_iso_bridge':    {'TM2Fil.iso'},
+            'topmetal2filler_iso_edge':      {'TM2Fil.c', 'TM2Fil.iso'},
+            'topmetal2filler_iso_corner':    {'TM2Fil.c', 'TM2Fil.iso'},
             'topmetal2filler_clean': set(),
         },
     },
@@ -259,6 +334,13 @@ GOLDEN = {
         },
     },
 }
+
+# Every sealreq_* cell except the define-off control runs with the presence
+# rules on. Derived from the cell list so that a new cell cannot be left out.
+GOLDEN['sealring']['defines'] = {
+    cell: {'require_sealring': 'true'}
+    for cell in GOLDEN['sealring']['cells']
+    if cell.startswith('sealreq_') and cell != 'sealreq_off_no_seal'}
 
 # Decks intentionally without a regression fixture yet (tracked coverage debt).
 # The deck-registry CI check asserts that the decks covered by GOLDEN plus this
@@ -275,7 +357,7 @@ KNOWN_UNTESTED_DECKS = frozenset({'topvia1', 'topmetal1', 'topvia2', 'passiv'})
 
 
 def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
-              run_deck, get_rules_with_violations, drc_script: str) -> bool:
+              run_deck, get_violation_counts, drc_script: str) -> bool:
     import klayout.db as db  # deferred: keeps this module importable without klayout
     gds = unit_dir / f"{table}.gds"
     if not gds.is_file():
@@ -297,9 +379,25 @@ def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
                           run_dir, threads=CANONICAL_THREADS,
                           run_mode=CANONICAL_RUN_MODE,
                           extra_defines=extra_defines)
-        violated = get_rules_with_violations(report)
-        if violated == expected:
+        counts = get_violation_counts(report)
+        violated = set(counts)
+        expected_counts = spec.get('counts', {}).get(cell, {})
+        stray = set(expected_counts) - expected
+        if stray:
+            print(f"  FAIL {table}/{cell}: GOLDEN counts name rules outside the "
+                  f"expected set: {sorted(stray)}")
+            ok = False
+            continue
+        miscounted = {rule: (n, counts.get(rule, 0))
+                      for rule, n in expected_counts.items()
+                      if counts.get(rule, 0) != n}
+        if violated == expected and not miscounted:
             print(f"  PASS {table}/{cell}: {sorted(expected) if expected else 'clean'}")
+        elif violated == expected:
+            detail = ", ".join(f"{rule} expected {want} got {got}"
+                               for rule, (want, got) in sorted(miscounted.items()))
+            print(f"  FAIL {table}/{cell}: marker count {detail}")
+            ok = False
         else:
             missing = expected - violated
             extra = violated - expected
@@ -335,7 +433,7 @@ def main():
     run_dir.mkdir(exist_ok=True)
 
     sys.path.insert(0, str(drc_dir))
-    from run_drc import run_deck, get_rules_with_violations
+    from run_drc import run_deck, get_violation_counts
     drc_script = str(drc_dir / "intm4tm2.drc")
 
     tables = {args.table: GOLDEN[args.table]} if args.table else GOLDEN
@@ -347,7 +445,7 @@ def main():
     all_ok = True
     for table, spec in tables.items():
         all_ok &= run_table(table, spec, unit_dir, run_dir,
-                            run_deck, get_rules_with_violations, drc_script)
+                            run_deck, get_violation_counts, drc_script)
 
     if all_ok:
         print("\nAll DRC regression checks passed.")

@@ -179,7 +179,7 @@ def _generate_novia_layout(out_dir):
     return path
 
 
-def _run_lvs(out_dir, gds_path, netlist_path, run_name):
+def _run_lvs(out_dir, gds_path, netlist_path, run_name, expected_exit=0):
     """Run tech/lvs/run_lvs.py and return (combined output, run_dir)."""
     run_dir = out_dir / run_name
     result = subprocess.run(
@@ -189,7 +189,8 @@ def _run_lvs(out_dir, gds_path, netlist_path, run_name):
          f"--run_dir={run_dir}"],
         capture_output=True, text=True, env=_batch_env(out_dir), timeout=600)
     out = result.stdout + result.stderr
-    assert result.returncode == 0, f"run_lvs.py failed ({run_name}):\n{out}"
+    assert result.returncode == expected_exit, (
+        f"run_lvs.py exit {result.returncode}, expected {expected_exit} ({run_name}):\n{out}")
     return out, run_dir
 
 
@@ -209,19 +210,23 @@ def cmim_lvs(tmp_path_factory):
     for name, text in refs.items():
         ref_path = out_dir / f"ref_{name}.cir"
         ref_path.write_text(text)
-        out, run_dir = _run_lvs(out_dir, gds_path, ref_path, f"run_{name}")
+        out, run_dir = _run_lvs(out_dir, gds_path, ref_path, f"run_{name}",
+                                expected_exit=1 if name.startswith("bad_") else 0)
         runs[name] = {"out": out, "run_dir": run_dir}
 
     # Via-less cmim vs the connected reference netlist
     novia_gds = _generate_novia_layout(out_dir)
     out, run_dir = _run_lvs(out_dir, novia_gds, out_dir / "ref_good.cir",
-                            "run_novia")
+                            "run_novia", expected_exit=1)
     runs["novia"] = {"out": out, "run_dir": run_dir}
     return runs
 
 
-pytestmark = pytest.mark.skipif(
-    KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+# Every case here starts the klayout binary.
+pytestmark = [
+    pytest.mark.live_tool,
+    pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH"),
+]
 
 
 def test_cmim_device_extraction(cmim_lvs):

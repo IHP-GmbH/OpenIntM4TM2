@@ -65,13 +65,17 @@ end
 #  - one label split across several nets  -> open
 all_nets = []
 netlist.top_circuit.each_net { |n| all_nets << n }
+labeled_nets = all_nets.count { |n| !n.name.to_s.empty? }
 
 label_nets = Hash.new { |h, k| h[k] = [] }
+connectivity_opens = 0
+connectivity_shorts = 0
 all_nets.each do |net|
   name = net.name.to_s
   next if name.empty?
   base = name.sub(/\$\d+$/, "")
   if base.include?(",")
+    connectivity_shorts += 1
     logger.error("Connectivity SHORT: labels '#{base}' land on a single net ('#{net.expanded_name}')")
   end
   base.split(",").each { |lbl| label_nets[lbl] << net }
@@ -79,6 +83,7 @@ end
 
 label_nets.each do |lbl, nets|
   if nets.size > 1
+    connectivity_opens += 1
     ids = nets.map { |n| "net##{n.cluster_id}" }.join(", ")
     logger.error("Connectivity OPEN: label '#{lbl}' is split across #{nets.size} nets (#{ids})")
   end
@@ -89,13 +94,15 @@ end
 # devices in the reference netlist map to the extracted device class.
 # Align first: it flattens circuits present on only one side (e.g. the
 # PCell subcell holding a MIM capacitor in deep mode).
+reference_match = nil
 if $schematic
   schematic($schematic, mim_spice_reader)
   align
   # Strict port mode: a device terminal landing on a floating net (e.g. a
   # MIM cap drawn without its via) must not silently match a schematic
   # that connects it.
-  if compare && flag_missing_ports
+  reference_match = compare && flag_missing_ports
+  if reference_match
     logger.info("LVS netlists match")
   else
     logger.error("LVS netlists do NOT match - see report database")
@@ -105,3 +112,15 @@ else
 end
 
 logger.info("LVS check complete for interposer backend layers and MIM capacitors")
+
+# The CLI consumes this one scoped result only after checking completion and
+# current output artifacts. A label-free layout cannot establish this check.
+status = if labeled_nets == 0
+           "INCONCLUSIVE"
+         elsif connectivity_opens > 0 || connectivity_shorts > 0 || reference_match == false
+           "FAIL"
+         else
+           "PASS"
+         end
+mode = $schematic ? "reference" : "connectivity"
+puts "INTERPOSER_LVS_RESULT mode=#{mode} status=#{status} labeled_nets=#{labeled_nets} opens=#{connectivity_opens} shorts=#{connectivity_shorts}"

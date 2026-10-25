@@ -138,12 +138,16 @@ if BEOL
   # merged-level exemption misses it and every legal pad would flag Angle45.
   # Same deviation as in 3_1_offgrid.drc.
   #
-  # Each check runs two passes, both emitted under the same rule id (the two
-  # outputs union into one lyrdb category):
+  # Each check runs two passes, both emitted under the same rule id:
   #   pass 1 RAW    - every drawn polygon judged on its own, so a corner/edge
   #                   hidden by a merge is still reported;
   #   pass 2 MERGED - the outline the mask actually sees, with the pad rims
   #                   exempted by area interaction.
+  # Two outputs into one category APPEND, they do not union, so a corner or
+  # edge both passes see would be reported twice. Pass 2 therefore reports only
+  # what pass 1 did not: acute corners at a vertex pass 1 did not flag, and the
+  # parts of bad merged edges no pass 1 edge covers (in practice the slightly
+  # tilted edges a merge leaves where it rounds a crossing to the database grid).
   #
   # not_in is a per-polygon selection but DROPS the raw flag whenever the circle
   # set is non-empty (KLayout 0.30.5), which would silently collapse the whole
@@ -170,17 +174,26 @@ if BEOL
     ang_acute_circles = get_circle(ang_layer)
     ang_acute_nc = ang_layer.not_in(ang_acute_circles)
     ang_acute_nc.raw   # not_in dropped the raw flag; re-assert it
-    ang_acute_nc.with_angle(0.0, ang_acute_limit).output(
+    ang_acute_corners = ang_acute_nc.with_angle(0.0, ang_acute_limit)
+    ang_acute_corners.output(
       "#{ang_name}_Acute",
       "3.2 #{ang_name}_Acute: acute corner below #{ang_acute_limit} degree is not allowed"
     )
+    # The corner vertex is where the first edge of each corner pair ends. The
+    # edges stay raw: merged, collinear first edges would join and lose vertices.
+    ang_acute_dots = ang_acute_corners.first_edges.raw.end_segments(0)
     ang_acute_area = ang_acute_circles.sized(1.nm)
     ang_layer.clean
-    # pass 2 MERGED: acute corners of the merged outline, pad rims exempted.
-    ang_layer.with_angle(0.0, ang_acute_limit).not_interacting(ang_acute_area).output(
+    # pass 2 MERGED: acute corners of the merged outline, pad rims exempted,
+    # minus the vertices pass 1 already reported.
+    ang_acute_mcorners = ang_layer.with_angle(0.0, ang_acute_limit).not_interacting(ang_acute_area)
+    ang_acute_mcorners.not_interacting(ang_acute_dots).output(
       "#{ang_name}_Acute",
       "3.2 #{ang_name}_Acute: acute corner below #{ang_acute_limit} degree is not allowed"
     )
+    ang_acute_corners.forget
+    ang_acute_dots.forget
+    ang_acute_mcorners.forget
     ang_acute_nc.forget
     ang_acute_circles.forget
     ang_acute_area.forget
@@ -201,9 +214,10 @@ if BEOL
     )
     ang_o90_area = ang_o90_circles.sized(1.nm)
     ang_layer.clean
-    # pass 2 MERGED: non-orthogonal edges of the merged outline, rims exempted.
+    # pass 2 MERGED: non-orthogonal edges of the merged outline, rims exempted,
+    # minus the parts pass 1 already reported.
     ang_o90_medges = ang_layer.edges.without_angle(0, absolute).without_angle(90, absolute).not_interacting(ang_o90_area)
-    ang_o90_medges.output(
+    ang_o90_medges.not(ang_o90_edges).output(
       "#{ang_name}_Angle90",
       "3.2 #{ang_name}_Angle90: only orthogonal edges (0/90 degree) are allowed"
     )
@@ -229,9 +243,10 @@ if BEOL
     )
     ang_o45_area = ang_o45_circles.sized(1.nm)
     ang_layer.clean
-    # pass 2 MERGED: non-0/45/90 edges of the merged outline, rims exempted.
+    # pass 2 MERGED: non-0/45/90 edges of the merged outline, rims exempted,
+    # minus the parts pass 1 already reported.
     ang_o45_medges = ang_layer.edges.without_angle(0, absolute).without_angle(45, absolute).without_angle(90, absolute).not_interacting(ang_o45_area)
-    ang_o45_medges.output(
+    ang_o45_medges.not(ang_o45_edges).output(
       "#{ang_name}_Angle45",
       "3.2 #{ang_name}_Angle45: only 0/45/90 degree edges are allowed"
     )

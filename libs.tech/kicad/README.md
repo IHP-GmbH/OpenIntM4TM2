@@ -30,7 +30,10 @@ user-defined layer names.
 
 1. Copy `interposer_template.kicad_pcb` into your project directory under your
    board name and open it in KiCad (use the ADK KiCad build; the file is saved
-   in its board format).
+   in its board format). Copy `interposer_template.kicad_dru` and
+   `interposer_template.kicad_pro` beside it under the same name,
+   `<board>.kicad_dru` and `<board>.kicad_pro`, so KiCad checks the metal rules
+   and uses the board setup and netclasses below.
 2. Draw the interposer outline on `Edge.Cuts`. The exporter derives the
    interposer dimensions from the outline bounding box and warns about
    components placed outside it.
@@ -50,6 +53,83 @@ ships none of them pre-populated; you set the ones you need.
 | `INTERPOSER_LYP` | Path to the interposer layer properties file. Use the portable form `${INTERPOSER_PDK_ROOT}/libs.tech/klayout/tech/intm4tm2.lyp`; consumers expand `${INTERPOSER_PDK_ROOT}` from the environment or a sibling-checkout search. When unset, readers fall back to the same discovery. |
 | `INTERPOSER_ADAPTER` | ADK interposer adapter id used by the assembly DRC. Defaults to `intm4tm2`; set only to override. |
 | `INTERCONNECT_ADAPTER` | Optional interconnect method id (second axis: Cu-pillar, solder bump, vendor microbump). Validated against the interconnect PDK manifest at export time; per-die overrides go in a `CONNECTION` footprint field. |
+
+## Board thickness and stackup
+
+The board thickness is the interposer body: the silicon substrate plus the
+back-end up to the top of TopMetal2, both taken from
+`libs.tech/intm4tm2_stack.json`. The exporter reads it as the interposer's
+`dimensions.thickness`.
+
+KiCad places a dielectric only between two copper layers, and `B.Cu` (Metal4)
+is the bottom of the back-end, so the silicon sits in the one slot below it,
+`B.Mask`. That item carries the substrate plus the base oxide under Metal4. The
+copper items and the three oxide dielectrics are the real back-end thicknesses
+at KiCad's 1 nm resolution, and the dielectrics are locked. `F.Mask` is 0: the
+passivation above TopMetal2 is not part of the body.
+
+The Physical Stackup page in Board Setup writes the stackup sum back over the
+board thickness, so the stackup has to keep summing to the body. Keep `B.Mask`
+enabled under Board Editor Layers (disabling it drops the silicon), and do not
+redistribute the dielectric thicknesses. `test_body_thickness.py` checks the
+template against the key.
+
+## Design rules (`interposer_template.kicad_dru`, `interposer_template.kicad_pro`)
+
+KiCad reads its custom design rules from the `.kicad_dru` file named after the
+board. The PDK ships one for the template, written by
+`scripts/kicad_rules_gen.py` from
+`../klayout/tech/drc/rule_decks/interposer_tech_default.json`, the file the
+KLayout decks read. It carries the minimum track width and the minimum
+clearance of each metal (TM2.a/b, TM1.a/b, M5.a/b, M4.a/b), on the copper layer
+the template names after that metal. Its header lists every other rule key as
+KLayout only: the wide-line and 45-degree spacing, vias (the exporter draws
+their cuts), pad and passivation openings, LBE, density, fill, slits, the
+seal ring and the MIM rules.
+
+KiCad's check is an aid while drawing, and it misses violations:
+
+- It flags a clearance only below the rule less its DRC epsilon (0.5 um by
+  default). The Metal5 and Metal4 space (0.21 um) is therefore never caught, and
+  a TopMetal1 or TopMetal2 gap only once it is 0.5 um under the rule.
+- It enforces the width minimum at the rule value, but its report may name the
+  limit "board setup constraints" instead of the rule.
+- It measures clearance between different nets only, and it sees the board,
+  not the exported GDS.
+
+The KLayout decks on the GDS are the DRC that counts.
+
+The project file carries the board setup and the netclasses, from the same
+JSON, so the template does not open against KiCad's printed-board defaults (a
+0.2 mm clearance, a 0.3 mm via). A KiCad via stands for the via array the
+exporter draws: its drill for one cut and its diameter for one cut with the
+metal enclosure on both sides. The board setup floors are the smallest values
+any metal or via level allows (Mn.a, Mn.b; one Via4 cut, its enclosure, the
+cut space). Each metal has a netclass with its width and space and a via of
+the level that lands on it from below (Via4 for Metal4). `Default` takes the
+TopMetal2 width and space and a TopVia2 via, which are legal on every layer.
+The exporter draws a via's landing at least as large as the KiCad via, and
+larger whenever the via does not hold a whole number of cuts, so the space
+around a via stays a KLayout check.
+
+With both files beside it, the template still opens with four via-diameter
+errors, one on each of its no-net micro vias (one per span), reported against
+a 0.3 mm "board setup constraints" minimum. The source of that minimum is not
+found: KiCad 9.99 reads the project file's annular ring and micro-via drill
+floors, but not this one from the via floors or the netclass vias, and the
+board's own setup carries no via value. The vias are placeholders the
+exporter replaces with cut arrays, and the KLayout decks stay the DRC that
+counts.
+
+Do not edit either file. After a change to the JSON, run
+
+```
+python scripts/kicad_rules_gen.py
+```
+
+`--check` exits 1 when a committed file is stale, and
+`libs.tech/klayout/intm4tm2_tests/test_kicad_rules.py` fails on it, and on any
+value that is not its JSON keys'.
 
 ## Device footprints (cmim MIM capacitor)
 

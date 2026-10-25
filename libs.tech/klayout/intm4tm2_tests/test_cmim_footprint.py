@@ -402,6 +402,7 @@ def _assert_pads_match_pcell(case, footprint, layout, top):
             f"(diff {abs(fp_v - gds_v)}um > {TOL_UM}um)")
 
 
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_committed_footprints_match_pcell():
     # Read the DECLARED w/l from each committed footprint (not from the name),
@@ -427,9 +428,37 @@ def test_committed_footprints_match_pcell():
             _assert_pads_match_pcell(name, footprints[name], layout, top)
 
 
+@pytest.mark.live_tool
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+def test_small_footprints_match_pcell():
+    # Under 2.40 um the via array alone leaves TopMetal1 below the TM1.a width,
+    # and the PCell grows the plate per axis; the footprint must follow.
+    sizes = {"nearmin": (1.14, 1.14), "narrow": (2.0, 4.0)}
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        footprints = {}
+        for name, (w_um, l_um) in sizes.items():
+            mod_path = out_dir / f"{name}.kicad_mod"
+            result = subprocess.run(
+                [sys.executable, str(GEN_SCRIPT), "--w", f"{w_um}u", "--l", f"{l_um}u",
+                 "--out", str(mod_path)],
+                capture_output=True, text=True, timeout=120)
+            assert result.returncode == 0, (
+                f"generator CLI failed for {name}:\n{result.stdout}\n{result.stderr}")
+            footprints[name] = parse_sexp(mod_path.read_text())
+
+        _generate_pcell(out_dir, [(name, _pcell_params(w_um, l_um))
+                                  for name, (w_um, l_um) in sizes.items()])
+        for name in sizes:
+            layout = kdb.Layout()
+            layout.read(str(out_dir / f"pcell_{name}.gds"))
+            _assert_pads_match_pcell(name, footprints[name], layout, layout.top_cell())
+
+
 # ---------------------------------------------------------------------------
 # CAP SOLVER: --cap target -> footprint whose w reproduces C and matches PCell.
 # ---------------------------------------------------------------------------
+@pytest.mark.live_tool
 @pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
 def test_cap_solver_footprint_matches_pcell():
     target_fF = 250.0

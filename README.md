@@ -25,6 +25,8 @@ The repository follows the directory organization of the IHP open PDKs
 | `libs.tech/klayout/python/` | Assembly tooling: `bump_mirror.py`, a standalone Cu-pillar pad generator that DRC pre-validates pin lists against the interposer rules before writing GDS |
 | `libs.tech/klayout/intm4tm2_tests/` | Cu-pillar PCell, DRC and LVS connectivity tests |
 | `libs.tech/kicad/` | KiCad template board for assembly designs (copper layers pre-named after the PDK metals) |
+| `libs.tech/intm4tm2_stack.json` | Physical stack: the silicon substrate thickness with its source, the routing metals' z bounds, the attach plane, and the passivation over it |
+| `libs.tech/chiplet_studio/intm4tm2.stackup.yaml` | 3D stackup for Chiplet Studio, derived from the physical stack |
 | `libs.ref/intm4tm2_examples/gds/` | Example layouts (measurement test structures) |
 
 ## Getting started
@@ -44,6 +46,48 @@ For chiplet assembly designs in KiCad, start from the template board in
 metals by name, and the template ships the required layer renames
 (`TopMetal2`/`TopMetal1`/`Metal5`/`Metal4`). Set the board text variables
 yourself as described in `libs.tech/kicad/README.md`.
+
+## Physical stack
+
+`libs.tech/intm4tm2_stack.json` declares the silicon substrate thickness, with
+its source, the z bounds of the four routing metals and the oxide around them,
+`beol.attachment_surface_z_um`, the top of TopMetal2 in this PDK's reduced
+back-end, and `beol.passivation`, the oxide and nitride films over that plane,
+with their public source. The interposer body is the substrate plus the attach
+plane; the passivation lies above it and is not part of it. Consumers derive the
+body and no file stores it. The EM stackups, the KiCad template and the Chiplet
+Studio stackup follow the key, and
+`libs.tech/klayout/intm4tm2_tests/test_body_thickness.py` names every copy that
+disagrees with it. The Studio stackup leaves out BackMetal1, which the key does
+not carry, and draws no passivation: Studio extrudes a layer's polygons, and
+Passiv holds the openings, not the film.
+
+The attach plane in this key is the plane dies mount on. Assembly flows read
+`beol.attachment_surface_z_um` from this file and keep no copy of it; a die's z
+is that plane plus its connection stack height, written as the exact decimal sum
+of the two as written, in the shortest text that reads back as that sum. The
+0.64 um base oxide under Metal4 is the `dummyOx` of the public
+SG13G2 ITF (`ihp-sg13g2/libs.tech/parasitics/itf/sg13g2_typ.itf`), the
+dielectric under Metal1 there, reused for the carrier; no IntM4TM2-specific
+value for it is published.
+
+`libs.tech/parasitics/routed_load.py` reads one route's traces and bumps, as
+interposer-pnr writes them, and gives each named net a capacitance meant to sit
+above what its driver sees on the interposer. Each wire is solved as a 2D
+cross-section at its routed layer and width. The section holds every parallel
+conductor within 60 um, and signal neighbours count with a Miller factor of 2.
+Pads are solved as top-metal discs, and crossings take a grown parallel plate.
+The solver, `field2d.py`, is first-order finite elements on a tensor grid in
+plain Python, inside a grounded box, so a conductor's own capacitance comes out
+at or above the open-domain value. The dielectric is the key's, flat, which
+puts oxide in every gap between top-metal wires and reads their coupling high.
+Given a load budget and the load outside the interposer, it reads each net
+WITHIN or OVER.
+
+`libs.tech/parasitics/fill_halo_widths.json` gives the fill keep-out its halo
+grows around a routed net, one width per fill metal: the widest halo at which
+the fill still met the PDK's filler and density decks in a density-ladder
+measurement on a reference route.
 
 ## Ecosystem
 

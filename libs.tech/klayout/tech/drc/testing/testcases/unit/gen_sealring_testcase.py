@@ -33,6 +33,29 @@ clean cell:
 Everything is placed on the 5 nm grid (dbu = 0.001 um, all coords multiples of
 5 dbu) and structures are spaced far apart so they never interact.
 
+sealreq_* cells cover the seal-ring presence rules (SEAL.REQ.*), which run only
+with -rd require_sealring=true (the GOLDEN table sets it per cell). Each cell is
+one 200 um square with a 39/4 boundary and, unless the cell says otherwise, a
+complete rectangular ring 30 um inside it (EdgeSeal plus the Metal4..TopMetal2
+stack, centred via rings and a Passiv ring outside) around a Metal4 core:
+  - sealreq_clean, sealreq_sub_cell (ring in a sub-cell), sealreq_touching_core
+    (core metal touching the ring from inside), sealreq_markers (nofill and
+    keep-out markers from the board edge into the margin, prBoundary on the
+    outline), sealreq_crossbar_ES (an EdgeSeal bar splits the interior in two)
+    -> {}
+  - sealreq_no_edgeseal -> {SEAL.REQ.1}; sealreq_no_boundary -> {SEAL.REQ.2}
+  - sealreq_es_open (EdgeSeal cut, the stack is not) -> {SEAL.REQ.3_ES}
+  - sealreq_break_<L>, one per ring layer, 1 um cut -> {SEAL.REQ.3_<L>}
+  - sealreq_point_contact_M5 (two Metal5 pieces touching at one corner),
+    sealreq_gap_5nm_TM1, sealreq_neck_M4 (0.18 um neck) and sealreq_missing_TV2
+    -> {SEAL.REQ.3_M5}, {SEAL.REQ.3_TM1}, {SEAL.REQ.3_M4}, {SEAL.REQ.3_TV2}
+  - sealreq_corner_ring (small ring, core outside it), sealreq_fill_in_margin,
+    sealreq_stray_passiv, sealreq_passiv_loop (a 9/0 donut in the margin that
+    does not go around EdgeSeal), sealreq_trace_crossing (Metal4 from the core
+    through the ring into the margin) -> {SEAL.REQ.4}
+  - sealreq_nested_ring: a second complete ring inside the first -> {Seal.m}
+  - sealreq_off_no_seal: core only and no define -> {} (the default is unchanged)
+
 Regenerate with:  python3 gen_sealring_testcase.py   (writes sealring.gds here)
 """
 
@@ -149,7 +172,137 @@ def build():
     # One 39/4 boundary covering every drawn shape -> nothing outside (Seal.l ok).
     _box(clean, bnd, -20000, -20000, 80000, 80000)
 
+    build_presence(layout)
     return layout
+
+
+# --- seal-ring presence (SEAL.REQ.*) ---------------------------------------
+
+SIDE = 200000          # 39/4 boundary, 200 um square
+INSET = 30000          # boundary to EdgeSeal
+RING = 3500            # Seal.a
+VIA_RINGS = {(66, 0): 190, (125, 0): 420, (133, 0): 900}   # Via4, TopVia1, TopVia2
+STACK = [(50, 0), (67, 0), (126, 0), (134, 0)]             # Metal4..TopMetal2
+LAYER_OF = {'M4': (50, 0), 'V4': (66, 0), 'M5': (67, 0), 'TV1': (125, 0),
+            'TM1': (126, 0), 'TV2': (133, 0), 'TM2': (134, 0)}
+
+
+def _band(inset, width, side=SIDE):
+    """Rectangular ring `inset` from the boundary, `width` wide."""
+    box = db.Box(inset, inset, side - inset, side - inset)
+    return db.Region(box) - db.Region(box.enlarged(-width, -width))
+
+
+def _ring_shapes(side=SIDE):
+    """Layer -> Region of a complete ring for a `side` square boundary."""
+    shapes = {L_EDGESEAL: _band(INSET, RING, side)}
+    for key in STACK:
+        shapes[key] = _band(INSET, RING, side)
+    for key, width in VIA_RINGS.items():
+        shapes[key] = _band(INSET + (RING - width) // 2, width, side)
+    shapes[L_PASSIV] = _band(INSET - 1000 - 4200, 4200, side)
+    return shapes
+
+
+def _cut(region, x0, y0, x1, y1):
+    return region - db.Region(db.Box(x0, y0, x1, y1))
+
+
+def build_presence(layout):
+    lidx = lambda key: layout.layer(*key)
+    right = SIDE - INSET - RING     # inner edge of the ring's right side
+    core = db.Box(90000, 90000, 110000, 110000)
+
+    def cell(name, shapes, boundary=True, core_box=core):
+        top = layout.create_cell(name)
+        for key, region in shapes.items():
+            top.shapes(lidx(key)).insert(region)
+        if boundary:
+            top.shapes(lidx(L_EDGESEAL_BND)).insert(db.Box(0, 0, SIDE, SIDE))
+        if core_box is not None:
+            top.shapes(lidx(L_METAL4)).insert(core_box)
+        return top
+
+    cell("sealreq_clean", _ring_shapes())
+
+    top = cell("sealreq_sub_cell", {})
+    ring = layout.create_cell("sealreq_ring")
+    for key, region in _ring_shapes().items():
+        ring.shapes(lidx(key)).insert(region)
+    top.insert(db.CellInstArray(ring.cell_index(), db.Trans()))
+
+    top = cell("sealreq_touching_core", _ring_shapes())
+    top.shapes(lidx(L_METAL4)).insert(db.Box(110000, 99000, right, 101000))
+
+    top = cell("sealreq_markers", _ring_shapes())
+    top.shapes(lidx((50, 23))).insert(db.Box(0, 0, 20000, SIDE))
+    top.shapes(lidx((160, 0))).insert(db.Box(0, 150000, SIDE, 160000))
+    top.shapes(lidx((235, 0))).insert(db.Box(0, 0, SIDE, SIDE))
+
+    # An EdgeSeal bar across the interior: two holes, still one closed ring.
+    shapes = _ring_shapes()
+    shapes[L_EDGESEAL] += db.Region(db.Box(INSET + RING, 60000, right, 63500))
+    cell("sealreq_crossbar_ES", shapes)
+
+    cell("sealreq_no_edgeseal", {})
+
+    cell("sealreq_no_boundary", _ring_shapes(), boundary=False)
+
+    shapes = _ring_shapes()
+    shapes[L_EDGESEAL] = _cut(shapes[L_EDGESEAL], right, 99500, SIDE - INSET, 100500)
+    cell("sealreq_es_open", shapes)
+
+    for name, key in LAYER_OF.items():
+        shapes = _ring_shapes()
+        shapes[key] = _cut(shapes[key], right, 99500, SIDE - INSET, 100500)
+        cell(f"sealreq_break_{name}", shapes)
+
+    # Metal5 pieces meeting only at the point (mid, 100000): the lower piece
+    # keeps the inner half of the band below it, the upper piece the outer
+    # half above it.
+    shapes = _ring_shapes()
+    mid = right + RING // 2
+    shapes[(67, 0)] = _cut(_cut(shapes[(67, 0)], mid, 99000, SIDE - INSET, 100000),
+                           right, 100000, mid, 101000)
+    cell("sealreq_point_contact_M5", shapes)
+
+    shapes = _ring_shapes()
+    shapes[(126, 0)] = _cut(shapes[(126, 0)], right, 100000, SIDE - INSET, 100005)
+    cell("sealreq_gap_5nm_TM1", shapes)
+
+    # Metal4 narrowed to its outer 0.18 um for 1 um of the right side.
+    shapes = _ring_shapes()
+    shapes[(50, 0)] = _cut(shapes[(50, 0)], right, 99500, SIDE - INSET - 180, 100500)
+    cell("sealreq_neck_M4", shapes)
+
+    shapes = _ring_shapes()
+    del shapes[(133, 0)]
+    cell("sealreq_missing_TV2", shapes)
+
+    # The ring for a 100 um outline (a 40 um EdgeSeal square) in the lower-left
+    # corner; the core sits outside it.
+    cell("sealreq_corner_ring", _ring_shapes(side=100000),
+         core_box=db.Box(140000, 140000, 160000, 160000))
+
+    top = cell("sealreq_fill_in_margin", _ring_shapes())
+    top.shapes(lidx((50, 22))).insert(db.Box(10000, 90000, 15000, 95000))
+
+    top = cell("sealreq_stray_passiv", _ring_shapes())
+    top.shapes(lidx(L_PASSIV)).insert(db.Box(10000, 90000, 15000, 95000))
+
+    top = cell("sealreq_passiv_loop", _ring_shapes())
+    top.shapes(lidx(L_PASSIV)).insert(_band(0, 2000, side=12000).moved(8000, 80000))
+
+    top = cell("sealreq_trace_crossing", _ring_shapes())
+    top.shapes(lidx(L_METAL4)).insert(db.Box(110000, 99000, SIDE - 10000, 101000))
+
+    # A second complete ring (for a 100 um outline) centred inside the first.
+    shapes = _ring_shapes()
+    for key, region in _ring_shapes(side=100000).items():
+        shapes[key] += region.moved(50000, 50000)
+    cell("sealreq_nested_ring", shapes)
+
+    cell("sealreq_off_no_seal", {}, boundary=False)
 
 
 def main():

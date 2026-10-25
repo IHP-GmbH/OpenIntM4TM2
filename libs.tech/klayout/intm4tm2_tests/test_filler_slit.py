@@ -47,6 +47,8 @@ DRC_SCRIPT = DRC_DIR / "intm4tm2.drc"
 TECH_JSON = DRC_DIR / "rule_decks" / "interposer_tech_default.json"
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 DBU = 0.001
 HALF_W = 17500                       # Slt_i_w/2 in dbu: the opening the deck uses for Slt.i
