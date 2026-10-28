@@ -25,15 +25,16 @@ cell has no scribe parameter. The origin is the lower-left corner of the
 outline.
 
 The ring is the backend-only part of the IHP seal ring, drawn as the open
-SG13G2 magic generator draws it (libs.tech/magic/sealring_corner.tcl and
-sealring_side.tcl): EdgeSeal plus Metal4, Metal5, TopMetal1 and TopMetal2 on
-one footprint, Seal.a wide on the straight sides; continuous Via4, TopVia1
-and TopVia2 rings Seal.d from its outer edge; and a Passiv ring Seal.e wide,
-3 um outside it. Each corner is a four-step staircase in a Seal.k square:
-the outer edge steps by (Seal.k - Seal.a) / 4 along each axis, and the inner
-edge is the outer one moved by Seal.a in X and one step in Y. The corner is
-the same piece turned by 90 degrees at each corner, so the ring is not
-mirror-symmetric. Every shape is orthogonal and on the 5 nm grid.
+SG13G2 magic generator draws it (ihp-sg13g2/libs.tech/magic/sealring_corner.tcl
+and sealring_side.tcl in IHP-Open-PDK): EdgeSeal plus Metal4, Metal5,
+TopMetal1 and TopMetal2 on one footprint, Seal.a wide on the straight sides;
+continuous Via4, TopVia1 and TopVia2 rings Seal.d from its outer edge; and a
+Passiv ring Seal.e wide, 3 um outside it. Each corner is a four-step
+staircase in a Seal.k square: the outer edge steps by (Seal.k - Seal.a) / 4
+along each axis, and the inner edge is the outer one moved by Seal.a in X and
+one step in Y, ending at (Seal.k, Seal.a) where it meets the straight. The
+corner is the same piece turned by 90 degrees at each corner, so the ring is
+not mirror-symmetric. Every shape is orthogonal and on the 5 nm grid.
 
 addSlit='t' cuts the ring once, at the middle of the left side, for designs
 that cannot have a closed metal loop around the board. Each metal is cut by
@@ -174,10 +175,9 @@ class sealring(DloGen):
         sizeY = outlineToNm(self.w, 'w')
         if self.addSlit not in FLAGS:
             raise ValueError(f"sealring: addSlit must be 'nil' or 't', got {self.addSlit!r}")
-        # The straight between two corners of a side is then at least
-        # 2 Seal.a + Seal.k / 4 long, which holds the slit. The bound is the
-        # one of the earlier constant-width corner, so callers that compute it
-        # still agree.
+        # The published 114.25 um minimum, which callers compute from these
+        # constants too. The straight between two corners of a side is then
+        # at least 2 Seal.a + Seal.k / 4 long, longer than any slit cut.
         minSize = 2 * (BOUNDARY_TO_EDGESEAL_NM + span + ringWidth) + span // CORNER_STEPS
         if min(sizeX, sizeY) < minSize:
             raise ValueError(f"sealring: outline {sizeX / 1000} x {sizeY / 1000} um is below "
@@ -192,16 +192,28 @@ class sealring(DloGen):
         outer = cornerStaircase(ringWidth, span)
         inner = shifted(outer, ringWidth, step)[:-1] + [(span, ringWidth)]
 
-        # (layer, outer corner, inner corner, slit cut as (x0, x1, notch) or None)
         sideLength = (y1 - y0) - 2 * span
+
+        def slitCut(left, right, height):
+            """The slit's cut box across [left, right] of the ring, or None
+            without a slit. The cut is centred on the left straight, its top
+            end on the grid and rounded towards the top corner of the side."""
+            if self.addSlit != 't':
+                return None
+            top = y1 - span - floorToGrid((sideLength - height) // 2)
+            if top - height <= y0 + span:
+                raise ValueError("sealring: the left side is too short for the slit")
+            return (x0 + left, top - height, x0 + right, top)
+
+        # (layer, outer corner, inner corner, slit cut box or None)
         rings = [(Layer('EdgeSeal', 'drawing'), outer, inner, None)]
         for name, key in METALS:
-            rings.append((Layer(name, 'drawing'), outer, inner, (0, ringWidth, rules[key])))
+            rings.append((Layer(name, 'drawing'), outer, inner, slitCut(0, ringWidth, rules[key])))
         for name, key in VIAS:
             width = rules[key]
             if VIA_OFFSET_NM + width > min(ringWidth, step):
                 raise ValueError(f"sealring: {key} does not fit Seal.d inside Seal_a")
-            cut = (VIA_OFFSET_NM, VIA_OFFSET_NM + width, SLIT_VIA_NOTCH_NM + 2 * VIA_OFFSET_NM)
+            cut = slitCut(VIA_OFFSET_NM, VIA_OFFSET_NM + width, SLIT_VIA_NOTCH_NM + 2 * VIA_OFFSET_NM)
             rings.append((Layer(name, 'drawing'),
                           shifted(outer, VIA_OFFSET_NM, VIA_OFFSET_NM),
                           shifted(outer, VIA_OFFSET_NM + width, VIA_OFFSET_NM + width), cut))
@@ -210,22 +222,6 @@ class sealring(DloGen):
                       shifted(outer, -PASSIV_SPACE_NM, -PASSIV_SPACE_NM), None))
         boundary = Layer('EdgeSeal', 'boundary')
         text = Layer('TEXT', 'drawing')
-
-        def slitSpan(gap):
-            # The cut is centred on the left straight, its top end on the grid
-            # and rounded towards the top corner of the side.
-            top = y1 - span - floorToGrid((sideLength - gap) // 2)
-            return top - gap, top
-
-        cuts = []
-        for layer, _, _, cut in rings:
-            if self.addSlit == 't' and cut is not None:
-                bottom, top = slitSpan(cut[2])
-                if bottom <= y0 + span:
-                    raise ValueError("sealring: the left side is too short for the slit")
-                cuts.append((x0 + cut[0], bottom, x0 + cut[1], top))
-            else:
-                cuts.append(None)
 
         area = sizeX * sizeY / 1e12
         sizeLabel = ('Device registration size: x={0:.1f} um ; y={1:.1f} um\n'
@@ -246,7 +242,7 @@ class sealring(DloGen):
             return dbCreateRect(self, layer, Box(left / 1000.0, bottom / 1000.0, right / 1000.0, top / 1000.0))
 
         dbCreateRect(self, boundary, Box(0, 0, sizeX / 1000.0, sizeY / 1000.0))
-        for (layer, outerCorner, innerCorner, _), cut in zip(rings, cuts):
+        for layer, outerCorner, innerCorner, cut in rings:
             outerShape = polygon(layer, outerCorner)
             innerShape = polygon(layer, innerCorner)
             ringShape = dbLayerXor(layer, outerShape, innerShape)
