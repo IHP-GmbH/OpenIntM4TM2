@@ -37,6 +37,7 @@ reason, on a ring that cannot bound the fill.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -404,23 +405,56 @@ def test_via_enclosure_and_passiv_space_are_exact(generated):
     assert PASSIV_SPACE > SEAL_F
 
 
+SIZE_LABEL = re.compile(r"Device registration size: x=([0-9.]+) um ; y=([0-9.]+) um\n"
+                        r"Calculated area: ([0-9.e+-]+) sq mm")
+
+
+def _texts(cell, index, trans=kdb.ICplxTrans()):
+    """(x, y, string) of every text under `cell`, sorted, in nm."""
+    texts = []
+    it = cell.begin_shapes_rec(index)
+    while not it.at_end():
+        text = it.shape().text.transformed(trans * it.trans())
+        texts.append((text.x, text.y, text.string))
+        it.next()
+    return sorted(texts)
+
+
 @pytest.mark.live_tool
 @pytest.mark.parametrize("case", ["ok", "min"])
 def test_labels(generated, case):
     layout, top = generated["layouts"][case]
     size = {"ok": (SIZE_X, SIZE_Y), "min": (114250, 114250)}[case]
-    texts = []
-    it = top.begin_shapes_rec(layout.layer(*TEXT))
-    while not it.at_end():
-        text = it.shape().text.transformed(it.trans())
-        texts.append((text.x, text.y, text.string))
-        it.next()
-    texts.sort()
+    texts = _texts(top, layout.layer(*TEXT))
     assert [(x, y) for x, y, _ in texts] == [(5000, 5000), (5000, size[1] - 10000)]
-    assert texts[0][2] == ("Device registration size: x={0:.1f} um ; y={1:.1f} um\n"
-                           "Calculated area: {2:.1e} sq mm").format(size[0] / 1000, size[1] / 1000,
-                                                                    size[0] * size[1] / 1e12)
+    match = SIZE_LABEL.fullmatch(texts[0][2])
+    assert match, texts[0][2]
+    x_um, y_um, area_mm2 = map(float, match.groups())
+    # The label rounds the size to 0.1 um, as the SG13G2 one does.
+    assert abs(x_um - size[0] / 1000) <= 0.05 and abs(y_um - size[1] / 1000) <= 0.05
+    # The area of the outline in mm^2, to the label's two digits.
+    assert area_mm2 == pytest.approx(x_um * y_um / 1e6, rel=0.05)
     assert texts[1][2].startswith("PDK version: ")
+
+
+@pytest.mark.parametrize("path", EXAMPLES, ids=[path.stem for path in EXAMPLES])
+def test_example_registration_label(path):
+    # IHP-made rings carry the registration label where the PCell puts it,
+    # 5 um from the outline's lower-left corner, with the outline's size.
+    layout = kdb.Layout()
+    layout.read(str(path))
+    top = layout.top_cell()
+    boundary = layout.find_layer(*BOUNDARY)
+    rings = [inst for inst in top.each_inst() if not inst.cell.bbox_per_layer(boundary).empty()]
+    assert len(rings) == 1, path.name
+    outline = kdb.Region(top.begin_shapes_rec(boundary)).bbox()
+    texts = _texts(top, layout.find_layer(*TEXT))
+    labels = [(x, y, SIZE_LABEL.fullmatch(string)) for x, y, string in texts]
+    labels = [(x, y, match) for x, y, match in labels if match]
+    assert len(labels) == 1, path.name
+    x, y, match = labels[0]
+    assert (x - outline.left, y - outline.bottom) == (5000, 5000)
+    assert tuple(map(float, match.groups()[:2])) == (outline.width() / 1000, outline.height() / 1000)
 
 
 # --- the slit ---------------------------------------------------------------
