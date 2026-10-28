@@ -309,6 +309,7 @@ GOLDEN = {
         # All eight version-mark squares, not only those of some corners.
         'counts': {
             'sealreq_corner_marks_square': {'SEAL.REQ.4': 8},
+            'sealreq_corner_tab': {'SEAL.REQ.4': 2},
         },
     },
     'solderbump': {

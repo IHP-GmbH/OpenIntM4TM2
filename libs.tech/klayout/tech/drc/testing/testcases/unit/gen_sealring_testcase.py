@@ -70,9 +70,10 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
     filler squares in the corners its Passiv ring cuts off -> {};
     sealreq_corner_metal (a drawn Metal4 square there instead) and
     sealreq_corner_marks_square (the squares beside a ring with square corners)
-    -> {SEAL.REQ.4}; so does sealreq_corner_tab, a Passiv tab on the loop that
-    widens its bounding box into the margin, with a filler square in that
-    margin strip more than Seal.k from the box corners
+    -> {SEAL.REQ.4}; so does sealreq_corner_tab, two Passiv tabs on the loop
+    that widen its bounding box into the left and bottom margins, with a
+    filler square in each of those margin strips more than Seal.k from the
+    box corners (two markers)
 
 seal_* cells measure the ring itself (full mode, no define), each on the
 complete ring of the sealreq cells, which sits at every limit (Passiv 1.00 um
@@ -408,9 +409,12 @@ def build_corner_marks(cell):
     top = cell("sealreq_corner_marks_square", _ring_shapes())
     top.shapes(top.layout().layer(50, 22)).insert(_corner_squares())
     shapes = _ring_shapes()
-    shapes[L_PASSIV] += db.Region(db.Box(10000, 95000, INSET - 1000 - 4200, 105000))
+    passiv_outer = INSET - 1000 - 4200
+    shapes[L_PASSIV] += db.Region(db.Box(10000, 95000, passiv_outer, 105000))
+    shapes[L_PASSIV] += db.Region(db.Box(95000, 10000, 105000, passiv_outer))
     top = cell("sealreq_corner_tab", shapes)
     top.shapes(top.layout().layer(50, 22)).insert(db.Box(15000, 60000, 17000, 62000))
+    top.shapes(top.layout().layer(50, 22)).insert(db.Box(60000, 15000, 62000, 17000))
 
 
 METAL_NAMES = {(50, 0): 'Metal4', (67, 0): 'Metal5', (126, 0): 'TopMetal1', (134, 0): 'TopMetal2'}
