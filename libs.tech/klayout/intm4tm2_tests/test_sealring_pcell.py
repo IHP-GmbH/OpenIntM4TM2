@@ -25,7 +25,9 @@ every width, enclosure and space is checked for exactness: at least the rule
 value and nothing wider. The measurement itself is validated first on
 synthetic rings with a known answer. The slit is measured layer by layer.
 Finally the default decks run on a carrier made of the ring plus prBoundary,
-and the pad deck shows that the ring makes Pad.dR live.
+the seal deck with the presence rules passes the ring with and without the
+slit and every example ring, and the pad deck shows that the ring makes Pad.dR
+live.
 
 Fill around the ring: fill_stack, the KiCad plugin's entry point, keeps every
 filler inside prBoundary AND the ring interior, and the filled carrier passes
@@ -543,13 +545,13 @@ def _carrier(generated, name, pad_opening_left=None, ring="ok"):
     return path
 
 
-def _violations(path, deck, tmp_path, monkeypatch, defines=None):
+def _violations(path, deck, tmp_path, monkeypatch, defines=None, cell="TOP"):
     monkeypatch.setenv("KLAYOUT_HOME", str(tmp_path))
     monkeypatch.delenv("KLAYOUT_PATH", raising=False)
     if str(DRC_DIR) not in sys.path:
         sys.path.insert(0, str(DRC_DIR))
     from run_drc import run_deck, get_rules_with_violations
-    report = run_deck(str(DRC_DIR / "intm4tm2.drc"), deck, str(path), "TOP",
+    report = run_deck(str(DRC_DIR / "intm4tm2.drc"), deck, str(path), cell,
                       tmp_path, threads=1, run_mode="flat", extra_defines=defines)
     return get_rules_with_violations(report)
 
@@ -572,11 +574,24 @@ def test_default_decks_clean_on_the_slit_ring(generated, tmp_path, monkeypatch):
 
 
 @pytest.mark.live_tool
-def test_ring_passes_the_presence_rules(generated, tmp_path, monkeypatch):
+@pytest.mark.parametrize("ring", ["ok", "slit"])
+def test_ring_passes_the_presence_rules(generated, tmp_path, monkeypatch, ring):
     # The regression cells use square corners; this is the staircase and the
     # PCell's own Passiv ring, with a pad inside.
-    path = _carrier(generated, "presence", PAD_DR_LIMIT)
+    path = _carrier(generated, f"presence_{ring}", PAD_DR_LIMIT, ring=ring)
     assert _violations(path, "sealring", tmp_path, monkeypatch, {"require_sealring": "true"}) == set()
+
+
+@pytest.mark.live_tool
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+@pytest.mark.parametrize("path", EXAMPLES, ids=[path.stem for path in EXAMPLES])
+def test_example_rings_pass_the_seal_deck(path, tmp_path, monkeypatch):
+    # IHP's rings carry version marks (50/22) in the corners their Passiv
+    # ring cuts off; the deck must accept them and the ring widths.
+    layout = kdb.Layout()
+    layout.read(str(path))
+    assert _violations(path, "sealring", tmp_path, monkeypatch, {"require_sealring": "true"},
+                       cell=layout.top_cell().name) == set()
 
 
 @pytest.mark.live_tool

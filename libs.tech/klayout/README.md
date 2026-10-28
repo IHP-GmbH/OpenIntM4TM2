@@ -200,7 +200,7 @@ available decks and what they check:
 | `pad` | 6.9 | Pad recognition consistency, pad-to-sealring distance |
 | `copperpillar` | 6.9.2 | Cu-pillar opening size, pitch, enclosure, shape |
 | `solderbump` | 6.9.1 | Solder-bump opening size, pitch, enclosure, shape |
-| `sealring` | 6.10 | Seal ring integrity, corners, uniqueness, outside structures |
+| `sealring` | 6.10 | Seal ring integrity, ring and Passiv ring widths, corners, uniqueness, outside structures |
 | `mim` | 6.11 | MIM capacitor: width, space, enclosures, per-device min/max area, via coverage, total area |
 | `metalslits` | 7.3 | Slit size/coverage on wide metal plates |
 | `lbe` | 9.1 | Local back etch size, spacing, keep-outs |
@@ -221,13 +221,20 @@ deck:
 | --- | --- |
 | `SEAL.REQ.1` | no EdgeSeal 39/0 is drawn |
 | `SEAL.REQ.2` | no sealring boundary 39/4 is drawn (Seal.l cannot run) |
-| `SEAL.REQ.3_<L>` | EdgeSeal (`ES`) or a ring layer inside it (`M4`, `V4`, `M5`, `TV1`, `TM1`, `TV2`, `TM2`) is not a closed loop; a point contact or a neck of 0.18 um or less counts as open |
-| `SEAL.REQ.4` | a fabricated shape (metal, filler or mask data, via, pad opening, MIM, ThinFilmRes, LBE, or Passiv other than the ring around EdgeSeal) lies outside the ring; checked only once EdgeSeal is closed |
+| `SEAL.REQ.3_<L>` | EdgeSeal (`ES`) or a ring layer inside it (`M4`, `V4`, `M5`, `TV1`, `TM1`, `TV2`, `TM2`) is not a closed loop; a point contact or a neck of 0.18 um or less counts as open. A slit is accepted: every metal and via ring cut once by at most 2.81 um, EdgeSeal closed |
+| `SEAL.REQ.4` | a fabricated shape (metal, filler or mask data, via, pad opening, MIM, ThinFilmRes, LBE, or Passiv other than the ring around EdgeSeal) lies outside the ring; checked only once EdgeSeal is closed. Metal4 filler 50/22 is allowed in the corners that a stepped Passiv ring cuts off its bounding box, where IHP-made rings carry their 2 x 2 um version marks |
 
 These are not SG13G2 rules. The run stops with an error if the value is not
 `true` or `false` (an empty value included), or if the sealring deck is not
-part of the run. Ring widths, the via enclosure, the 30 um from EdgeSeal to
-the boundary and the spacing from design metal to the ring are not checked.
+part of the run.
+
+With or without the define, a closed EdgeSeal ring is measured by the SG13G2
+ring rules ported to this stack: `Seal.a_<L>` (Metal4..TopMetal2 at least
+3.50 um), `Seal.c1.Via4`, `Seal.c2` and `Seal.c3` (each via ring exactly its
+width), `Seal.e` (Passiv ring at least 4.20 um) and `Seal.f.<L>` (Passiv ring
+at least 1.00 um from the ring metals). The via offset (Seal.d, measured to
+Activ in SG13G2), the 30 um from EdgeSeal to the boundary and the spacing from
+design metal to the ring are not checked.
 
 ```bash
 python tech/drc/run_drc.py --path <your_layout.gds>                       # all default decks
@@ -385,7 +392,7 @@ Cells:
 | `CuPillarPad` | `diameter` (Passiv opening, default `35u` = Table 6.1 Option 1), `passEncl` (TopMetal2 enclosure, default `7.5u`), `addFillerEx` (`nil`/`t`) | TopMetal2 134/0, dfpad:pillar 41/35 and Recog:pillar 99/35 at pad size; Passiv:pillar 9/35 at the opening; optional nofill circles on the interposer metal stack. 256-point circles, the discretization the assembly flow and the copperpillar DRC tolerances assume. |
 | `cmim` | `w`, `l` (plate size, default `6.99u`), `C`/`Calculate` (capacitance-driven sizing via the `CbCap` callback; the default `Calculate='w&l'` recomputes `w`/`l` from `C` -- pass `Calculate='C'` to pin `w`/`l`) | MIM 36/0 plate of `w` x `l`; Metal5 67/0 bottom plate (Mim.c enclosure 0.6); TopMetal1 126/0 top plate; Vmim 129/0 via array (0.42 vias, 0.84 spacing, Mim.d enclosure 0.36); TEXT 63/0 labels. Ported from the SG13G2 open PDK `cmim`; `intm4tm2_tests/test_cmim_pcell.py` pins it XOR-identical to the upstream cell (`PDK_ROOT`-gated oracle) and the `mim` DRC deck runs clean on its output. |
 | `bondpad` | `shape` (`octagon`/`square`/`circle`, default `octagon`), `padType` (`bondpad`/`probepad`), `diameter` (default `80u`), `topMetal` (`TM1`/`TM2`), `bottomMetal` (`4`/`5`/`TM1`), `stack` (`nil`/`t`), `addFillerEx` (`nil`/`t`), `passEncl`, `hwquota` | Top-metal pad (TopMetal2 134/0 or TopMetal1 126/0) with a Passiv 9/0 opening inset by the enclosure (`Pas_c`, or `passEncl` for `probepad`). `bondpad` draws a dfpad 41/0 marker over the pad so bond-pad rules apply -- the deliberate complement of `CuPillarPad`, which rides the pillar purpose to avoid them; `probepad` draws none. `stack='t'` adds Metal4/Metal5/TopMetal1 rings tied together with Via4 66/0, TopVia1 125/0 and TopVia2 133/0 arrays; `addFillerEx='t'` adds nofill exclusion on the interposer metals. Reduced from the SG13G2 open PDK `bondpad` to the passive BEOL stack (no FEOL layers); `intm4tm2_tests/test_bondpad_pcell.py` pins the drawn layer set and proves no base-PDK layer leaks. |
-| `sealring` | `l`, `w` (outline size in X and Y, strings such as `5000.000u` on the 5 nm grid, each at least 114.25 um; the whole outline, unlike the SG13G2 `sealring` whose `l`/`w` leave out its edge box), `addSlit` (`nil`/`t`) | Origin at the outline's lower-left corner. EdgeSeal.boundary 39/4 fills the outline (the sealring boundary; the fab adds the scribe outside it). The ring is drawn as the open SG13G2 magic seal-ring generator draws it, 30 um inside the outline: EdgeSeal 39/0 plus Metal4 50/0, Metal5 67/0, TopMetal1 126/0 and TopMetal2 134/0, 3.5 um wide on the straight sides (Seal.a); Via4 66/0, TopVia1 125/0 and TopVia2 133/0 as continuous rings 1.30 um from the outer edge (Seal.c1/c2/c3 widths, Seal.d offset); a Passiv 9/0 ring 4.2 um wide (Seal.e) and 3.0 um outside it, above the 1.00 Seal.f floor. Each corner is a four-step Manhattan staircase in a Seal.k square, the same piece turned at every corner. `addSlit='t'` cuts the metals at the middle of the left side by their minimum space (Mn.e, TM1.b, TM2.b) and the via rings by 2.81 um; EdgeSeal and Passiv stay closed. TEXT 63/0 labels give the registration size and area and the PDK commit. Widths and spaces are read from `tech/drc/rule_decks/interposer_tech_default.json`; a missing or off-grid value, or a bad outline or flag, leaves the cell empty. `intm4tm2_tests/test_sealring_pcell.py` checks the geometry, XORs it against the rings of the reference interposer layouts in `libs.ref/intm4tm2_examples`, measures the slit, runs the default decks on it, and fills a carrier with it (fill stays inside prBoundary and the ring interior; the seal, filler and density decks pass). |
+| `sealring` | `l`, `w` (outline size in X and Y, strings such as `5000.000u` on the 5 nm grid, each at least 114.25 um; the whole outline, unlike the SG13G2 `sealring` whose `l`/`w` leave out its edge box), `addSlit` (`nil`/`t`) | Origin at the outline's lower-left corner. EdgeSeal.boundary 39/4 fills the outline (the sealring boundary; the fab adds the scribe outside it). The ring is drawn as the open SG13G2 magic seal-ring generator draws it, 30 um inside the outline: EdgeSeal 39/0 plus Metal4 50/0, Metal5 67/0, TopMetal1 126/0 and TopMetal2 134/0, 3.5 um wide on the straight sides (Seal.a); Via4 66/0, TopVia1 125/0 and TopVia2 133/0 as continuous rings 1.30 um from the outer edge (Seal.c1/c2/c3 widths, Seal.d offset); a Passiv 9/0 ring 4.2 um wide (Seal.e) and 3.0 um outside it, above the 1.00 Seal.f floor. Each corner is a four-step Manhattan staircase in a Seal.k square, the same piece turned at every corner. `addSlit='t'` cuts the metals at the middle of the left side by their minimum space (Mn.e, TM1.b, TM2.b) and the via rings by 2.81 um; EdgeSeal and Passiv stay closed. TEXT 63/0 labels give the registration size and area and the PDK commit. Widths and spaces are read from `tech/drc/rule_decks/interposer_tech_default.json`; a missing or off-grid value, or a bad outline or flag, leaves the cell empty. `intm4tm2_tests/test_sealring_pcell.py` checks the geometry, XORs it against the rings of the reference interposer layouts in `libs.ref/intm4tm2_examples`, measures the slit, runs the default decks on it and the seal deck with the presence rules on it and on every example ring, and fills a carrier with it (fill stays inside prBoundary and the ring interior; the seal, filler and density decks pass). |
 
 The cmim device is supported across the full stack: ngspice simulation model
 with corners (`../ngspice/models/`, subckt `cap_cmim`), xschem symbol
