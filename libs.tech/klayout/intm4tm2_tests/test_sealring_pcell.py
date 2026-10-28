@@ -18,13 +18,14 @@
 """Regression for the 'sealring' PCell (IntM4TM2 interposer PDK).
 
 The PCell is generated in one headless 'klayout -zz -rx -r' batch, like the
-bondpad test. Its geometry is then checked against KLayout's own sizing of
+bondpad test. Its geometry is then checked against the IHP-made rings of the
+reference interposer layouts in libs.ref and against KLayout's own sizing of
 the EdgeSeal outline, not against a copy of the PCell's construction, and
 every width, enclosure and space is checked for exactness: at least the rule
 value and nothing wider. The measurement itself is validated first on
-synthetic rings with a known answer. Finally the default decks run on a
-carrier made of the ring plus prBoundary, and the pad deck shows that the
-ring makes Pad.dR live.
+synthetic rings with a known answer. The slit is measured layer by layer.
+Finally the default decks run on a carrier made of the ring plus prBoundary,
+and the pad deck shows that the ring makes Pad.dR live.
 
 Fill around the ring: fill_stack, the KiCad plugin's entry point, keeps every
 filler inside prBoundary AND the ring interior, and the filled carrier passes
@@ -45,6 +46,7 @@ import pytest
 import klayout.db as kdb
 
 REPO_KLAYOUT = Path(__file__).resolve().parents[1]
+EXAMPLES_DIR = REPO_KLAYOUT.parents[1] / "libs.ref" / "intm4tm2_examples" / "gds"
 PYTHON_DIR = REPO_KLAYOUT / "python"
 DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 RULES = json.loads((DRC_DIR / "rule_decks" / "interposer_tech_default.json").read_text())["rules"]
@@ -68,14 +70,29 @@ STEP = 5
 # same rule file as the PCell and would follow a drifted value.
 PUBLIC_SEAL_RULES = {"Seal_a": 3.5, "Seal_c1": 0.19, "Seal_c2": 0.42, "Seal_c3": 0.9,
                      "Seal_e": 4.2, "Seal_f": 1.0, "Seal_k": 21.0}
+# Drawing values with no rule of their own on this stack (nm): the via rings'
+# offset from the outer metal edge (Seal.d) and the ring-to-Passiv space.
+VIA_OFFSET = 1300
+PASSIV_SPACE = 3000
+# Slit cut height per layer (nm): the minimum metal spaces, and for the vias
+# Seal.d either side of the 0.21 um SG13G2 Act.b notch.
+SLIT_CUTS = {
+    (50, 0): round(RULES["Mn_e"] * 1000),
+    (67, 0): round(RULES["Mn_e"] * 1000),
+    (126, 0): round(RULES["TM1_b"] * 1000),
+    (134, 0): round(RULES["TM2_b"] * 1000),
+    (66, 0): 2810, (125, 0): 2810, (133, 0): 2810,
+}
 
 EDGESEAL = (39, 0)
 BOUNDARY = (39, 4)
 PASSIV = (9, 0)
+TEXT = (63, 0)
 PRBOUNDARY = (235, 0)
 DFPAD = (41, 0)
 METALS = [(50, 0), (67, 0), (126, 0), (134, 0)]
-DRAWN = {EDGESEAL, BOUNDARY, PASSIV} | set(METALS) | set(VIA_RINGS)
+RINGS = {EDGESEAL, PASSIV} | set(METALS) | set(VIA_RINGS)
+DRAWN = RINGS | {BOUNDARY, TEXT}
 
 SIZE_X, SIZE_Y = 1000000, 800000
 
@@ -86,18 +103,25 @@ CASES = [
     ("ok_again", {"l": "1000.0u", "w": "800.0u"}),
     ("min", {"l": "114.250u", "w": "114.250u"}),
     ("min_w", {"l": "1000.000u", "w": "114.250u"}),
+    ("slit", {"l": "1000.000u", "w": "800.000u", "addSlit": "t"}),
+    ("slit_min", {"l": "114.250u", "w": "114.250u", "addSlit": "t"}),
     ("offgrid", {"l": "1000.002u", "w": "800.000u"}),
     ("small", {"l": "1000.000u", "w": "114.245u"}),
     ("no_unit", {"l": "1000", "w": "800.000u"}),
     ("prefixed", {"l": "1000.000u", "w": "800.000mu"}),
+    ("bad_flag", {"l": "1000.00u", "w": "800.000u", "addSlit": "yes"}),
 ]
 # Builds against a rule file with one key removed (None) or changed.
 RULE_EDITS = [
     ("missing_key", "Seal_a", None, "1005.000u"),
     ("rule_offgrid", "Seal_e", 4.202, "1010.000u"),
-    ("via_offcentre", "Seal_c1", 0.195, "1015.000u"),
+    ("via_too_wide", "Seal_c3", 2.25, "1015.000u"),
 ]
-GUARDED = ["offgrid", "small", "no_unit", "prefixed"] + [edit[0] for edit in RULE_EDITS]
+GUARDED = ["offgrid", "small", "no_unit", "prefixed", "bad_flag"] + [edit[0] for edit in RULE_EDITS]
+
+# The reference interposer layouts each carry one IHP-made ring; the D1
+# _Filler variant has none.
+EXAMPLES = sorted(path for path in EXAMPLES_DIR.glob("T591_BEOL_*.gds") if "_Filler" not in path.name)
 
 PCELL_BATCH_SCRIPT = textwrap.dedent("""\
     import json
@@ -155,6 +179,32 @@ def _clean_env(home):
     return env
 
 
+def _example_ring(path):
+    """The outline of an example's ring and the ring's own shapes per layer,
+    moved so that the outline's lower-left corner is the origin."""
+    layout = kdb.Layout()
+    layout.read(str(path))
+    top = layout.top_cell()
+    boundary = layout.find_layer(*BOUNDARY)
+    rings = [inst for inst in top.each_inst() if not inst.cell.bbox_per_layer(boundary).empty()]
+    assert len(rings) == 1, path.name
+    outline = kdb.Region(top.begin_shapes_rec(boundary)).bbox()
+    to_origin = kdb.ICplxTrans(kdb.Trans(kdb.Vector(-outline.left, -outline.bottom))) * rings[0].cplx_trans
+    regions = {}
+    for key in RINGS | {BOUNDARY}:
+        index = layout.find_layer(*key)
+        region = kdb.Region()
+        if index is not None:
+            region = kdb.Region(rings[0].cell.begin_shapes_rec(index)).transformed(to_origin)
+        region.merge()
+        regions[key] = region
+    return outline, regions
+
+
+def _outline_param(nm):
+    return "%d.%03du" % divmod(nm, 1000)
+
+
 @pytest.fixture(scope="module")
 def generated(tmp_path_factory):
     if KLAYOUT_BIN is None:
@@ -162,12 +212,18 @@ def generated(tmp_path_factory):
     out_dir = tmp_path_factory.mktemp("sealring")
     home = out_dir / "klayout_home"
     home.mkdir()
+    examples = {}
+    for path in EXAMPLES:
+        outline, regions = _example_ring(path)
+        examples[path.stem] = ({"l": _outline_param(outline.width()),
+                                "w": _outline_param(outline.height())}, regions)
+    cases = CASES + [("ex_" + stem, params) for stem, (params, _) in examples.items()]
     script = out_dir / "gen_sealrings.py"
     script.write_text(PCELL_BATCH_SCRIPT.format(
         lyt_path=str(REPO_KLAYOUT / "tech" / "intm4tm2.lyt"),
         python_dir=str(PYTHON_DIR),
         api_dir=str(PYTHON_DIR / "pycell4klayout-api" / "source" / "python"),
-        cases=CASES,
+        cases=cases,
         rule_edits=RULE_EDITS,
         out_dir=str(out_dir)))
     result = subprocess.run(
@@ -175,11 +231,12 @@ def generated(tmp_path_factory):
         capture_output=True, text=True, env=_clean_env(home), timeout=300)
     assert result.returncode == 0, f"pcell batch failed:\n{result.stdout}\n{result.stderr}"
     layouts = {}
-    for name in [c[0] for c in CASES] + [e[0] for e in RULE_EDITS]:
+    for name in [c[0] for c in cases] + [e[0] for e in RULE_EDITS]:
         layout = kdb.Layout()
         layout.read(str(out_dir / f"sealring_{name}.gds"))
         layouts[name] = (layout, layout.top_cell())
-    return {"layouts": layouts, "log": result.stdout + result.stderr, "dir": out_dir}
+    return {"layouts": layouts, "log": result.stdout + result.stderr, "dir": out_dir,
+            "examples": {stem: regions for stem, (_, regions) in examples.items()}}
 
 
 def _region(layout, cell, key):
@@ -245,9 +302,9 @@ def test_boundary_is_the_outline(generated):
     boundary = _region(layout, top, BOUNDARY)
     assert (boundary ^ kdb.Region(kdb.Box(0, 0, SIZE_X, SIZE_Y))).is_empty()
     everything = kdb.Region()
-    for key in DRAWN:
+    for key in RINGS:
         everything += _region(layout, top, key)
-    assert everything.bbox() == kdb.Box(0, 0, SIZE_X, SIZE_Y)
+    assert everything.bbox().inside(kdb.Box(0, 0, SIZE_X, SIZE_Y))
 
 
 @pytest.mark.live_tool
@@ -259,7 +316,7 @@ def test_edgeseal_is_30um_inside_the_outline(generated):
 
 @pytest.mark.live_tool
 @pytest.mark.parametrize("case", ["ok", "min", "min_w"])
-@pytest.mark.parametrize("key", sorted(DRAWN - {BOUNDARY}))
+@pytest.mark.parametrize("key", sorted(RINGS))
 def test_each_ring_is_one_closed_loop(generated, case, key):
     layout, top = generated["layouts"][case]
     polygons = list(_region(layout, top, key).each())
@@ -268,31 +325,54 @@ def test_each_ring_is_one_closed_loop(generated, case, key):
 
 
 @pytest.mark.live_tool
-@pytest.mark.parametrize("key", sorted(DRAWN))
-def test_all_vertices_on_grid(generated, key):
-    layout, top = generated["layouts"]["ok"]
+@pytest.mark.parametrize("case", ["ok", "slit"])
+@pytest.mark.parametrize("key", sorted(RINGS | {BOUNDARY}))
+def test_all_vertices_on_grid(generated, case, key):
+    layout, top = generated["layouts"][case]
     for polygon in _region(layout, top, key).each():
         for point in polygon.to_simple_polygon().each_point():
             assert point.x % STEP == 0 and point.y % STEP == 0, (key, point)
 
 
 @pytest.mark.live_tool
+@pytest.mark.parametrize("stem", [path.stem for path in EXAMPLES])
+def test_ring_matches_the_example_ring(generated, stem):
+    # Every ring layer, the outline included; the example's 50/22 corner
+    # marks and its TEXT are not ring layers.
+    layout, top = generated["layouts"]["ex_" + stem]
+    for key, region in generated["examples"][stem].items():
+        assert not region.is_empty(), key
+        assert (_region(layout, top, key) ^ region).is_empty(), key
+
+
+@pytest.mark.live_tool
 @pytest.mark.parametrize("case", ["ok", "min"])
-def test_rings_match_klayout_sizing_of_the_edgeseal_outline(generated, case):
+def test_vias_and_passiv_follow_the_outer_edge(generated, case):
     layout, top = generated["layouts"][case]
     edgeseal = _region(layout, top, EDGESEAL)
     hull = edgeseal.hulls()
-
-    def band(inset, width):
-        return hull.sized(-inset) - hull.sized(-(inset + width))
-
-    assert (edgeseal ^ band(0, SEAL_A)).is_empty()
     for key in METALS:
         assert (_region(layout, top, key) ^ edgeseal).is_empty(), key
     for key, width in VIA_RINGS.items():
-        assert (_region(layout, top, key) ^ band((SEAL_A - width) // 2, width)).is_empty(), key
-    passiv = hull.sized(SEAL_F + SEAL_E) - hull.sized(SEAL_F)
+        band = hull.sized(-VIA_OFFSET) - hull.sized(-(VIA_OFFSET + width))
+        assert (_region(layout, top, key) ^ band).is_empty(), key
+    passiv = hull.sized(PASSIV_SPACE + SEAL_E) - hull.sized(PASSIV_SPACE)
     assert (_region(layout, top, PASSIV) ^ passiv).is_empty()
+
+
+@pytest.mark.live_tool
+def test_corners_turn_without_mirroring(generated):
+    # On a square outline the ring is the same under a quarter turn about the
+    # centre, and differs from its mirror image: one corner piece, turned.
+    layout, top = generated["layouts"]["min"]
+    centre = round(114.25 * 1000) // 2
+    turn = kdb.ICplxTrans(1.0, 90, False, 0, 0)
+    to_centre, back = kdb.ICplxTrans(-centre, -centre), kdb.ICplxTrans(centre, centre)
+    mirror = kdb.ICplxTrans(1.0, 0, True, 0, 0)
+    for key in RINGS:
+        region = _region(layout, top, key)
+        assert (region ^ region.transformed(back * turn * to_centre)).is_empty(), key
+        assert not (region ^ region.transformed(back * mirror * to_centre)).is_empty(), key
 
 
 @pytest.mark.live_tool
@@ -310,31 +390,103 @@ def test_widths_are_exact(generated):
 def test_via_enclosure_and_passiv_space_are_exact(generated):
     layout, top = generated["layouts"]["ok"]
     metal = _region(layout, top, METALS[0])
-    top_via2 = _region(layout, top, (133, 0))
-    # TopVia2 fills Seal.a with exactly Seal.d on both sides.
-    assert metal.enclosing_check(top_via2, 1300).is_empty()
-    assert not metal.enclosing_check(top_via2, 1305).is_empty()
+    for key in VIA_RINGS:
+        via = _region(layout, top, key)
+        assert metal.enclosing_check(via, VIA_OFFSET).is_empty(), key
+        assert not metal.enclosing_check(via, VIA_OFFSET + STEP).is_empty(), key
     passiv = _region(layout, top, PASSIV)
     edgeseal = _region(layout, top, EDGESEAL)
-    assert passiv.separation_check(edgeseal, SEAL_F).is_empty()
-    assert not passiv.separation_check(edgeseal, SEAL_F + STEP).is_empty()
+    assert passiv.separation_check(edgeseal, PASSIV_SPACE).is_empty()
+    assert not passiv.separation_check(edgeseal, PASSIV_SPACE + STEP).is_empty()
+    # The drawn space is above the Seal.f floor.
+    assert PASSIV_SPACE > SEAL_F
 
 
 @pytest.mark.live_tool
-def test_corners_are_inscribed_in_the_seal_k_chamfer(generated):
-    layout, top = generated["layouts"]["ok"]
-    hull = list(_region(layout, top, EDGESEAL).hulls().each())[0]
-    box = hull.bbox()
-    x0, y0, x1, y1 = box.left, box.bottom, box.right, box.top
-    on_line = 0
-    for p in hull.each_point_hull():
-        for dx, dy in ((p.x - x0, p.y - y0), (x1 - p.x, p.y - y0),
-                       (x1 - p.x, y1 - p.y), (p.x - x0, y1 - p.y)):
-            if dx <= SEAL_K and dy <= SEAL_K:
-                assert dx + dy >= SEAL_K, f"vertex {p} reaches past the chamfer line"
-                on_line += dx + dy == SEAL_K
-    # Each corner has its 5 convex step vertices on the line, ends included.
-    assert on_line == 4 * 5
+@pytest.mark.parametrize("case", ["ok", "min"])
+def test_labels(generated, case):
+    layout, top = generated["layouts"][case]
+    size = {"ok": (SIZE_X, SIZE_Y), "min": (114250, 114250)}[case]
+    texts = []
+    it = top.begin_shapes_rec(layout.layer(*TEXT))
+    while not it.at_end():
+        text = it.shape().text.transformed(it.trans())
+        texts.append((text.x, text.y, text.string))
+        it.next()
+    texts.sort()
+    assert [(x, y) for x, y, _ in texts] == [(5000, 5000), (5000, size[1] - 10000)]
+    assert texts[0][2] == ("Device registration size: x={0:.1f} um ; y={1:.1f} um\n"
+                           "Calculated area: {2:.1e} sq mm").format(size[0] / 1000, size[1] / 1000,
+                                                                    size[0] * size[1] / 1e12)
+    assert texts[1][2].startswith("PDK version: ")
+
+
+# --- the slit ---------------------------------------------------------------
+
+BAND_WIDTHS = {EDGESEAL: SEAL_A, PASSIV: SEAL_E, **{key: SEAL_A for key in METALS}, **VIA_RINGS}
+
+
+def _slit_gaps(layout, top, key):
+    """The cuts in the left side of a ring layer, as boxes (nm): what the
+    layer leaves open of its own band, between the two left corners."""
+    region = _region(layout, top, key)
+    box = region.bbox()
+    side = kdb.Region(kdb.Box(box.left, box.bottom + SEAL_K, box.left + BAND_WIDTHS[key], box.top - SEAL_K))
+    return [polygon.bbox() for polygon in (side - region).each()]
+
+
+@pytest.mark.live_tool
+@pytest.mark.parametrize("case", ["slit", "slit_min"])
+@pytest.mark.parametrize("key", sorted(RINGS))
+def test_slit_opens_metals_and_vias_only(generated, case, key):
+    layout, top = generated["layouts"][case]
+    polygons = list(_region(layout, top, key).each())
+    assert len(polygons) == 1
+    assert polygons[0].holes() == (0 if key in SLIT_CUTS else 1)
+
+
+@pytest.mark.live_tool
+@pytest.mark.parametrize("case", ["slit", "slit_min"])
+@pytest.mark.parametrize("key", sorted(SLIT_CUTS))
+def test_slit_cut_is_the_minimum_space_at_mid_side(generated, case, key):
+    layout, top = generated["layouts"][case]
+    size_y = {"slit": SIZE_Y, "slit_min": 114250}[case]
+    gaps = _slit_gaps(layout, top, key)
+    assert len(gaps) == 1
+    gap = gaps[0]
+    assert gap.height() == SLIT_CUTS[key]
+    # Centred on the side, rounded up by less than one grid step.
+    assert 0 <= (gap.bottom + gap.top) - size_y < 2 * STEP
+
+
+@pytest.mark.live_tool
+@pytest.mark.parametrize("key", sorted(RINGS))
+def test_side_measure_on_the_closed_ring(generated, key):
+    # The same measure finds nothing to cut on the ring without a slit.
+    assert _slit_gaps(*generated["layouts"]["ok"], key) == []
+
+
+@pytest.mark.live_tool
+def test_slit_via_cuts_cover_every_metal_cut(generated):
+    layout, top = generated["layouts"]["slit"]
+    metal = [_slit_gaps(layout, top, key)[0] for key in METALS]
+    for key in VIA_RINGS:
+        via = _slit_gaps(layout, top, key)[0]
+        for gap in metal:
+            assert via.bottom < gap.bottom and gap.top < via.top, key
+
+
+@pytest.mark.live_tool
+def test_slit_leaves_the_rest_of_the_ring(generated):
+    plain, top1 = generated["layouts"]["ok"]
+    slit, top2 = generated["layouts"]["slit"]
+    for key in RINGS:
+        removed = _region(plain, top1, key) - _region(slit, top2, key)
+        assert (_region(slit, top2, key) - _region(plain, top1, key)).is_empty(), key
+        if key in SLIT_CUTS:
+            assert removed.bbox().height() == SLIT_CUTS[key], key
+        else:
+            assert removed.is_empty(), key
 
 
 @pytest.mark.live_tool
@@ -351,22 +503,23 @@ def test_guards_name_the_reason(generated):
     assert "below the 114.25 um minimum" in log
     assert "sealring: l must be a string such as '5000.000u', got '1000'" in log
     assert "sealring: w must be a string such as '5000.000u', got '800.000mu'" in log
+    assert "sealring: addSlit must be 'nil' or 't', got 'yes'" in log
     assert "lacks Seal_a" in log
     assert "sealring: Seal_e=4.202 is not a positive multiple of 5 nm" in log
-    assert "sealring: Seal_c1 cannot be centred on the grid in Seal_a" in log
+    assert "sealring: Seal_c3 does not fit Seal.d inside Seal_a" in log
 
 
 @pytest.mark.live_tool
 def test_build_is_reproducible(generated):
     first, top1 = generated["layouts"]["ok"]
     second, top2 = generated["layouts"]["ok_again"]
-    for key in DRAWN:
+    for key in RINGS | {BOUNDARY}:
         assert (_region(first, top1, key) ^ _region(second, top2, key)).is_empty(), key
 
 
 # --- the decks on a carrier -----------------------------------------------
 
-def _carrier(generated, name, pad_opening_left=None):
+def _carrier(generated, name, pad_opening_left=None, ring="ok"):
     """The generated ring as written, plus prBoundary on the outline and
     optionally one wire-bond pad.
 
@@ -374,7 +527,7 @@ def _carrier(generated, name, pad_opening_left=None):
     inside, its left edge at `pad_opening_left` nm from the outline.
     """
     layout = kdb.Layout()
-    layout.read(str(generated["dir"] / "sealring_ok.gds"))
+    layout.read(str(generated["dir"] / f"sealring_{ring}.gds"))
     cell = layout.top_cell()
     cell.shapes(layout.layer(*PRBOUNDARY)).insert(kdb.Box(0, 0, SIZE_X, SIZE_Y))
     if pad_opening_left is not None:
@@ -409,6 +562,12 @@ PAD_DR_LIMIT = BOUNDARY_TO_EDGESEAL + SEAL_A + round(RULES["Pad_dR"] * 1000)
 @pytest.mark.live_tool
 def test_default_decks_clean_on_ring_and_pad_at_the_limit(generated, tmp_path, monkeypatch):
     path = _carrier(generated, "pad_at_limit", PAD_DR_LIMIT)
+    assert _violations(path, "all", tmp_path, monkeypatch) == set()
+
+
+@pytest.mark.live_tool
+def test_default_decks_clean_on_the_slit_ring(generated, tmp_path, monkeypatch):
+    path = _carrier(generated, "slit", ring="slit")
     assert _violations(path, "all", tmp_path, monkeypatch) == set()
 
 
