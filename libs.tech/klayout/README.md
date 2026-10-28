@@ -429,7 +429,8 @@ klayout -zz -r tech/scripts/sealring.py -rd length=1000 -rd width=800 \
 Without `input` it writes the ring alone under a `sealring_top` cell; with it,
 the ring goes into that layout's only top cell, its outline's lower-left corner
 at the offset. Sizes and offsets must be on the 5 nm grid. The PCell comes from
-this tree; a library that another tree registered first is refused. The output
+this tree; the library or a module it imports loaded first from another tree
+is refused (`-rx` skips the autorun macros that load them). The output
 carries no PCell context. The script exits 0 after one `sealring: wrote` line
 and 1 after one `sealring: error:` line (`intm4tm2_tests/test_sealring_script.py`).
 

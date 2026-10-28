@@ -29,7 +29,8 @@ boundary, as in the SG13G2 tech/scripts/sealring.py. Optional:
 Sizes and offsets must be on the 5 nm grid.
 
 The PCell is taken from the library of the tree this script belongs to; a
-library already loaded from another tree is refused. The output carries no
+library, or a module it imports, already loaded from another tree is refused
+(run with -rx to skip the autorun macros that load it). The output carries no
 PCell context. The script exits 0 after one 'sealring: wrote' line, or 1 after
 one 'sealring: error:' line.
 """
@@ -51,6 +52,11 @@ KLAYOUT_DIR = pathlib.Path(__file__).resolve().parents[2]
 PYTHON_DIR = KLAYOUT_DIR / 'python'
 API_DIR = PYTHON_DIR / 'pycell4klayout-api' / 'source' / 'python'
 LYT = KLAYOUT_DIR / 'tech' / 'intm4tm2.lyt'
+
+# The library and the modules it imports, and the directory each comes from.
+# cni is a package without __init__.py, so its modules are named instead.
+SOURCES = {'intm4tm2_pycell_lib': PYTHON_DIR, 'cni.tech': API_DIR, 'cni.dlo': API_DIR,
+           'pypreprocessor.pypreprocessor': PYTHON_DIR}
 
 
 class SealringError(Exception):
@@ -81,26 +87,46 @@ def to_nm(name, text):
 def to_flag(name, text):
     if text not in ('true', 'false'):
         raise SealringError(f"{name} must be true or false, got {text!r}")
-    return 't' if text == 'true' else 'nil'
+    return text == 'true'
 
 
 def pcell_param(nm):
     return '%d.%03du' % divmod(nm, 1000)
 
 
+def check_sources():
+    """Refuse any module of SOURCES that is loaded from another directory."""
+    for name, home in SOURCES.items():
+        module = sys.modules.get(name)
+        if module is None:
+            continue
+        directory = pathlib.Path(module.__file__).resolve().parent
+        if home not in directory.parents:
+            raise SealringError(f"module {name} is loaded from {directory}, not from {home}; "
+                                "run with -rx or without the KLAYOUT_PATH entry that loads it")
+
+
 def load_library():
     """Register the technology and the PCell library of this tree, and refuse
-    a library that another tree registered first."""
+    a library, or a module it imports, that another tree loaded first."""
     if TECH not in pya.Technology.technology_names():
         pya.Technology.create_technology(TECH).load(str(LYT))
+    # Before the import too: it would fail on a foreign module first, or use it.
+    check_sources()
     for path in (API_DIR, PYTHON_DIR):
-        if str(path) not in sys.path:
-            sys.path.insert(0, str(path))
-    import intm4tm2_pycell_lib  # pylint: disable=import-outside-toplevel
-    source = pathlib.Path(intm4tm2_pycell_lib.__file__).resolve()
-    if PYTHON_DIR not in source.parents:
-        raise SealringError(f"the {LIB} library is loaded from {source.parent}, not from "
-                            f"{PYTHON_DIR}; run without KLAYOUT_PATH or use that tree's script")
+        while str(path) in sys.path:
+            sys.path.remove(str(path))
+        sys.path.insert(0, str(path))
+    try:
+        import intm4tm2_pycell_lib  # pylint: disable=import-outside-toplevel,unused-import
+        failure = None
+    except Exception as error:  # pylint: disable=broad-except
+        failure = error
+    # A package without __init__.py, like this tree's pypreprocessor, loses
+    # to one with it anywhere on sys.path.
+    check_sources()
+    if failure is not None:
+        raise SealringError(f"cannot import the {LIB} library: {failure!r}")
 
 
 def add_sealring(length_nm, width_nm, input_file, output, offset_nm, slit):
@@ -110,7 +136,10 @@ def add_sealring(length_nm, width_nm, input_file, output, offset_nm, slit):
     if input_file:
         if not pathlib.Path(input_file).is_file():
             raise SealringError(f"input {input_file} is not a file")
-        layout.read(input_file)
+        try:
+            layout.read(input_file)
+        except RuntimeError as error:
+            raise SealringError(f"cannot read {input_file}: {error}") from None
         if abs(layout.dbu - DBU) > 1e-9:
             raise SealringError(f"{input_file} has dbu {layout.dbu} um, not {DBU}")
         tops = layout.top_cells()
@@ -123,25 +152,31 @@ def add_sealring(length_nm, width_nm, input_file, output, offset_nm, slit):
     layout.technology_name = TECH
 
     ring = layout.create_cell(PCELL, LIB, {'l': pcell_param(length_nm), 'w': pcell_param(width_nm),
-                                           'addSlit': slit})
+                                           'addSlit': 't' if slit else 'nil'})
     if ring is None:
         raise SealringError(f"the {LIB} library has no {PCELL} PCell")
     if ring.bbox().empty():
         raise SealringError("the PCell drew nothing; its reason is printed above")
     top.insert(pya.CellInstArray(ring.cell_index(), pya.Trans(pya.Vector(*offset_nm))))
 
-    pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)
     # No "$$$CONTEXT_INFO$$$": a reader with another PDK loaded would try to
     # rebuild the PCell from it.
     options = pya.SaveLayoutOptions()
     options.write_context_info = False
-    layout.write(output, options)
+    try:
+        pathlib.Path(output).parent.mkdir(parents=True, exist_ok=True)
+        layout.write(output, options)
+    except (OSError, RuntimeError) as error:
+        raise SealringError(f"cannot write {output}: {error}") from None
 
 
 def main():
     missing = [name for name in ('length', 'width', 'output') if define(name) is None]
     if missing:
         raise SealringError("missing " + ", ".join(f"-rd {name}=" for name in missing))
+    for name in ('input', 'output'):
+        if define(name) == '':
+            raise SealringError(f"-rd {name}= is empty")
     length_nm = to_nm('length', define('length'))
     width_nm = to_nm('width', define('width'))
     offset_nm = (to_nm('offset_x', define('offset_x', '0')), to_nm('offset_y', define('offset_y', '0')))
@@ -150,7 +185,7 @@ def main():
     load_library()
     add_sealring(length_nm, width_nm, define('input'), output, offset_nm, slit)
     print(f"sealring: wrote {output}: outline {length_nm / 1000} x {width_nm / 1000} um "
-          f"at ({offset_nm[0] / 1000}, {offset_nm[1] / 1000}) um, slit {slit}")
+          f"at ({offset_nm[0] / 1000}, {offset_nm[1] / 1000}) um, slit {str(slit).lower()}")
 
 
 try:

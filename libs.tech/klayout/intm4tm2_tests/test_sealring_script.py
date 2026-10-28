@@ -23,13 +23,12 @@ sizes, offset and input handling are checked on an IHP-made ring: an example
 layout with its ring removed gets the ring back from the script at the
 example's own outline, and the result equals the example except for the
 ring's version marks and labels. Every refusal exits 1 with one error line
-and writes nothing, including a PCell library loaded from another tree.
+and writes nothing, including a library module loaded from another tree.
 """
 
 import os
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -90,7 +89,8 @@ def test_ring_only_layout(tmp_path):
     output = tmp_path / "ring.gds"
     result = _run(tmp_path, length="1000", width="800.0", output=output)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.splitlines()[-1].startswith(f"sealring: wrote {output}: outline 1000.0 x 800.0 um")
+    last = result.stdout.splitlines()[-1]
+    assert last.startswith(f"sealring: wrote {output}: outline 1000.0 x 800.0 um") and last.endswith("slit false")
     assert b"$$$CONTEXT_INFO$$$" not in output.read_bytes()
     layout = _read(output)
     top = layout.top_cell()
@@ -104,7 +104,7 @@ def test_slit(tmp_path):
     output = tmp_path / "ring.gds"
     result = _run(tmp_path, length="1000", width="800", output=output, slit="true")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.splitlines()[-1].endswith("slit t")
+    assert result.stdout.splitlines()[-1].endswith("slit true")
     layout = _read(output)
     top = layout.top_cell()
     assert not _region(layout, top, EDGESEAL).holes().is_empty()
@@ -176,6 +176,10 @@ REFUSALS = [
     ("offgrid_offset", {"offset_y": "0.001"}, "offset_y=0.001 um is not on the 5 nm grid"),
     ("too_small", {"length": "114.245"}, "the PCell drew nothing; its reason is printed above"),
     ("no_input", {"input": "missing.gds"}, "is not a file"),
+    ("empty_input", {"input": ""}, "-rd input= is empty"),
+    ("empty_output", {"output": ""}, "-rd output= is empty"),
+    ("not_a_layout", {"input": "garbage.gds"}, "cannot read"),
+    ("unwritable", {"output": "two_tops.gds/ring.gds"}, "cannot write"),
     ("two_tops", {"input": "two_tops.gds"}, "has 2 top cells, not one"),
     ("coarse_dbu", {"input": "coarse.gds"}, "has dbu 0.005 um, not 0.001"),
 ]
@@ -185,11 +189,13 @@ REFUSALS = [
 def test_refusals(tmp_path, name, defines, message):
     _two_tops(tmp_path / "two_tops.gds")
     _coarse_dbu(tmp_path / "coarse.gds")
+    (tmp_path / "garbage.gds").write_text("not a layout\n")
     output = tmp_path / "ring.gds"
     if name != "missing":
         defines = {"length": "1000", "width": "800", "output": output} | defines
-    if "input" in defines:
-        defines["input"] = tmp_path / defines["input"]
+    for key in ("input", "output"):
+        if defines.get(key):
+            defines[key] = tmp_path / defines[key]
     result = _run(tmp_path, **defines)
     assert result.returncode == 1, result.stdout + result.stderr
     last = result.stdout.splitlines()[-1]
@@ -209,23 +215,39 @@ AUTORUN = """\
 """
 
 
-def test_library_of_another_tree_is_refused(tmp_path):
-    # A KLAYOUT_PATH entry whose autorun imports a library of the same name
-    # from elsewhere, as another checkout of the PDK would.
-    package = tmp_path / "other" / "python" / "intm4tm2_pycell_lib"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
+def _other_tree(tmp_path, module, load):
+    """A KLAYOUT_PATH entry with a package `module` (dotted) of its own, as
+    another checkout of a PDK has, whose autorun imports it ('import') or
+    only appends its directory to sys.path ('append'). Returns the entry and
+    the module's directory."""
+    python = tmp_path / "other" / "python"
+    directory = python
+    for part in module.split("."):
+        directory = directory / part
+        directory.mkdir(parents=True)
+        (directory / "__init__.py").write_text("")
     macros = tmp_path / "other" / "klayout" / "pymacros"
     macros.mkdir(parents=True)
-    (macros / "autorun.lym").write_text(AUTORUN.format(text=textwrap.dedent(f"""
-        import sys
-        sys.path.insert(0, {str(package.parent)!r})
-        import intm4tm2_pycell_lib
-        """)))
+    text = {"import": f"sys.path.insert(0, {str(python)!r})\nimport {module}",
+            "append": f"sys.path.append({str(python)!r})"}[load]
+    (macros / "autorun.lym").write_text(AUTORUN.format(text="import sys\n" + text))
+    return macros.parent, directory
+
+
+OTHER_TREES = [("intm4tm2_pycell_lib", "import"),
+               # Would make the library's own import fail before the library check.
+               ("cni.tech", "import"),
+               # A package with __init__.py wins over this tree's, which has none.
+               ("pypreprocessor.pypreprocessor", "append")]
+
+
+@pytest.mark.parametrize("module,load", OTHER_TREES, ids=[m for m, _ in OTHER_TREES])
+def test_module_of_another_tree_is_refused(tmp_path, module, load):
+    entry, directory = _other_tree(tmp_path, module, load)
     output = tmp_path / "ring.gds"
-    result = _run(tmp_path, klayout_path=macros.parent, length="1000", width="800", output=output)
+    result = _run(tmp_path, klayout_path=entry, length="1000", width="800", output=output)
     assert result.returncode == 1, result.stdout + result.stderr
-    assert f"the IntM4TM2 library is loaded from {package}" in result.stdout.splitlines()[-1]
+    assert f"module {module} is loaded from {directory}" in result.stdout.splitlines()[-1]
     assert not output.exists()
 
 
