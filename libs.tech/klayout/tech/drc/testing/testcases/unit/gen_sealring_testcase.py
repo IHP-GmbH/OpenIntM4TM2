@@ -5,12 +5,13 @@ Generate the Sealring DRC unit testcase (`sealring.gds`) for the interposer,
 following the IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS
 with intentional PASS / FAIL structures labeled by text on layer 63/0.
 
-The layout has two top cells, each checked as a whole by run_regression.py:
-  - sealring_viol : violates every surviving rule -> expects
+Every top cell is checked as a whole by run_regression.py. Two of them cover
+the rules of the sg13g2 sealring deck:
+  - sealring_viol : violates every one of them -> expects
                     {Seal.k, Seal.l, Seal.m, Seal.n}
-  - sealring_clean: near-limit legal versions      -> expects {}
+  - sealring_clean: near-limit legal versions  -> expects {}
 
-Surviving rules (interposer backend-only subset; the Seal.b family is dropped
+Those rules (interposer backend-only subset; the Seal.b family is dropped
 because its primary layer Activ does not exist here):
   - Seal.l : no drawn structure may fall outside the 39/4 sealring boundary.
   - Seal.n : the EdgeSeal (39/0) must be enclosed by an unbroken Passiv (9/0) ring.
@@ -57,14 +58,21 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
   - sealreq_off_no_seal: core only and no define -> {} (the default is unchanged)
   - sealreq_slit: every metal and via ring cut once on the right side, the
     metals by their minimum space, the vias by 2.81 um (the widest cut a slit
-    may have) -> {}; sealreq_slit_wide_TM2 (TopMetal2 cut 2.815 um),
-    sealreq_slit_two_cuts_M4 (a second Metal4 cut) and sealreq_slit_es_cut
-    (EdgeSeal cut as well) -> {SEAL.REQ.3_TM2}, {SEAL.REQ.3_M4}, {SEAL.REQ.3_ES}
+    may have) -> {}; sealreq_slit_wide_TM2 (TopMetal2 cut 2.815 um) and
+    sealreq_slit_two_cuts_M4 (a second Metal4 cut) -> {SEAL.REQ.3_TM2,
+    SEAL.REQ.3_TV2} and {SEAL.REQ.3_M4, SEAL.REQ.3_V4}, the via ring lying
+    over the extra metal cut; sealreq_slit_es_cut (EdgeSeal cut as well)
+    -> {SEAL.REQ.3_ES};
+    sealreq_slit_via_short_TM2 (TopVia2 cut 0.5 um, inside the TopMetal2 cut)
+    -> {SEAL.REQ.3_TV2}; sealreq_slit_misaligned (the Metal5 cut on the top
+    side, the others on the right) -> {SEAL.REQ.3_V4, SEAL.REQ.3_TV1}
   - sealreq_corner_marks: a ring whose corners step in, with 2 x 2 um Metal4
     filler squares in the corners its Passiv ring cuts off -> {};
     sealreq_corner_metal (a drawn Metal4 square there instead) and
     sealreq_corner_marks_square (the squares beside a ring with square corners)
-    -> {SEAL.REQ.4}
+    -> {SEAL.REQ.4}; so does sealreq_corner_tab, a Passiv tab on the loop that
+    widens its bounding box into the margin, with a filler square in that
+    margin strip more than Seal.k from the box corners
 
 seal_* cells measure the ring itself (full mode, no define), each on the
 complete ring of the sealreq cells, which sits at every limit (Passiv 1.00 um
@@ -352,6 +360,10 @@ def build_slit(cell):
     shapes = _slit_shapes()
     shapes[L_EDGESEAL] = _cut(shapes[L_EDGESEAL], SIDE - INSET - RING, 99880, SIDE - INSET, 100120)
     cell("sealreq_slit_es_cut", shapes)
+    cell("sealreq_slit_via_short_TM2", _slit_shapes(SLIT_CUTS | {(133, 0): 500}))
+    shapes = _slit_shapes({key: cut for key, cut in SLIT_CUTS.items() if key != (67, 0)})
+    shapes[(67, 0)] = _cut(shapes[(67, 0)], 99880, SIDE - INSET - RING, 100120, SIDE - INSET)
+    cell("sealreq_slit_misaligned", shapes)
 
 
 NOTCH = 10000          # corner step of the stepped ring
@@ -395,6 +407,10 @@ def build_corner_marks(cell):
     top.shapes(top.layout().layer(*L_METAL4)).insert(db.Box(25800, 25800, 27800, 27800))
     top = cell("sealreq_corner_marks_square", _ring_shapes())
     top.shapes(top.layout().layer(50, 22)).insert(_corner_squares())
+    shapes = _ring_shapes()
+    shapes[L_PASSIV] += db.Region(db.Box(10000, 95000, INSET - 1000 - 4200, 105000))
+    top = cell("sealreq_corner_tab", shapes)
+    top.shapes(top.layout().layer(50, 22)).insert(db.Box(15000, 60000, 17000, 62000))
 
 
 METAL_NAMES = {(50, 0): 'Metal4', (67, 0): 'Metal5', (126, 0): 'TopMetal1', (134, 0): 'TopMetal2'}

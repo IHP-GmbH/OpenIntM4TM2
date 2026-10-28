@@ -223,8 +223,8 @@ deck:
 | --- | --- |
 | `SEAL.REQ.1` | no EdgeSeal 39/0 is drawn |
 | `SEAL.REQ.2` | no sealring boundary 39/4 is drawn (Seal.l cannot run) |
-| `SEAL.REQ.3_<L>` | EdgeSeal (`ES`) or a ring layer inside it (`M4`, `V4`, `M5`, `TV1`, `TM1`, `TV2`, `TM2`) is not a closed loop; a point contact or a neck of 0.18 um or less counts as open. A slit is accepted: every metal and via ring cut once by at most 2.81 um, EdgeSeal closed |
-| `SEAL.REQ.4` | a fabricated shape (metal, filler or mask data, via, pad opening, MIM, ThinFilmRes, LBE, or Passiv other than the ring around EdgeSeal) lies outside the ring; checked only once EdgeSeal is closed. Metal4 filler 50/22 is allowed in the corners that a stepped Passiv ring cuts off its bounding box, where IHP-made rings carry their 2 x 2 um version marks |
+| `SEAL.REQ.3_<L>` | EdgeSeal (`ES`) or a ring layer inside it (`M4`, `V4`, `M5`, `TV1`, `TM1`, `TV2`, `TM2`) is not a closed loop; a point contact or a neck of 0.18 um or less counts as open. A slit is accepted: every metal and via ring cut once by at most 2.81 um, every via ring under both of its metals (so the cuts line up), EdgeSeal closed |
+| `SEAL.REQ.4` | a fabricated shape (metal, filler or mask data, via, pad opening, MIM, ThinFilmRes, LBE, or Passiv other than the ring around EdgeSeal) lies outside the ring; checked only once EdgeSeal is closed. Metal4 filler 50/22 is allowed in the corners that a stepped Passiv ring cuts off its bounding box, within Seal.k of the box corners, where IHP-made rings carry their 2 x 2 um version marks |
 
 These are not SG13G2 rules. The run stops with an error if the value is not
 `true` or `false` (an empty value included), or if the sealring deck is not
