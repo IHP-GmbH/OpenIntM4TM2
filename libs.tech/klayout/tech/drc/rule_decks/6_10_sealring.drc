@@ -159,13 +159,16 @@ if BEOL
       seal_req_pas_ring = seal_req_pas_loops.inside(seal_req_pas_loops.hulls.covering(edgeseal_drw))
       seal_req_corners = seal_req_pas_ring.hulls.extents.not(seal_req_pas_ring.hulls)
       seal_req_out = seal_req_pas_out.not(seal_req_pas_ring)
-      seal_req_out += metal4_filler.not(seal_req_inside).not(seal_req_corners)
-      [metal4_drw, metal4_mask, metal4_opc, via4_drw, metal5_drw,
+      # The layer list is read by the KiCad exporter's seal-ring clearance
+      # test; keep it one literal array.
+      [metal4_drw, metal4_filler, metal4_mask, metal4_opc, via4_drw, metal5_drw,
        metal5_filler, metal5_mask, metal5_opc, topvia1_drw, topmetal1_drw,
        topmetal1_filler, topmetal1_mask, topvia2_drw, topmetal2_drw, topmetal2_filler,
        topmetal2_mask, passiv_pillar, passiv_sbump, passiv_pdl, mim_drw, vmim_drw,
        thinfilmres_drw, lbe_drw].each do |seal_req_layer|
-        seal_req_out += seal_req_layer.not(seal_req_inside)
+        seal_req_layer_out = seal_req_layer.not(seal_req_inside)
+        seal_req_layer_out = seal_req_layer_out.not(seal_req_corners) if seal_req_layer.equal?(metal4_filler)
+        seal_req_out += seal_req_layer_out
       end
       seal_req_out.output('SEAL.REQ.4', 'SEAL.REQ.4 : Fabricated shape outside the seal ring')
       seal_req_inside.forget
