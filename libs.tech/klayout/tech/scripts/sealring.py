@@ -111,8 +111,7 @@ def load_library():
     a library, or a module it imports, that another tree loaded first."""
     if TECH not in pya.Technology.technology_names():
         pya.Technology.create_technology(TECH).load(str(LYT))
-    # Before the import too: it would fail on a foreign module first, or use it.
-    check_sources()
+    # First on sys.path, ahead of any other tree's copy.
     for path in (API_DIR, PYTHON_DIR):
         while str(path) in sys.path:
             sys.path.remove(str(path))
@@ -122,8 +121,10 @@ def load_library():
         failure = None
     except Exception as error:  # pylint: disable=broad-except
         failure = error
-    # A package without __init__.py, like this tree's pypreprocessor, loses
-    # to one with it anywhere on sys.path.
+    # After the import, failed or not: a module imported earlier stays in
+    # use, a foreign module may be what made it fail, and a package without
+    # __init__.py, like this tree's pypreprocessor, loses to one with it
+    # anywhere on sys.path.
     check_sources()
     if failure is not None:
         raise SealringError(f"cannot import the {LIB} library: {failure!r}")

@@ -217,9 +217,10 @@ AUTORUN = """\
 
 def _other_tree(tmp_path, module, load):
     """A KLAYOUT_PATH entry with a package `module` (dotted) of its own, as
-    another checkout of a PDK has, whose autorun imports it ('import') or
-    only appends its directory to sys.path ('append'). Returns the entry and
-    the module's directory."""
+    another checkout of a PDK has, whose autorun imports it ('import'), only
+    appends its directory to sys.path ('append'), or puts it on sys.path
+    ahead of this tree's directories ('ahead'). Returns the entry and the
+    module's directory."""
     python = tmp_path / "other" / "python"
     directory = python
     for part in module.split("."):
@@ -228,14 +229,17 @@ def _other_tree(tmp_path, module, load):
         (directory / "__init__.py").write_text("")
     macros = tmp_path / "other" / "klayout" / "pymacros"
     macros.mkdir(parents=True)
+    ours = [str(REPO_KLAYOUT / "python"),
+            str(REPO_KLAYOUT / "python" / "pycell4klayout-api" / "source" / "python")]
     text = {"import": f"sys.path.insert(0, {str(python)!r})\nimport {module}",
-            "append": f"sys.path.append({str(python)!r})"}[load]
+            "append": f"sys.path.append({str(python)!r})",
+            "ahead": f"sys.path.insert(0, {str(python)!r})\nsys.path += {ours!r}"}[load]
     (macros / "autorun.lym").write_text(AUTORUN.format(text="import sys\n" + text))
     return macros.parent, directory
 
 
 OTHER_TREES = [("intm4tm2_pycell_lib", "import"),
-               # Would make the library's own import fail before the library check.
+               # Makes the library's own import fail; the refusal still names it.
                ("cni.tech", "import"),
                # A package with __init__.py wins over this tree's, which has none.
                ("pypreprocessor.pypreprocessor", "append")]
@@ -249,6 +253,15 @@ def test_module_of_another_tree_is_refused(tmp_path, module, load):
     assert result.returncode == 1, result.stdout + result.stderr
     assert f"module {module} is loaded from {directory}" in result.stdout.splitlines()[-1]
     assert not output.exists()
+
+
+def test_this_tree_goes_first_on_sys_path(tmp_path):
+    # Another tree's library ahead of this tree's directories, not imported.
+    entry, _ = _other_tree(tmp_path, "intm4tm2_pycell_lib", "ahead")
+    output = tmp_path / "ring.gds"
+    result = _run(tmp_path, klayout_path=entry, length="1000", width="800", output=output)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert output.exists()
 
 
 def test_library_of_this_tree_on_klayout_path(tmp_path):
