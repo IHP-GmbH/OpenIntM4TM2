@@ -61,12 +61,14 @@ libs.tech/klayout/
 │   │   └── testing/                 # LVS connectivity unit tests (IHP lvs/testing/ convention)
 │   │       ├── run_regression.py    # runner: deck verdict vs golden per fixture
 │   │       └── testcases/unit/      # lvs_{clean,open,short}.gds (+ generator)
-│   └── macros/
-│       ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
-│       ├── interposer_filler_topmetal.lym  # TopMetal filler macro
-│       ├── interposer_filler_slit.lym      # stress-relief slit generator (wide plates -> x/24)
-│       ├── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
-│       └── interposer_density_report.lym   # one-click density report (menu)
+│   ├── macros/
+│   │   ├── interposer_filler_metal.lym     # Metal4/Metal5 filler macro
+│   │   ├── interposer_filler_topmetal.lym  # TopMetal filler macro
+│   │   ├── interposer_filler_slit.lym      # stress-relief slit generator (wide plates -> x/24)
+│   │   ├── interposer_nofill.lym           # designer no-fill emitter (160/0 -> x/23)
+│   │   └── interposer_density_report.lym   # one-click density report (menu)
+│   └── scripts/
+│       └── sealring.py                     # add the seal ring to a layout (headless)
 ├── python/
 │   ├── bump_mirror.py               # Cu-pillar GDS generation + mirroring (CLI)
 │   ├── density_report.py           # density report: global + LBE + slit adequacy (CLI/menu)
@@ -413,6 +415,23 @@ layout.technology_name = 'intm4tm2'
 cell = layout.create_cell('CuPillarPad', 'IntM4TM2',
                           {'diameter': '35u', 'passEncl': '7.5u'})
 ```
+
+To add the ring to a layout without the GUI, `tech/scripts/sealring.py` takes
+the arguments of the SG13G2 script of the same name, the outline size in um,
+plus the slit:
+
+```bash
+klayout -zz -r tech/scripts/sealring.py -rd length=1000 -rd width=800 \
+        -rd input=<layout.gds> -rd offset_x=0 -rd offset_y=0 -rd slit=false \
+        -rd output=<with_ring.gds>
+```
+
+Without `input` it writes the ring alone under a `sealring_top` cell; with it,
+the ring goes into that layout's only top cell, its outline's lower-left corner
+at the offset. Sizes and offsets must be on the 5 nm grid. The PCell comes from
+this tree; a library that another tree registered first is refused. The output
+carries no PCell context. The script exits 0 after one `sealring: wrote` line
+and 1 after one `sealring: error:` line (`intm4tm2_tests/test_sealring_script.py`).
 
 The PCell is the single source of the Cu-pillar pad fabrication geometry:
 `bump_mirror.CuPillarGenerator` is a thin placer that instantiates
