@@ -20,7 +20,8 @@
 #   TopMetal2 (F.Cu): TM2_bR, TM2_bR_w, TM2_bR_cr, as a
 #   physical clearance from a track wider than TM2_bR_w (a warning, a
 #   check of its own, so a gap under the base space stays an error under
-#   that rule) and a clearance from a pad longer than TM2_bR_cr.
+#   that rule) and a clearance from a pad wider than TM2_bR_w and
+#   longer than TM2_bR_cr.
 #   Every copper layer: Slt_c, as a maximum track width (a warning:
 #   a wider track needs slits, which the slit macro cuts in the GDS).
 # What KiCad does not catch:
@@ -86,9 +87,9 @@
 	(condition "A.Type == 'Track' && A.Width > 0.005mm && A.Net != B.Net")
 	(constraint physical_clearance (min 0.005mm)))
 
-(rule "TopMetal2 clearance from a pad longer than 0.05mm (TM2_bR)"
+(rule "TopMetal2 clearance from a pad wider than 0.005mm and longer than 0.05mm (TM2_bR)"
 	(layer "F.Cu")
-	(condition "A.Type == 'Pad' && (A.Size_X > 0.05mm || A.Size_Y > 0.05mm)")
+	(condition "A.Type == 'Pad' && (A.Size_X > 0.05mm || A.Size_Y > 0.05mm) && A.Size_X > 0.005mm && A.Size_Y > 0.005mm")
 	(constraint clearance (min 0.005mm)))
 
 (rule "TopMetal2 track wider than 0.03mm needs slits (Slt_c)"

@@ -86,8 +86,9 @@ the template names after that metal, and the two width-dependent rules KiCad
 can check on one item's own size:
 
 - TM2.bR as a TopMetal2 clearance from a track wider than TM2_bR_w (a
-  warning) and from a pad longer than TM2_bR_cr (a pad no longer than that
-  cannot hold a parallel run that long). The track rule is a physical
+  warning) and from a pad wider than TM2_bR_w and longer than TM2_bR_cr (a
+  narrower pad is no wide line, and a shorter one cannot hold a parallel run
+  that long). The track rule is a physical
   clearance, a check of its own: KiCad gives a pair the severity of the last
   rule that matches it, so as a plain clearance the warning would take over a
   TM2.b error beside a wide track.

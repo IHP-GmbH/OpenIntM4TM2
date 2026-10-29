@@ -163,7 +163,8 @@ def render(rules_doc, board_text):
         f"  {wide_metal} ({layers[wide_metal]}): {wide_space}, {wide_width}, {wide_run}, as a",
         f"  physical clearance from a track wider than {wide_width} (a warning, a",
         "  check of its own, so a gap under the base space stays an error under",
-        f"  that rule) and a clearance from a pad longer than {wide_run}.",
+        f"  that rule) and a clearance from a pad wider than {wide_width} and",
+        f"  longer than {wide_run}.",
         f"  Every copper layer: {SLIT_WIDTH}, as a maximum track width (a warning:",
         "  a wider track needs slits, which the slit macro cuts in the GDS).",
         "What KiCad does not catch:",
@@ -203,9 +204,11 @@ def render(rules_doc, board_text):
         f"\t(condition \"A.Type == 'Track' && A.Width > {width} && A.Net != B.Net\")",
         f"\t(constraint physical_clearance (min {space})))",
         "",
-        f'(rule "{wide_metal} clearance from a pad longer than {run} ({wide_space})"',
+        f'(rule "{wide_metal} clearance from a pad wider than {width} and longer than {run} '
+        f'({wide_space})"',
         f'\t(layer "{layers[wide_metal]}")',
-        f"\t(condition \"A.Type == 'Pad' && (A.Size_X > {run} || A.Size_Y > {run})\")",
+        f"\t(condition \"A.Type == 'Pad' && (A.Size_X > {run} || A.Size_Y > {run})"
+        f" && A.Size_X > {width} && A.Size_Y > {width}\")",
         f"\t(constraint clearance (min {space})))",
     ]
     widest = mm(rules[SLIT_WIDTH])

@@ -78,7 +78,8 @@ EXPECTED = [
     ("TM2_bR", "F.Cu", "physical_clearance", "min", "warning",
      f"A.Type == 'Track' && A.Width > {mm('TM2_bR_w')} && A.Net != B.Net"),
     ("TM2_bR", "F.Cu", "clearance", "min", "error",
-     f"A.Type == 'Pad' && (A.Size_X > {mm('TM2_bR_cr')} || A.Size_Y > {mm('TM2_bR_cr')})"),
+     f"A.Type == 'Pad' && (A.Size_X > {mm('TM2_bR_cr')} || A.Size_Y > {mm('TM2_bR_cr')})"
+     f" && A.Size_X > {mm('TM2_bR_w')} && A.Size_Y > {mm('TM2_bR_w')}"),
 ] + [("Slt_c", layer, "track_width", "max", "warning", f"A.Width > {mm('Slt_c')}")
       for layer in LAYERS.values()]
 
@@ -255,13 +256,19 @@ def _probe_board():
     pair(500, 100, tm2, wide, r["TM2_a"], under("TM2_bR"))                 # TM2_bR, track
     pair(500, 300, tm2, wide, r["TM2_a"], under("TM2_b"))    # TM2_b beside a wide track
     pair(500, 500, tm2, wide, r["TM2_a"], under("TM2_bR"), same_net=True)  # same net: clean
-    n, side = net(), r["TM2_bR_cr"] + 10                                   # TM2_bR, pad
-    items.append(f'  (footprint "probe:PAD" (layer "F.Cu") (at {mm_str(800)} {mm_str(100)})\n'
-                 f'    (property "Reference" "P1" (at 0 0) (layer "F.Fab"))\n'
-                 f'    (pad "1" smd rect (at 0 0) (size {mm_str(side)} {mm_str(side)}) '
-                 f'(layers "{tm2}") (net {n} "N{n}"))\n  )')
-    track(800 - side, beside(100, side, under("TM2_bR"), r["TM2_a"]), 800 + side, r["TM2_a"],
-          tm2, net())
+    def pad_and_track(x, y, size_x, size_y):
+        """A TopMetal2 pad, and a track along its long side, under TM2_bR away."""
+        n = net()
+        items.append(f'  (footprint "probe:PAD" (layer "F.Cu") (at {mm_str(x)} {mm_str(y)})\n'
+                     f'    (property "Reference" "P{n}" (at 0 0) (layer "F.Fab"))\n'
+                     f'    (pad "1" smd rect (at 0 0) (size {mm_str(size_x)} {mm_str(size_y)}) '
+                     f'(layers "{tm2}") (net {n} "N{n}"))\n  )')
+        track(x - size_x, beside(y, size_y, under("TM2_bR"), r["TM2_a"]), x + size_x, r["TM2_a"],
+              tm2, net())
+
+    long = r["TM2_bR_cr"] + 10
+    pad_and_track(800, 100, long, long)                                    # TM2_bR, pad
+    pad_and_track(800, 300, long, r["TM2_bR_w"])          # a narrow pad is no wide line: clean
     for i, layer in enumerate((tm2, tm1, m5, m4)):                         # Slt_c
         track(100 + 200 * i, 900, 200 + 200 * i, r["Slt_c"] + 1, layer, net())
     for i, (layer, key) in enumerate(((tm2, "TM2_a"), (tm1, "TM1_a"), (m5, "Mn_a"))):
@@ -312,6 +319,7 @@ def test_kicad_cli_reads_every_rule(tmp_path):
     count = {r["key"] + " " + r["constraint"]: len(hits[r["name"]]) for r in named}
     assert count["TM2_b clearance"] == 2, said
     assert count["TM2_bR physical_clearance"] == 2, said
+    assert count["TM2_bR clearance"] == 1, said
     for key in ("TM2_a", "TM1_a", "Mn_a"):
         width = f"min width {Decimal(str(RULES[key])) / 1000:.4f} mm"
         found = [s for s in said if s[0] == "track_width" and width in s[2]]
