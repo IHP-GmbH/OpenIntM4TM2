@@ -82,10 +82,24 @@ board. The PDK ships one for the template, written by
 `../klayout/tech/drc/rule_decks/interposer_tech_default.json`, the file the
 KLayout decks read. It carries the minimum track width and the minimum
 clearance of each metal (TM2.a/b, TM1.a/b, M5.a/b, M4.a/b), on the copper layer
-the template names after that metal. Its header lists every other rule key as
-KLayout only: the wide-line and 45-degree spacing, vias (the exporter draws
-their cuts), pad and passivation openings, LBE, density, fill, slits, the
-seal ring and the MIM rules.
+the template names after that metal, and the two width-dependent rules KiCad
+can check on one item's own size:
+
+- TM2.bR as a TopMetal2 clearance from a track wider than TM2_bR_w (a
+  warning) and from a pad longer than TM2_bR_cr (a pad no longer than that
+  cannot hold a parallel run that long). The track rule is a physical
+  clearance, a check of its own: KiCad gives a pair the severity of the last
+  rule that matches it, so as a plain clearance the warning would take over a
+  TM2.b error beside a wide track.
+- Slt.c as a maximum track width on every metal (a warning: a wider track
+  needs slits, which the slit macro cuts in the GDS, or a width of Slt_c or
+  less). It matches only tracks wider than Slt_c, so a track under the width
+  minimum stays an error.
+
+Its header lists every other rule key as KLayout only: the other wide-line
+and the 45-degree spacing, vias (the exporter draws their cuts), pad and
+passivation openings, LBE, density, fill, the other slit rules, the seal ring
+and the MIM rules.
 
 KiCad's check is an aid while drawing, and it misses violations:
 
@@ -96,8 +110,19 @@ KiCad's check is an aid while drawing, and it misses violations:
   limit "board setup constraints" instead of the rule.
 - It measures clearance between different nets only, and it sees the board,
   not the exported GDS.
+- It has no parallel-run condition, so the TM2.bR track rule also warns,
+  and the pad rule errs, on runs the deck accepts. It checks one track or pad
+  at a time, so merged copper and zones stay KLayout checks for TM2.bR and
+  Slt.c.
 
 The KLayout decks on the GDS are the DRC that counts.
+
+kicad-cli drops the whole rules file, with no message, when one token in it is
+unknown (a unit other than mm, an item property KiCad does not know), and then
+checks the board against its printed-board defaults. The generator writes mm
+and the properties Type, Width, Size_X, Size_Y and Net only, and the live test
+in `test_kicad_rules.py` runs kicad-cli 9.99 on a probe board that breaks each
+rule.
 
 The project file carries the board setup and the netclasses, from the same
 JSON, so the template does not open against KiCad's printed-board defaults (a
@@ -112,14 +137,17 @@ The exporter draws a via's landing at least as large as the KiCad via, and
 larger whenever the via does not hold a whole number of cuts, so the space
 around a via stays a KLayout check.
 
-With both files beside it, the template still opens with four via-diameter
-errors, one on each of its no-net micro vias (one per span), reported against
-a 0.3 mm "board setup constraints" minimum. The source of that minimum is not
-found: KiCad 9.99 reads the project file's annular ring and micro-via drill
-floors, but not this one from the via floors or the netclass vias, and the
-board's own setup carries no via value. The vias are placeholders the
-exporter replaces with cut arrays, and the KLayout decks stay the DRC that
-counts.
+Each netclass carries every key KiCad 9.99 writes for one. KiCad ignores a
+class that lacks one of them (a priority or a tuning profile was seen to
+matter), and then opens the board at its printed-board defaults: a 200 um
+track and clearance and a 600 um via for the interactive router, and a 0.3 mm
+via minimum.
+
+The deck states no metal-to-edge rule, so the copper-to-edge floor is 0.001
+mm: it keeps copper inside the outline (with 0, KiCad lets copper that only
+touches the outline through). It says nothing about a seal ring: the seal-ring
+rules are checked by the sealring deck, and a copper keepout from a placed
+ring is the sealring's to decide.
 
 Do not edit either file. After a change to the JSON, run
 

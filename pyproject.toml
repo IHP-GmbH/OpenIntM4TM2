@@ -45,7 +45,7 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # own selection, and its T1 is exactly those cases.
 addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not live_tool and not slow"]
 markers = [
-    "live_tool: starts the klayout binary, ngspice or xschem (opt-in, pytest -m live_tool); skips when the tool is not on PATH",
+    "live_tool: starts the klayout binary, ngspice, xschem or kicad-cli (opt-in, pytest -m live_tool); skips when the tool is not on PATH",
     "slow: a field solve that takes more than about 1.5 s at one CPU (opt-in, pytest -m slow)",
     "needs_sibling_sources(*ids): reads a sibling repository's tree, from its variable or from $HCDP_ROOT/<id>",
 ]
