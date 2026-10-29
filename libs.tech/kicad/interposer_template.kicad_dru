@@ -23,7 +23,9 @@
 #   that rule) and a clearance from a pad wider than TM2_bR_w and
 #   longer than TM2_bR_cr.
 #   Every copper layer: Slt_c, as a maximum track width (a warning:
-#   a wider track needs slits, which the slit macro cuts in the GDS).
+#   a wider track needs slits, and no flow step cuts them. Cutting them is
+#   the designer's step, with the KLayout slit macro on the GDS; unslit
+#   copper wider than Slt_c fails the deck).
 # What KiCad does not catch:
 # - It flags a clearance only below the rule less its DRC epsilon, 0.5 um by
 #   default. So the Metal5 and Metal4 space is never caught, and the TopMetal

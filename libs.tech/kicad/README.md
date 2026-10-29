@@ -93,8 +93,10 @@ can check on one item's own size:
   rule that matches it, so as a plain clearance the warning would take over a
   TM2.b error beside a wide track.
 - Slt.c as a maximum track width on every metal (a warning: a wider track
-  needs slits, which the slit macro cuts in the GDS, or a width of Slt_c or
-  less). It matches only tracks wider than Slt_c, so a track under the width
+  needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
+  the designer's step, with the KLayout slit macro
+  (`interposer_filler_slit.lym`) on the GDS, and unslit copper wider than
+  Slt_c fails the deck. It matches only tracks wider than Slt_c, so a track under the width
   minimum stays an error.
 
 Its header lists every other rule key as KLayout only: the other wide-line
