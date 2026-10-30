@@ -32,12 +32,14 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # appears. --strict-markers and --strict-config turn a typo in a marker or an
 # ini key into an error instead of a silently ignored line.
 #
-# A bare `pytest` starts no external tool. The cases that run the klayout
-# binary, ngspice, xschem or kicad-cli carry live_tool and are deselected
-# here: a name on PATH is enough to start them, and the klayout wheel ships
-# the Python module without the binary. The field solves that take more than
-# about 1.5 s at one CPU carry slow and are deselected too, so the default
-# run stays fast. A command-line -m replaces this one:
+# A bare `pytest` starts none of the design tools; the only external program
+# it runs is git, for the PDK version label (test_pdk_version.py, whose git
+# cases skip without it). The cases that run the klayout binary, ngspice,
+# xschem or kicad-cli carry live_tool and are deselected here: a name on PATH
+# is enough to start them, and the klayout wheel ships the Python module
+# without the binary. The field solves that take more than about 1.5 s at one
+# CPU carry slow and are deselected too, so the default run stays fast. A
+# command-line -m replaces this one:
 #   pytest -m live_tool     the tool cases
 #   pytest -m slow          the long field solves
 #   pytest -m ""            every case

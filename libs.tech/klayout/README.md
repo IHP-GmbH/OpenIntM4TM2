@@ -490,12 +490,13 @@ environment with `pytest` and `klayout.db`, plus the native `klayout` binary.
 The menu integration test launches its own offscreen Qt application with
 isolated settings; it does not edit the user's configuration or current layout.
 
-A bare `pytest` starts no external tool. The cases that run the `klayout` binary,
-ngspice, xschem or kicad-cli carry the `live_tool` marker and are deselected by
-the default options in `pyproject.toml`; `pytest -m live_tool` runs them, and
-`pytest -m ""` runs every case. The routed-load field solves that take more
-than about 1.5 s at one CPU carry `slow` and are deselected the same way;
-`pytest -m slow` runs them.
+A bare `pytest` starts none of the design tools; the only external program it
+runs is git, for the PDK version label (`test_pdk_version.py`, whose git cases
+skip without it). The cases that run the `klayout` binary, ngspice, xschem or
+kicad-cli carry the `live_tool` marker and are deselected by the default options
+in `pyproject.toml`; `pytest -m live_tool` runs them, and `pytest -m ""` runs
+every case. The routed-load field solves that take more than about 1.5 s at one
+CPU carry `slow` and are deselected the same way; `pytest -m slow` runs them.
 The `test_bump_mirror.py` cases that read gds2kicad or the
 interconnect PDK take each sibling from `GDS_TO_KICAD_ROOT` and
 `INTERCONNECT_PDK_ROOT`, or else from `$HCDP_ROOT/gds_to_kicad` and
