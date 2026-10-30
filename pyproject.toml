@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intm4tm2"
-version = "0.2.0"
+version = "0.3.0"
 description = "KLayout PDK and assembly tooling for the IHP 130-nm IntM4TM2 aluminium BEOL interposer."
 readme = "README.md"
 requires-python = ">=3.10"
