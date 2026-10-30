@@ -26,8 +26,9 @@ measured on it.
 
 kicad-cli drops a rules file it cannot parse without a message, so the hermetic tests
 pin the units and the item properties to what KiCad 9.99 was seen to read. The
-live_tool test runs kicad-cli 9.99 on a probe board that breaks each rule KiCad can
-catch, and checks that the report names the rule with its severity.
+live_tool tests run kicad-cli 9.99 on a probe board that breaks each rule KiCad can
+catch, checking that the report names the rule with its severity, and on the template
+board, checking that KiCad read the netclasses.
 """
 import json
 import re
@@ -291,15 +292,14 @@ def _probe_board():
     return "\n".join(head + nets + items) + "\n)\n"
 
 
-@pytest.mark.live_tool
-@pytest.mark.skipif(KICAD_CLI is None, reason="kicad-cli not on PATH")
-def test_kicad_cli_reads_every_rule(tmp_path):
+def _kicad_drc(tmp_path, board_text):
+    """kicad-cli's violations on a board checked beside the committed rules and project."""
     version = subprocess.run([KICAD_CLI, "version"], capture_output=True, text=True,
                              timeout=60).stdout.strip()
     assert version.startswith("9.99"), (
         f"the rules were measured on kicad-cli 9.99, this is {version}: measure again")
     board = tmp_path / "probe.kicad_pcb"
-    board.write_text(_probe_board(), encoding="utf-8")
+    board.write_text(board_text, encoding="utf-8")
     shutil.copy(DRU, tmp_path / "probe.kicad_dru")
     shutil.copy(PRO, tmp_path / "probe.kicad_pro")
     report = tmp_path / "drc.json"
@@ -307,7 +307,24 @@ def test_kicad_cli_reads_every_rule(tmp_path):
                           "--units", "mm", "-o", str(report), str(board)],
                          capture_output=True, text=True, timeout=300)
     assert run.returncode == 0, run.stdout + run.stderr
-    violations = json.loads(report.read_text())["violations"]
+    return json.loads(report.read_text())["violations"]
+
+
+@pytest.mark.live_tool
+@pytest.mark.skipif(KICAD_CLI is None, reason="kicad-cli not on PATH")
+def test_kicad_cli_reads_the_netclasses(tmp_path):
+    # KiCad 9.99 drops every netclass of a project that lacks one of its keys, and then
+    # holds each via of the template, one cut wide, to a 0.3 mm diameter.
+    template = kicad_rules_gen.TEMPLATE.read_text(encoding="utf-8")
+    assert "(via " in template
+    violations = _kicad_drc(tmp_path, template)
+    assert not [v for v in violations if v["type"] == "via_diameter"], violations
+
+
+@pytest.mark.live_tool
+@pytest.mark.skipif(KICAD_CLI is None, reason="kicad-cli not on PATH")
+def test_kicad_cli_reads_every_rule(tmp_path):
+    violations = _kicad_drc(tmp_path, _probe_board())
     said = [(v["type"], v["severity"], v["description"]) for v in violations]
     rules = rules_in(DRU.read_text(encoding="utf-8"))
     assert len(rules) == len(EXPECTED), "the rules file does not read as written"

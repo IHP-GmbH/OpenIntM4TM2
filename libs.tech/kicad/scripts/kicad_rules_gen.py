@@ -30,11 +30,12 @@ that file's header as a KLayout-only rule. libs.tech/kicad/README.md says what e
 ported rule catches and misses; the KLayout decks on the exported GDS are the DRC that
 counts.
 
-KiCad reports a violation under the last rule in the file that matches, with that
-rule's severity. So the TM2.bR pad rule follows TM2.b and the slit rules follow the
-width minimums, and a warning rule must not match what an error rule above it checks:
-the wide-track rule is a physical clearance, a check of its own, and the slit rule
-matches only the tracks it is about.
+KiCad's documentation says it checks a pair against the last rule in the file that
+matches, and none above it, and it reports a violation with that rule's severity. So
+a later rule must be at least as strict as an earlier one it shadows (the TM2.bR pad
+rule follows TM2.b), the slit rules follow the width minimums, and a warning rule must
+not match what an error rule above it checks: the wide-track rule is a physical
+clearance, a check of its own, and the slit rule matches only the tracks it is about.
 
 kicad-cli drops a whole rules file with no message when one token of it is unknown,
 and checks the board against its printed-board defaults instead. So the rules use mm
@@ -246,9 +247,9 @@ def render_project(rules_doc):
     classes = [netclass(rules, "Default", width, space, biggest, DEFAULT_PRIORITY)]
     classes += [netclass(rules, m, w, s, NETCLASS_VIA[m], i)
                 for i, (m, w, s) in enumerate(PORTED)]
-    # The board floors are the smallest values any layer or via level allows. A cut
-    # sits inside metal of its own net, so a hole is at least a metal space from
-    # another net's copper.
+    # The board floors are the smallest values any layer or via level allows, but for
+    # the copper-to-edge floor, EDGE_FLOOR_MM. A cut sits inside metal of its own net,
+    # so a hole is at least a metal space from another net's copper.
     floors = {
         "min_clearance": _mm(rules, closest),
         "min_track_width": _mm(rules, narrowest),
