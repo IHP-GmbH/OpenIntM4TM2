@@ -83,8 +83,7 @@ board. The PDK ships one for the template, written by
 KLayout decks read. It carries the minimum track width and the minimum
 clearance of each metal (TM2.a/b, TM1.a/b, M5.a/b, M4.a/b), on the copper layer
 the template names after that metal, and two width-dependent rules that rest
-on one item's own size (Mn.e and Mn.f have the same form and stay KLayout
-checks):
+on one item's own size:
 
 - TM2.bR as a TopMetal2 clearance from a track wider than TM2_bR_w (a
   warning) and from a pad wider than TM2_bR_w and longer than TM2_bR_cr (a
@@ -92,9 +91,10 @@ checks):
   that long). The track rule is a physical
   clearance, a check of its own: KiCad gives a pair the severity of the last
   rule that matches it, so as a plain clearance the warning would take over a
-  TM2.b error beside a wide track. The pad rule is a plain clearance, so it
-  must stay an error: as a warning it would take over a TM2.b error beside a
-  wide pad.
+  TM2.b error beside a wide track. The pad rule stays a plain clearance and
+  an error: its length gate leaves only pads that can hold a run the deck
+  checks, so it meets far fewer false hits than the track rule, and as a
+  plain-clearance warning it would take over a TM2.b error beside a wide pad.
 - Slt.c as a maximum track width on every metal (a warning: a wider track
   needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
   the designer's step, with the KLayout slit macro

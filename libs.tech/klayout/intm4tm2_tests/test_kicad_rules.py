@@ -133,9 +133,8 @@ def test_every_rule_carries_its_json_value():
     text = DRU.read_text(encoding="utf-8")
     found = rules_in(text)
     assert text.count("(rule ") == len(found) == len(EXPECTED)
-    # In file order: KiCad reports a violation under the last rule that matches, with
-    # its severity, so the TM2.bR pad rule must follow TM2.b, and the slit rules the
-    # width minimums.
+    # In file order: the TM2.bR pad rule must follow TM2.b, and the slit rules the
+    # width minimums (the generator's docstring says why).
     assert [(r["key"], r["layer"], r["constraint"], r["bound"], r["severity"] or "error",
              r["condition"]) for r in found] == EXPECTED
     for r in found:

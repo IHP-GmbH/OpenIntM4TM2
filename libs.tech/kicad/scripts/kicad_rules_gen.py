@@ -31,7 +31,8 @@ ported rule catches and misses; the KLayout decks on the exported GDS are the DR
 counts.
 
 KiCad reports a violation under the last rule in the file that matches, with that
-rule's severity. So a warning rule must not match what an error rule above it checks:
+rule's severity. So the TM2.bR pad rule follows TM2.b and the slit rules follow the
+width minimums, and a warning rule must not match what an error rule above it checks:
 the wide-track rule is a physical clearance, a check of its own, and the slit rule
 matches only the tracks it is about.
 
@@ -165,8 +166,7 @@ def render(rules_doc, board_text):
                           subsequent_indent="  ")
     out = ["# " + line if line else "#" for line in head]
     out += ["(version 1)"]
-    # In this order: the TM2.bR pad rule follows TM2.b and the slit rules follow the
-    # width minimums, so a violation is reported under them, with their severity.
+    # The order matters; the module docstring says why.
     for metal, width, space in PORTED:
         for key, constraint, what in ((width, "track_width", "width"),
                                       (space, "clearance", "clearance")):
