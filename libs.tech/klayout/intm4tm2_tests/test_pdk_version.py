@@ -21,9 +21,9 @@ the seal ring writes on TEXT 63/0.
 Each case builds a tree with its own pyproject.toml and, where it needs one,
 its own git repository, and checks the whole label: a tree with .git takes
 the commit from its own checkout, a tree without it from the install stamp,
-and otherwise the label reads 'commit unknown'. Neither a repository the tree only sits in nor GIT_* variables in
-the environment can lend the tree another commit, and a stamp never speaks
-for a tree with .git.
+and otherwise the label reads 'commit unknown'. Neither a repository the
+tree only sits in nor GIT_* variables in the environment can lend the tree
+another commit, and a stamp never speaks for a tree with .git.
 """
 
 import importlib.util
@@ -185,12 +185,13 @@ def test_git_not_installed(tmp_path, monkeypatch):
     assert pdk_version.pdk_version(root) == _label("commit unknown")
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
 def test_directory_it_may_not_search(tmp_path):
     # Path.exists raises PermissionError here up to Python 3.13.
-    root = _tree(tmp_path / "pdk", STAMPED)
+    root = _tree(tmp_path / "pdk")
     root.chmod(0o600)
     try:
+        if os.access(root / "pyproject.toml", os.R_OK):
+            pytest.skip("this user reads through the mode bits")
         assert pdk_version.pdk_version(root) == _label("commit unknown", "unknown")
     finally:
         root.chmod(0o755)

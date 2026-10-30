@@ -28,11 +28,14 @@ PDK it was made with:
   unknown'.
 A tree that only sits inside another repository never takes that
 repository's commit, and GIT_* variables in the environment are ignored.
-An install without .git therefore keeps pyproject.toml and STAMP at its top.
 
-In a checkout each call starts two git processes. The seal ring calls it on
-every evaluation, so its label follows the tree as its widths follow the
-rule file.
+This repository never writes STAMP. An install that drops .git has to write
+it, and keep pyproject.toml beside it, or the label reads 'unknown' for what
+is missing.
+
+In a checkout each call starts up to two git processes, each bounded by
+GIT_TIMEOUT_S. The seal ring calls it on every evaluation, so its label
+follows the tree as its widths follow the rule file.
 
 Only the standard library is imported, so the module loads without KLayout.
 """
@@ -49,9 +52,8 @@ STAMP = '.shipped-ref'
 NAME = 'intm4tm2'
 COMMIT_ID = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
 STAMPED_ID = re.compile(rf'(?:{COMMIT_ID.pattern})(?:-dirty)?')
-# A git that hangs must not hold up the PCell. Nothing in the process can stop
-# one stuck in uninterruptible I/O on a dead hard mount, so that case is not
-# covered.
+# A git that hangs holds the PCell for at most this long per call. Nothing in
+# the process can stop one stuck in uninterruptible I/O on a dead hard mount.
 GIT_TIMEOUT_S = 10
 
 
@@ -94,7 +96,7 @@ def _git_commit(root):
     cannot read it."""
     out = _git(root, 'rev-parse', '--show-toplevel', 'HEAD')
     lines = out.splitlines() if out else []
-    if len(lines) != 2 or pathlib.Path(lines[0]).resolve() != pathlib.Path(root).resolve():
+    if len(lines) != 2 or os.path.realpath(lines[0]) != os.path.realpath(root):
         return None
     commit = lines[1]
     changes = _git(root, '--no-optional-locks', 'status', '--porcelain', '--untracked-files=no')
@@ -115,12 +117,9 @@ def _stamped_commit(root):
 
 def pdk_version(root=ROOT):
     """The label text for the tree at `root`. It never raises: what cannot be
-    read reads 'unknown'."""
+    read reads 'unknown'. The os.path calls here and in _git_commit never
+    raise, where Path.exists and Path.resolve can."""
     version = declared_version(root) or 'unknown'
-    root = pathlib.Path(root)
-    try:
-        commit = _git_commit(root) if (root / '.git').exists() else _stamped_commit(root)
-    except (OSError, RuntimeError):
-        # A directory it may not search, or a symbolic link loop.
-        commit = None
+    has_git = os.path.exists(os.path.join(root, '.git'))
+    commit = _git_commit(root) if has_git else _stamped_commit(root)
     return f'{NAME} {version} ({commit or "commit unknown"})'
