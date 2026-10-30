@@ -40,7 +40,7 @@ clearance, a check of its own, and the slit rule matches only the tracks it is a
 kicad-cli drops a whole rules file with no message when one token of it is unknown,
 and checks the board against its printed-board defaults instead. So the rules use mm
 only, and only the item properties Type, Width, Size_X, Size_Y and Net, which KiCad
-9.99 was seen to parse. The live test in test_kicad_rules.py runs kicad-cli on them.
+9.99 was seen to parse. A live test in test_kicad_rules.py runs kicad-cli on them.
 
 The ``.kicad_pro`` carries the board setup floors and the netclasses, so the template
 does not open against KiCad's printed-board defaults. A KiCad via stands for the via
@@ -247,7 +247,7 @@ def render_project(rules_doc):
     classes = [netclass(rules, "Default", width, space, biggest, DEFAULT_PRIORITY)]
     classes += [netclass(rules, m, w, s, NETCLASS_VIA[m], i)
                 for i, (m, w, s) in enumerate(PORTED)]
-    # The board floors are the smallest values any layer or via level allows, but for
+    # The board floors are the smallest values any layer or via level allows, except
     # the copper-to-edge floor, EDGE_FLOOR_MM. A cut sits inside metal of its own net,
     # so a hole is at least a metal space from another net's copper.
     floors = {

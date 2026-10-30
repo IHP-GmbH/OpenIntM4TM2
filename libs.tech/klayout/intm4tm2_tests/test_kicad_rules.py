@@ -223,8 +223,8 @@ def test_every_netclass_carries_the_keys_kicad_needs_to_read_it():
 
 
 # ---------------------------------------------------------------------------
-# kicad-cli reads the committed rules: a probe board with copper that breaks each
-# rule KiCad can catch, checked beside the committed .kicad_dru and .kicad_pro.
+# kicad-cli reads the committed rules and project: a probe board with copper that
+# breaks each rule KiCad can catch, and the template board's vias.
 # ---------------------------------------------------------------------------
 KICAD_CLI = shutil.which("kicad-cli")
 
@@ -292,16 +292,20 @@ def _probe_board():
     return "\n".join(head + nets + items) + "\n)\n"
 
 
-def _kicad_drc(tmp_path, board_text):
-    """kicad-cli's violations on a board checked beside the committed rules and project."""
+def _kicad_drc(tmp_path, board_text, project_text=None):
+    """kicad-cli's violations on a board checked beside the committed rules and the
+    committed project, or project_text."""
     version = subprocess.run([KICAD_CLI, "version"], capture_output=True, text=True,
                              timeout=60).stdout.strip()
     assert version.startswith("9.99"), (
         f"the rules were measured on kicad-cli 9.99, this is {version}: measure again")
-    board = tmp_path / "probe.kicad_pcb"
+    tmp_path.mkdir(exist_ok=True)
+    board = tmp_path / "board.kicad_pcb"
     board.write_text(board_text, encoding="utf-8")
-    shutil.copy(DRU, tmp_path / "probe.kicad_dru")
-    shutil.copy(PRO, tmp_path / "probe.kicad_pro")
+    shutil.copy(DRU, tmp_path / "board.kicad_dru")
+    (tmp_path / "board.kicad_pro").write_text(
+        PRO.read_text(encoding="utf-8") if project_text is None else project_text,
+        encoding="utf-8")
     report = tmp_path / "drc.json"
     run = subprocess.run([KICAD_CLI, "pcb", "drc", "--format", "json", "--severity-all",
                           "--units", "mm", "-o", str(report), str(board)],
@@ -314,11 +318,20 @@ def _kicad_drc(tmp_path, board_text):
 @pytest.mark.skipif(KICAD_CLI is None, reason="kicad-cli not on PATH")
 def test_kicad_cli_reads_the_netclasses(tmp_path):
     # KiCad 9.99 drops every netclass of a project that lacks one of its keys, and then
-    # holds each via of the template, one cut wide, to a 0.3 mm diameter.
+    # holds the template's vias, 5 um placeholders in Default, to a 0.3 mm diameter.
+    # The control drops tuning_profile, so each via must fail there.
     template = kicad_rules_gen.TEMPLATE.read_text(encoding="utf-8")
-    assert "(via " in template
-    violations = _kicad_drc(tmp_path, template)
-    assert not [v for v in violations if v["type"] == "via_diameter"], violations
+    vias = template.count("(via ")
+    project = json.loads(PRO.read_text(encoding="utf-8"))
+    for c in project["net_settings"]["classes"]:
+        del c["tuning_profile"]
+
+    def via_errors(name, project_text=None):
+        found = _kicad_drc(tmp_path / name, template, project_text)
+        return [v for v in found if v["type"] == "via_diameter"]
+
+    assert len(via_errors("dropped", json.dumps(project, indent=2) + "\n")) == vias > 0
+    assert via_errors("read") == []
 
 
 @pytest.mark.live_tool

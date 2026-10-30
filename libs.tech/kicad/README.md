@@ -93,10 +93,10 @@ on one item's own size:
   rule that matches it, so as a plain clearance the warning would take over a
   TM2.b error beside a wide track. The pad rule is a plain clearance and an
   error (as a plain-clearance warning it would take over a TM2.b error beside
-  a wide pad). Its length gate fits rectangular pads. A round or octagonal pad,
-  such as the default 80 um octagonal bond pad with sides of about 33 um, has
-  no side as long as TM2_bR_cr, so a track between TM2_b and TM2_bR from it is
-  a KiCad error that the deck accepts.
+  a wide pad). Its length gate fits rectangular pads. A round pad, or an
+  octagonal one like the default 80 um bond pad with sides of about 33 um, may
+  have no side as long as TM2_bR_cr, and then a track between TM2_b and
+  TM2_bR from it is a KiCad error that the deck accepts.
 - Slt.c as a maximum track width on every metal (a warning: a wider track
   needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
   the designer's step, with the KLayout slit macro
@@ -129,7 +129,7 @@ The KLayout decks on the GDS are the DRC that counts.
 kicad-cli drops the whole rules file, with no message, when one token in it is
 unknown (a unit other than mm, an item property KiCad does not know), and then
 checks the board against its printed-board defaults. The generator writes mm
-and the properties Type, Width, Size_X, Size_Y and Net only, and the live test
+and the properties Type, Width, Size_X, Size_Y and Net only, and a live test
 in `test_kicad_rules.py` runs kicad-cli 9.99 on a probe board that breaks each
 rule.
 
@@ -150,7 +150,7 @@ Each netclass carries every key KiCad 9.99 writes for one. KiCad ignores a
 class that lacks one of them (a priority or a tuning profile was seen to
 matter), and then opens the board at its printed-board defaults: a 200 um
 track and clearance and a 600 um via for the interactive router, and a 0.3 mm
-via minimum. The live test checks that kicad-cli holds none of the template's
+via minimum. A live test checks that kicad-cli holds none of the template's
 vias to that minimum.
 
 The deck states no metal-to-edge rule, so the copper-to-edge floor is 0.001

@@ -213,8 +213,8 @@ jobs:
       - name: Full pytest suite
         # -ra prints the reason for anything that skips, so a new one is visible
         # rather than absorbed into the passed count. xschem has no Ubuntu
-        # package, so the symbol test is expected to stay skipped, and so is
-        # the KiCad rules probe, which needs kicad-cli 9.99. -m ""
+        # package, so the symbol test is expected to stay skipped, and so are
+        # the two KiCad rules tests, which need kicad-cli 9.99. -m ""
         # replaces the default "not live_tool and not slow", so the tool cases
         # and the long field solves run here.
         env:
