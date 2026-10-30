@@ -7,9 +7,8 @@
 # KLayout decks on the exported GDS are the DRC that counts.
 #
 # The deck states no metal-to-edge rule. The project file's copper-to-edge
-# floor, 0.001 mm, only keeps copper inside the outline. The seal-ring rules
-# are checked by the sealring deck, and a copper keepout from a placed ring is
-# the sealring owner's decision: this floor says nothing about it.
+# floor, 0.001 mm, only keeps copper inside the outline. It sets no
+# keepout from a placed seal ring; the sealring deck checks the ring.
 #
 # Ported, per copper layer: minimum track width and minimum clearance.
 #   TopMetal2 (F.Cu): TM2_a, TM2_b
@@ -24,8 +23,8 @@
 #   longer than TM2_bR_cr.
 #   Every copper layer: Slt_c, as a maximum track width (a warning:
 #   a wider track needs slits, and no flow step cuts them. Cutting them is
-#   the designer's step, with the KLayout slit macro on the GDS; unslit
-#   copper wider than Slt_c fails the deck).
+#   the designer's step, with the KLayout slit macro on the GDS; the full
+#   deck, not the precheck, reports unslit copper wider than Slt_c).
 # What KiCad does not catch:
 # - It flags a clearance only below the rule less its DRC epsilon, 0.5 um by
 #   default. So the Metal5 and Metal4 space is never caught, and the TopMetal

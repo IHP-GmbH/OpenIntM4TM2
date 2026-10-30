@@ -129,10 +129,10 @@ jobs:
         # real use of the tool should take.
         run: pip install pytest PyYAML "klayout==${KLAYOUT_VERSION}"
 
-      # The cases that start the klayout binary, ngspice or xschem (live_tool)
-      # are deselected by pyproject.toml's default options here, and run in
-      # the `decks` job below, with a real CLI. So are the long field solves
-      # (slow).
+      # The cases that start the klayout binary, ngspice, xschem or kicad-cli
+      # (live_tool) are deselected by pyproject.toml's default options here,
+      # and run in the `decks` job below, with a real CLI. So are the long
+      # field solves (slow).
       - name: Run tests
         env:
           INTERCONNECT_PDK_ROOT: ${{ github.workspace }}/.siblings/interconnect_pdk
@@ -213,7 +213,8 @@ jobs:
       - name: Full pytest suite
         # -ra prints the reason for anything that skips, so a new one is visible
         # rather than absorbed into the passed count. xschem has no Ubuntu
-        # package, so the symbol test is expected to stay skipped. -m ""
+        # package, so the symbol test is expected to stay skipped, and so is
+        # the KiCad rules probe, which needs kicad-cli 9.99. -m ""
         # replaces the default "not live_tool and not slow", so the tool cases
         # and the long field solves run here.
         env:

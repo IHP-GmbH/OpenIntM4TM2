@@ -19,8 +19,8 @@
 
 The values come from ``tech/drc/rule_decks/interposer_tech_default.json``, the file
 the KLayout decks read, so KiCad and KLayout check one number. Which KiCad copper
-layer carries which metal comes from the template board's own layer names. Nothing
-rule value in the output is typed by hand: change the JSON and run this script again.
+layer carries which metal comes from the template board's own layer names. No rule
+value in the output is typed by hand: change the JSON and run this script again.
 The few KiCad-format values that are no DRC rule are the named constants below.
 
 KiCad gets the rules it can check on the copper it draws, in the ``.kicad_dru``: the
@@ -151,9 +151,8 @@ def render(rules_doc, board_text):
         "KLayout decks on the exported GDS are the DRC that counts.",
         "",
         "The deck states no metal-to-edge rule. The project file's copper-to-edge",
-        f"floor, {EDGE_FLOOR_MM} mm, only keeps copper inside the outline. The seal-ring rules",
-        "are checked by the sealring deck, and a copper keepout from a placed ring is",
-        "the sealring owner's decision: this floor says nothing about it.",
+        f"floor, {EDGE_FLOOR_MM} mm, only keeps copper inside the outline. It sets no",
+        "keepout from a placed seal ring; the sealring deck checks the ring.",
         "",
         "Ported, per copper layer: minimum track width and minimum clearance.",
     ]
@@ -167,8 +166,8 @@ def render(rules_doc, board_text):
         f"  longer than {wide_run}.",
         f"  Every copper layer: {SLIT_WIDTH}, as a maximum track width (a warning:",
         "  a wider track needs slits, and no flow step cuts them. Cutting them is",
-        "  the designer's step, with the KLayout slit macro on the GDS; unslit",
-        f"  copper wider than {SLIT_WIDTH} fails the deck).",
+        "  the designer's step, with the KLayout slit macro on the GDS; the full",
+        f"  deck, not the precheck, reports unslit copper wider than {SLIT_WIDTH}).",
         "What KiCad does not catch:",
         "- It flags a clearance only below the rule less its DRC epsilon, 0.5 um by",
         "  default. So the Metal5 and Metal4 space is never caught, and the TopMetal",

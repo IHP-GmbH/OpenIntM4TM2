@@ -95,9 +95,10 @@ can check on one item's own size:
 - Slt.c as a maximum track width on every metal (a warning: a wider track
   needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
   the designer's step, with the KLayout slit macro
-  (`interposer_filler_slit.lym`) on the GDS, and unslit copper wider than
-  Slt_c fails the deck. It matches only tracks wider than Slt_c, so a track under the width
-  minimum stays an error.
+  (`interposer_filler_slit.lym`) on the GDS. The full deck, not the
+  precheck, reports unslit copper wider than Slt_c outside the pad and Recog
+  regions it exempts (and MIM on Metal5 and TopMetal1). The rule matches only
+  tracks wider than Slt_c, so a track under the width minimum stays an error.
 
 Its header lists every other rule key as KLayout only: the other wide-line
 and the 45-degree spacing, vias (the exporter draws their cuts), pad and
@@ -128,8 +129,8 @@ in `test_kicad_rules.py` runs kicad-cli 9.99 on a probe board that breaks each
 rule.
 
 The project file carries the board setup and the netclasses, from the same
-JSON, so the template does not open against KiCad's printed-board defaults (a
-0.2 mm clearance, a 0.3 mm via). A KiCad via stands for the via array the
+JSON, so the template does not open against KiCad's printed-board defaults
+(below). A KiCad via stands for the via array the
 exporter draws: its drill for one cut and its diameter for one cut with the
 metal enclosure on both sides. The board setup floors are the smallest values
 any metal or via level allows (Mn.a, Mn.b; one Via4 cut, its enclosure, the
@@ -148,9 +149,8 @@ via minimum.
 
 The deck states no metal-to-edge rule, so the copper-to-edge floor is 0.001
 mm: it keeps copper inside the outline (with 0, KiCad lets copper that only
-touches the outline through). It says nothing about a seal ring: the seal-ring
-rules are checked by the sealring deck, and a copper keepout from a placed
-ring is the sealring's to decide.
+touches the outline through). It sets no keepout from a placed seal ring;
+the sealring deck checks the ring.
 
 Do not edit either file. After a change to the JSON, run
 
