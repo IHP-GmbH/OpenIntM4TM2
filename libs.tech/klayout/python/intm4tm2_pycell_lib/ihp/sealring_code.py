@@ -43,7 +43,9 @@ both sides of a 0.21 um notch (SG13G2 Act.b), so their cut is wider than
 every metal cut. EdgeSeal and Passiv stay closed.
 
 Two TEXT labels follow the SG13G2 sealring: the registration size (outline
-x and y, and its area in mm^2) and the commit of the PDK checkout.
+x and y, and its area in mm^2) and the PDK version. The version label names
+the declared version and the commit, from git or from the stamp an install
+without .git writes (pdk_version.py).
 
 Widths are the public SG13G2 section 6.10 values, read from the DRC rule
 file rather than from techParams (as bondpad does) because they are rule
@@ -59,6 +61,7 @@ import re
 
 from cni.dlo import *
 from .geometry import *
+from .pdk_version import pdk_version
 from .utility_functions import *
 
 # Section 6.10 introduction and Fig. 6.12: EdgeSeal sits 30 um from the
@@ -226,11 +229,7 @@ class sealring(DloGen):
         area = sizeX * sizeY / 1e12
         sizeLabel = ('Device registration size: x={0:.1f} um ; y={1:.1f} um\n'
                      'Calculated area: {2:.1e} sq mm').format(sizeX / 1000.0, sizeY / 1000.0, area)
-        try:
-            version = get_git_commit_version()
-        except OSError:
-            version = 'Unknown (Not a Git repo or Git not installed)'
-        versionLabel = 'PDK version: ' + version
+        versionLabel = 'PDK version: ' + pdk_version()
 
         # Every check and layer lookup happens before the first shape, so a
         # failure leaves an empty cell rather than a partial ring.

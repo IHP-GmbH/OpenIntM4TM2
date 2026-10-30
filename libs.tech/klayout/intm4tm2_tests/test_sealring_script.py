@@ -24,7 +24,8 @@ layout with its ring removed gets the ring back from the script at the
 example's own outline, and the result equals the example except for the
 ring's version marks and labels. Every refusal exits 1 with one error line
 and writes nothing, including a library module loaded from another tree and
-another layer table.
+another layer table. A copy of the tree without .git, as an install has it,
+labels the ring with the commit its install stamp names, or 'commit unknown'.
 """
 
 import os
@@ -52,7 +53,7 @@ pytestmark = [pytest.mark.live_tool,
               pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")]
 
 
-def _run(tmp_path, klayout_path=None, lyp=None, **defines):
+def _run(tmp_path, klayout_path=None, lyp=None, script=SCRIPT, **defines):
     home = tmp_path / "klayout_home"
     home.mkdir(exist_ok=True)
     env = dict(os.environ, KLAYOUT_HOME=str(home))
@@ -62,7 +63,7 @@ def _run(tmp_path, klayout_path=None, lyp=None, **defines):
         env["KLAYOUT_PATH"] = str(klayout_path)
     if lyp is not None:
         env["KLAYOUT_LYP_FILE"] = str(lyp)
-    args = [KLAYOUT_BIN, "-zz", "-r", str(SCRIPT)]
+    args = [KLAYOUT_BIN, "-zz", "-r", str(script)]
     for name, value in defines.items():
         args += ["-rd", f"{name}={value}"]
     return subprocess.run(args, capture_output=True, text=True, env=env, timeout=300)
@@ -303,3 +304,25 @@ def test_layer_table_that_changes_nothing_is_accepted(tmp_path, lyp):
     result = _run(tmp_path, lyp=path, length="1000", width="800", output=output)
     assert result.returncode == 0, result.stdout + result.stderr
     assert output.exists()
+
+
+@pytest.mark.parametrize("stamp", [None, "0123456789abcdef0123456789abcdef01234567"],
+                         ids=["unstamped", "stamped"])
+def test_install_without_git(tmp_path, stamp):
+    # The tree as an install has it: no .git, and the commit, if any, in the
+    # stamp the install writes at the top of the tree.
+    root = tmp_path / "pdk"
+    shutil.copytree(REPO_KLAYOUT, root / "libs.tech" / "klayout",
+                    ignore=shutil.ignore_patterns("__pycache__", "intm4tm2_tests"))
+    (root / "pyproject.toml").write_text('[project]\nname = "intm4tm2"\nversion = "9.8.7"\n')
+    if stamp is not None:
+        (root / ".shipped-ref").write_text(stamp + "\n")
+    output = tmp_path / "ring.gds"
+    result = _run(tmp_path, script=root / SCRIPT.relative_to(REPO_KLAYOUT.parents[1]),
+                  length="1000", width="800", output=output)
+    assert result.returncode == 0, result.stdout + result.stderr
+    layout = _read(output)
+    texts = layout.top_cell().begin_shapes_rec(layout.find_layer(*TEXT))
+    labels = [it.shape().text_string for it in texts if it.shape().is_text()]
+    versions = [label for label in labels if label.startswith("PDK version: ")]
+    assert versions == [f"PDK version: intm4tm2 9.8.7 ({stamp or 'commit unknown'})"]

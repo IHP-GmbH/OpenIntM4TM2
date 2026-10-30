@@ -35,6 +35,7 @@ the seal, filler and density decks. The fill macros stop, each with its own
 reason, on a ring that cannot bound the fill.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -410,6 +411,16 @@ SIZE_LABEL = re.compile(r"Device registration size: x=([0-9.]+) um ; y=([0-9.]+)
                         r"Calculated area: ([0-9.e+-]+) sq mm")
 
 
+def _pdk_version():
+    """This tree's version label, from the module the PCell calls. The module
+    is loaded alone: the library package registers itself with KLayout."""
+    spec = importlib.util.spec_from_file_location(
+        "pdk_version", PYTHON_DIR / "intm4tm2_pycell_lib" / "ihp" / "pdk_version.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.pdk_version()
+
+
 def _texts(cell, index, trans=kdb.ICplxTrans()):
     """(x, y, string) of every text under `cell`, sorted, in nm."""
     texts = []
@@ -435,7 +446,8 @@ def test_labels(generated, case):
     assert abs(x_um - size[0] / 1000) <= 0.05 and abs(y_um - size[1] / 1000) <= 0.05
     # The area of the outline in mm^2, to the label's two digits.
     assert area_mm2 == pytest.approx(x_um * y_um / 1e6, rel=0.05)
-    assert texts[1][2].startswith("PDK version: ")
+    # Where the commit comes from is test_pdk_version.py's matter.
+    assert texts[1][2] == "PDK version: " + _pdk_version()
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=[path.stem for path in EXAMPLES])
