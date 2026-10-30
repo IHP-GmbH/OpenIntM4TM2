@@ -50,6 +50,6 @@ ENV/
 libs.tech/klayout/tech/drc/testing/regression_run/
 libs.tech/klayout/tech/lvs/testing/regression_run/
 
-# Written by an install without .git: the commit the PDK tree is at, which
-# the seal ring's version label reads.
+# The commit stamp of a tree installed without .git, which the seal ring's
+# version label reads (pdk_version.py); never tracked here.
 /.shipped-ref

@@ -309,8 +309,8 @@ def test_layer_table_that_changes_nothing_is_accepted(tmp_path, lyp):
 @pytest.mark.parametrize("stamp", [None, "0123456789abcdef0123456789abcdef01234567"],
                          ids=["unstamped", "stamped"])
 def test_install_without_git(tmp_path, stamp):
-    # The tree as an install has it: no .git, and the commit, if any, in the
-    # stamp the install writes at the top of the tree.
+    # The tree as an install has it: no .git, and the commit, if any, in a
+    # stamp at the top of the tree.
     root = tmp_path / "pdk"
     shutil.copytree(REPO_KLAYOUT, root / "libs.tech" / "klayout",
                     ignore=shutil.ignore_patterns("__pycache__", "intm4tm2_tests", "regression_run"))

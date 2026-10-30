@@ -20,18 +20,19 @@
 The version is the one the [project] table of the tree's pyproject.toml
 declares. The commit is the one the tree is at, so a layout names the exact
 PDK it was made with:
-- a tree with .git takes it from git, and only when the tree is the top of
-  its own work tree, with '-dirty' when a tracked file differs from it;
-- a tree without .git takes it from STAMP at its top, which the install
-  writes: the commit id alone on one line, '-dirty' allowed;
+- a tree with a .git entry, even one that cannot be followed, takes it
+  from git, and only when the tree is the top of its own work tree, with
+  '-dirty' when a tracked file differs from it;
+- a tree without .git takes it from STAMP at its top: the commit id alone
+  on one line, '-dirty' allowed;
 - otherwise, or when git cannot read the tree, the label says 'commit
   unknown'.
 A tree that only sits inside another repository never takes that
 repository's commit, and GIT_* variables in the environment are ignored.
 
-This repository never writes STAMP. An install that drops .git has to write
-it, and keep pyproject.toml beside it, or the label reads 'unknown' for what
-is missing.
+This repository never writes STAMP. Whatever installs the tree without .git
+has to write it, and keep pyproject.toml beside it; otherwise the label reads
+'unknown' for what is missing.
 
 In a checkout each call starts up to two git processes, each bounded by
 GIT_TIMEOUT_S. The seal ring calls it on every evaluation, so its label
@@ -96,6 +97,7 @@ def _git_commit(root):
     cannot read it."""
     out = _git(root, 'rev-parse', '--show-toplevel', 'HEAD')
     lines = out.splitlines() if out else []
+    # os.path.realpath, unlike Path.resolve, does not raise on a loop.
     if len(lines) != 2 or os.path.realpath(lines[0]) != os.path.realpath(root):
         return None
     commit = lines[1]
@@ -116,10 +118,11 @@ def _stamped_commit(root):
 
 
 def pdk_version(root=ROOT):
-    """The label text for the tree at `root`. It never raises: what cannot be
-    read reads 'unknown'. The os.path calls here and in _git_commit never
-    raise, where Path.exists and Path.resolve can."""
+    """The label text for the tree at `root`. A path that is missing,
+    unreadable or loops reads 'unknown' rather than raising."""
     version = declared_version(root) or 'unknown'
-    has_git = os.path.exists(os.path.join(root, '.git'))
+    # os.path.lexists, unlike Path.exists, does not raise on a directory it
+    # may not search, and it counts a .git it cannot follow.
+    has_git = os.path.lexists(os.path.join(root, '.git'))
     commit = _git_commit(root) if has_git else _stamped_commit(root)
     return f'{NAME} {version} ({commit or "commit unknown"})'

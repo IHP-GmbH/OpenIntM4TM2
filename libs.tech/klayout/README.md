@@ -491,9 +491,10 @@ The menu integration test launches its own offscreen Qt application with
 isolated settings; it does not edit the user's configuration or current layout.
 
 A bare `pytest` starts none of the design tools. It does run git, for the PDK
-version label (`test_pdk_version.py`, whose git cases skip without it). The cases that run the `klayout` binary, ngspice, xschem or
-kicad-cli carry the `live_tool` marker and are deselected by the default options
-in `pyproject.toml`; `pytest -m live_tool` runs them, and `pytest -m ""` runs
+version label (`test_pdk_version.py`, whose git cases skip without it). The
+cases that run the `klayout` binary, ngspice, xschem or kicad-cli carry the
+`live_tool` marker and are deselected by the default options in
+`pyproject.toml`; `pytest -m live_tool` runs them, and `pytest -m ""` runs
 every case. The routed-load field solves that take more than about 1.5 s at one
 CPU carry `slow` and are deselected the same way; `pytest -m slow` runs them.
 The `test_bump_mirror.py` cases that read gds2kicad or the

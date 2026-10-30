@@ -44,8 +44,8 @@ every metal cut. EdgeSeal and Passiv stay closed.
 
 Two TEXT labels follow the SG13G2 sealring: the registration size (outline
 x and y, and its area in mm^2) and the PDK version. The version label names
-the declared version and the commit, from git or from the stamp an install
-without .git writes (pdk_version.py).
+the declared version and the commit the tree is at; pdk_version.py says
+where each comes from.
 
 Widths are the public SG13G2 section 6.10 values, read from the DRC rule
 file rather than from techParams (as bondpad does) because they are rule

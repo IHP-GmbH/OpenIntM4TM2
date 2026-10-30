@@ -186,7 +186,7 @@ def test_git_not_installed(tmp_path, monkeypatch):
 
 
 def test_directory_it_may_not_search(tmp_path):
-    # Path.exists raises PermissionError here up to Python 3.13.
+    # Path.exists raises PermissionError here on Python 3.12 and 3.13.
     root = _tree(tmp_path / "pdk")
     root.chmod(0o600)
     try:
@@ -195,6 +195,13 @@ def test_directory_it_may_not_search(tmp_path):
         assert pdk_version.pdk_version(root) == _label("commit unknown", "unknown")
     finally:
         root.chmod(0o755)
+
+
+def test_git_entry_it_cannot_follow(tmp_path):
+    # Still a checkout, so a stamp left in it is not read.
+    root = _tree(tmp_path / "pdk", STAMPED)
+    (root / ".git").symlink_to(tmp_path / "gone.git")
+    assert pdk_version.pdk_version(root) == _label("commit unknown")
 
 
 def test_hung_git(tmp_path, monkeypatch):
