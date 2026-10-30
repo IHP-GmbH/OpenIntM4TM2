@@ -31,9 +31,10 @@ Sizes and offsets must be on the 5 nm grid.
 The PCell is taken from the library of the tree this script belongs to; a
 library, or a module it imports, already loaded from another tree is refused
 (run with -rx to skip the autorun macros that load it), and so is a
-KLAYOUT_LYP_FILE that would give the library another layer table. The output
-carries no PCell context. The script exits 0 after one 'sealring: wrote' line,
-or 1 after one 'sealring: error:' line.
+KLAYOUT_LYP_FILE naming an existing file other than this tree's
+tech/intm4tm2.lyp, from which the library would take its layer table. The
+output carries no PCell context. The script exits 0 after one
+'sealring: wrote' line, or 1 after one 'sealring: error:' line.
 """
 # pylint: disable=import-error
 import builtins
@@ -110,17 +111,21 @@ def check_sources():
 
 
 def check_layer_table():
-    """Refuse a KLAYOUT_LYP_FILE other than this tree's: the library reads its
-    layer table from that file when it exists, so the ring would be drawn on
-    another PDK's layers."""
+    """Refuse a KLAYOUT_LYP_FILE naming an existing file other than this
+    tree's tech/intm4tm2.lyp, even a copy of it. The library takes its layer
+    table from that file when it exists (intm4tm2_pycell_lib/intm4tm2_tech.py),
+    and a table this script cannot check could retag the ring's layers."""
     lyp = os.environ.get('KLAYOUT_LYP_FILE')
-    if lyp is not None and os.path.exists(lyp) and pathlib.Path(lyp).resolve() != LYP:
+    if lyp is None or not os.path.exists(lyp):
+        return
+    if not (LYP.exists() and os.path.samefile(lyp, LYP)):
         raise SealringError(f"KLAYOUT_LYP_FILE={lyp} would replace the {LIB} layer table; unset it")
 
 
 def load_library():
-    """Register the technology and the PCell library of this tree, and refuse
-    a library, or a module it imports, that another tree loaded first."""
+    """Register the technology and the PCell library of this tree. Refuse
+    another layer table, and a library or a module it imports that another
+    tree loaded first."""
     check_layer_table()
     if TECH not in pya.Technology.technology_names():
         pya.Technology.create_technology(TECH).load(str(LYT))

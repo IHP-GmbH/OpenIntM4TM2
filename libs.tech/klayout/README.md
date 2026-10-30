@@ -431,9 +431,11 @@ the ring goes into that layout's only top cell, its outline's lower-left corner
 at the offset. Sizes and offsets must be on the 5 nm grid. The PCell comes from
 this tree; the library or a module it imports loaded first from another tree
 is refused (`-rx` skips the autorun macros that load them), and so is a
-`KLAYOUT_LYP_FILE` other than this tree's `tech/intm4tm2.lyp`, which would
-give the library another layer table. The output carries no PCell context. The script exits 0 after one `sealring: wrote` line
-and 1 after one `sealring: error:` line (`intm4tm2_tests/test_sealring_script.py`).
+`KLAYOUT_LYP_FILE` naming an existing file other than this tree's
+`tech/intm4tm2.lyp`, even a copy, since the library would take its layer table
+from it. The output carries no PCell context. The script exits 0 after one
+`sealring: wrote` line and 1 after one `sealring: error:` line
+(`intm4tm2_tests/test_sealring_script.py`).
 
 The PCell is the single source of the Cu-pillar pad fabrication geometry:
 `bump_mirror.CuPillarGenerator` is a thin placer that instantiates

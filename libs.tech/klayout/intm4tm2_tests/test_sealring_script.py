@@ -277,7 +277,7 @@ def test_library_of_this_tree_on_klayout_path(tmp_path):
     assert _region(_read(output), _read(output).top_cell(), BOUNDARY).bbox() == kdb.Box(0, 0, 1000000, 800000)
 
 
-def test_layer_table_of_another_tree_is_refused(tmp_path):
+def test_other_layer_table_is_refused(tmp_path):
     # The library takes its layer table from KLAYOUT_LYP_FILE when the file
     # exists. Any other file is refused, even a copy: the script cannot tell
     # what another table would retag.
@@ -291,10 +291,14 @@ def test_layer_table_of_another_tree_is_refused(tmp_path):
     assert not output.exists()
 
 
-@pytest.mark.parametrize("lyp", ["this_tree", "missing"])
+@pytest.mark.parametrize("lyp", ["this_tree", "link", "missing"])
 def test_layer_table_that_changes_nothing_is_accepted(tmp_path, lyp):
-    # The library ignores a KLAYOUT_LYP_FILE that does not exist.
-    path = LYP if lyp == "this_tree" else tmp_path / "missing.lyp"
+    # A link to this tree's table is that table; the library ignores a
+    # KLAYOUT_LYP_FILE that does not exist.
+    path = {"this_tree": LYP, "link": tmp_path / "link.lyp",
+            "missing": tmp_path / "missing.lyp"}[lyp]
+    if lyp == "link":
+        path.symlink_to(LYP)
     output = tmp_path / "ring.gds"
     result = _run(tmp_path, lyp=path, length="1000", width="800", output=output)
     assert result.returncode == 0, result.stdout + result.stderr
