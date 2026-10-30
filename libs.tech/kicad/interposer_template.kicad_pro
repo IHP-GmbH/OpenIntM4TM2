@@ -10,7 +10,8 @@
         "min_through_hole_diameter": 0.00019,
         "min_via_annular_width": 5e-05,
         "min_hole_to_hole": 0.00022,
-        "min_hole_clearance": 0.00021
+        "min_hole_clearance": 0.00021,
+        "min_copper_edge_clearance": 0.001
       }
     }
   },
@@ -27,7 +28,17 @@
         "via_diameter": 0.0019,
         "via_drill": 0.0009,
         "microvia_diameter": 0.0019,
-        "microvia_drill": 0.0009
+        "microvia_drill": 0.0009,
+        "diff_pair_width": 0.002,
+        "diff_pair_gap": 0.002,
+        "diff_pair_via_gap": 0.002,
+        "priority": 2147483647,
+        "bus_width": 12,
+        "wire_width": 6,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "tuning_profile": ""
       },
       {
         "name": "TopMetal2",
@@ -36,7 +47,17 @@
         "via_diameter": 0.0019,
         "via_drill": 0.0009,
         "microvia_diameter": 0.0019,
-        "microvia_drill": 0.0009
+        "microvia_drill": 0.0009,
+        "diff_pair_width": 0.002,
+        "diff_pair_gap": 0.002,
+        "diff_pair_via_gap": 0.002,
+        "priority": 0,
+        "bus_width": 12,
+        "wire_width": 6,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "tuning_profile": ""
       },
       {
         "name": "TopMetal1",
@@ -45,7 +66,17 @@
         "via_diameter": 0.00126,
         "via_drill": 0.00042,
         "microvia_diameter": 0.00126,
-        "microvia_drill": 0.00042
+        "microvia_drill": 0.00042,
+        "diff_pair_width": 0.00164,
+        "diff_pair_gap": 0.00164,
+        "diff_pair_via_gap": 0.00164,
+        "priority": 1,
+        "bus_width": 12,
+        "wire_width": 6,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "tuning_profile": ""
       },
       {
         "name": "Metal5",
@@ -54,7 +85,17 @@
         "via_diameter": 0.00029,
         "via_drill": 0.00019,
         "microvia_diameter": 0.00029,
-        "microvia_drill": 0.00019
+        "microvia_drill": 0.00019,
+        "diff_pair_width": 0.0002,
+        "diff_pair_gap": 0.00021,
+        "diff_pair_via_gap": 0.00021,
+        "priority": 2,
+        "bus_width": 12,
+        "wire_width": 6,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "tuning_profile": ""
       },
       {
         "name": "Metal4",
@@ -63,7 +104,17 @@
         "via_diameter": 0.00029,
         "via_drill": 0.00019,
         "microvia_diameter": 0.00029,
-        "microvia_drill": 0.00019
+        "microvia_drill": 0.00019,
+        "diff_pair_width": 0.0002,
+        "diff_pair_gap": 0.00021,
+        "diff_pair_via_gap": 0.00021,
+        "priority": 3,
+        "bus_width": 12,
+        "wire_width": 6,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "tuning_profile": ""
       }
     ],
     "meta": {

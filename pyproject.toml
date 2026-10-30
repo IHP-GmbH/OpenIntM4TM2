@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intm4tm2"
-version = "0.1.0"
+version = "0.2.0"
 description = "KLayout PDK and assembly tooling for the IHP 130-nm IntM4TM2 aluminium BEOL interposer."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,11 +33,11 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # ini key into an error instead of a silently ignored line.
 #
 # A bare `pytest` starts no external tool. The cases that run the klayout
-# binary, ngspice or xschem carry live_tool and are deselected here: a name on
-# PATH is enough to start them, and the klayout wheel ships the Python module
-# without the binary. The field solves that take more than about 1.5 s at one
-# CPU carry slow and are deselected too, so the default run stays fast. A
-# command-line -m replaces this one:
+# binary, ngspice, xschem or kicad-cli carry live_tool and are deselected
+# here: a name on PATH is enough to start them, and the klayout wheel ships
+# the Python module without the binary. The field solves that take more than
+# about 1.5 s at one CPU carry slow and are deselected too, so the default
+# run stays fast. A command-line -m replaces this one:
 #   pytest -m live_tool     the tool cases
 #   pytest -m slow          the long field solves
 #   pytest -m ""            every case
@@ -45,7 +45,7 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # own selection, and its T1 is exactly those cases.
 addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not live_tool and not slow"]
 markers = [
-    "live_tool: starts the klayout binary, ngspice or xschem (opt-in, pytest -m live_tool); skips when the tool is not on PATH",
+    "live_tool: starts the klayout binary, ngspice, xschem or kicad-cli (opt-in, pytest -m live_tool); skips when the tool is not on PATH",
     "slow: a field solve that takes more than about 1.5 s at one CPU (opt-in, pytest -m slow)",
     "needs_sibling_sources(*ids): reads a sibling repository's tree, from its variable or from $HCDP_ROOT/<id>",
 ]
