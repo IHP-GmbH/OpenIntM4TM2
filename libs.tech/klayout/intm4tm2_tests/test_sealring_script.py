@@ -23,7 +23,8 @@ sizes, offset and input handling are checked on an IHP-made ring: an example
 layout with its ring removed gets the ring back from the script at the
 example's own outline, and the result equals the example except for the
 ring's version marks and labels. Every refusal exits 1 with one error line
-and writes nothing, including a library module loaded from another tree.
+and writes nothing, including a library module loaded from another tree and
+another layer table.
 """
 
 import os
@@ -37,6 +38,7 @@ import klayout.db as kdb
 
 REPO_KLAYOUT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_KLAYOUT / "tech" / "scripts" / "sealring.py"
+LYP = REPO_KLAYOUT / "tech" / "intm4tm2.lyp"
 EXAMPLE = REPO_KLAYOUT.parents[1] / "libs.ref" / "intm4tm2_examples" / "gds" / "T591_BEOL_D1_300u.gds"
 KLAYOUT_BIN = shutil.which("klayout")
 
@@ -50,7 +52,7 @@ pytestmark = [pytest.mark.live_tool,
               pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")]
 
 
-def _run(tmp_path, klayout_path=None, **defines):
+def _run(tmp_path, klayout_path=None, lyp=None, **defines):
     home = tmp_path / "klayout_home"
     home.mkdir(exist_ok=True)
     env = dict(os.environ, KLAYOUT_HOME=str(home))
@@ -58,6 +60,8 @@ def _run(tmp_path, klayout_path=None, **defines):
     env.pop("KLAYOUT_PATH", None)
     if klayout_path is not None:
         env["KLAYOUT_PATH"] = str(klayout_path)
+    if lyp is not None:
+        env["KLAYOUT_LYP_FILE"] = str(lyp)
     args = [KLAYOUT_BIN, "-zz", "-r", str(SCRIPT)]
     for name, value in defines.items():
         args += ["-rd", f"{name}={value}"]
@@ -271,3 +275,27 @@ def test_library_of_this_tree_on_klayout_path(tmp_path):
     result = _run(tmp_path, klayout_path=REPO_KLAYOUT, length="1000", width="800", output=output)
     assert result.returncode == 0, result.stdout + result.stderr
     assert _region(_read(output), _read(output).top_cell(), BOUNDARY).bbox() == kdb.Box(0, 0, 1000000, 800000)
+
+
+def test_layer_table_of_another_tree_is_refused(tmp_path):
+    # The library takes its layer table from KLAYOUT_LYP_FILE when the file
+    # exists. Any other file is refused, even a copy: the script cannot tell
+    # what another table would retag.
+    other = tmp_path / "other.lyp"
+    shutil.copy(LYP, other)
+    output = tmp_path / "ring.gds"
+    result = _run(tmp_path, lyp=other, length="1000", width="800", output=output)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines()[-1] == (
+        f"sealring: error: KLAYOUT_LYP_FILE={other} would replace the IntM4TM2 layer table; unset it")
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("lyp", ["this_tree", "missing"])
+def test_layer_table_that_changes_nothing_is_accepted(tmp_path, lyp):
+    # The library ignores a KLAYOUT_LYP_FILE that does not exist.
+    path = LYP if lyp == "this_tree" else tmp_path / "missing.lyp"
+    output = tmp_path / "ring.gds"
+    result = _run(tmp_path, lyp=path, length="1000", width="800", output=output)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert output.exists()

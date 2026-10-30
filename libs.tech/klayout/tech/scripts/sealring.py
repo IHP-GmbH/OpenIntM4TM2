@@ -30,13 +30,15 @@ Sizes and offsets must be on the 5 nm grid.
 
 The PCell is taken from the library of the tree this script belongs to; a
 library, or a module it imports, already loaded from another tree is refused
-(run with -rx to skip the autorun macros that load it). The output carries no
-PCell context. The script exits 0 after one 'sealring: wrote' line, or 1 after
-one 'sealring: error:' line.
+(run with -rx to skip the autorun macros that load it), and so is a
+KLAYOUT_LYP_FILE that would give the library another layer table. The output
+carries no PCell context. The script exits 0 after one 'sealring: wrote' line,
+or 1 after one 'sealring: error:' line.
 """
 # pylint: disable=import-error
 import builtins
 import decimal
+import os
 import pathlib
 import sys
 
@@ -52,6 +54,7 @@ KLAYOUT_DIR = pathlib.Path(__file__).resolve().parents[2]
 PYTHON_DIR = KLAYOUT_DIR / 'python'
 API_DIR = PYTHON_DIR / 'pycell4klayout-api' / 'source' / 'python'
 LYT = KLAYOUT_DIR / 'tech' / 'intm4tm2.lyt'
+LYP = KLAYOUT_DIR / 'tech' / 'intm4tm2.lyp'
 
 # The library and the modules it imports, and the directory each comes from.
 # cni is a package without __init__.py, so its modules are named instead.
@@ -106,9 +109,19 @@ def check_sources():
                                 "run with -rx or without the KLAYOUT_PATH entry that loads it")
 
 
+def check_layer_table():
+    """Refuse a KLAYOUT_LYP_FILE other than this tree's: the library reads its
+    layer table from that file when it exists, so the ring would be drawn on
+    another PDK's layers."""
+    lyp = os.environ.get('KLAYOUT_LYP_FILE')
+    if lyp is not None and os.path.exists(lyp) and pathlib.Path(lyp).resolve() != LYP:
+        raise SealringError(f"KLAYOUT_LYP_FILE={lyp} would replace the {LIB} layer table; unset it")
+
+
 def load_library():
     """Register the technology and the PCell library of this tree, and refuse
     a library, or a module it imports, that another tree loaded first."""
+    check_layer_table()
     if TECH not in pya.Technology.technology_names():
         pya.Technology.create_technology(TECH).load(str(LYT))
     # First on sys.path, ahead of any other tree's copy.
