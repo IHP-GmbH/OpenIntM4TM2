@@ -58,12 +58,12 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
   - sealreq_off_no_seal: core only and no define -> {} (the default is unchanged)
   - sealreq_slit: every metal and via ring cut once on the right side, the
     metals by their minimum space, the vias by 2.81 um (the widest cut a slit
-    may have) -> {}; sealreq_slit_wide_TM2 (TopMetal2 cut 2.815 um) and
+    may have) -> {}; sealreq_slit_wide_TM2 (a 2.815 um TopMetal2 cut) and
     sealreq_slit_two_cuts_M4 (a second Metal4 cut) -> {SEAL.REQ.3_TM2,
     SEAL.REQ.3_TV2} and {SEAL.REQ.3_M4, SEAL.REQ.3_V4}, the via ring lying
     over the extra metal cut; sealreq_slit_es_cut (EdgeSeal cut as well)
     -> {SEAL.REQ.3_ES};
-    sealreq_slit_via_short_TM2 (TopVia2 cut 0.5 um, inside the TopMetal2 cut)
+    sealreq_slit_via_short_TM2 (a 0.5 um TopVia2 cut, inside the TopMetal2 cut)
     -> {SEAL.REQ.3_TV2}; sealreq_slit_misaligned (the Metal5 cut on the top
     side, the others on the right) -> {SEAL.REQ.3_V4, SEAL.REQ.3_TV1}
   - sealreq_corner_marks: a ring whose corners step in, with 2 x 2 um Metal4
