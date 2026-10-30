@@ -97,7 +97,8 @@ def _git_commit(root):
     cannot read it."""
     out = _git(root, 'rev-parse', '--show-toplevel', 'HEAD')
     lines = out.splitlines() if out else []
-    # os.path.realpath, unlike Path.resolve, does not raise on a loop.
+    # os.path.realpath does not raise on a loop; Path.resolve does up to
+    # Python 3.12.
     if len(lines) != 2 or os.path.realpath(lines[0]) != os.path.realpath(root):
         return None
     commit = lines[1]

@@ -186,7 +186,7 @@ def test_git_not_installed(tmp_path, monkeypatch):
 
 
 def test_directory_it_may_not_search(tmp_path):
-    # Path.exists raises PermissionError here on Python 3.12 and 3.13.
+    # Path.exists raises PermissionError here, up to Python 3.13.
     root = _tree(tmp_path / "pdk")
     root.chmod(0o600)
     try:
