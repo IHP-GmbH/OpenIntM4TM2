@@ -28,6 +28,11 @@ PDK it was made with:
   unknown'.
 A tree that only sits inside another repository never takes that
 repository's commit, and GIT_* variables in the environment are ignored.
+An install without .git therefore keeps pyproject.toml and STAMP at its top.
+
+In a checkout each call starts two git processes. The seal ring calls it on
+every evaluation, so its label follows the tree as its widths follow the
+rule file.
 
 Only the standard library is imported, so the module loads without KLayout.
 """
@@ -44,7 +49,9 @@ STAMP = '.shipped-ref'
 NAME = 'intm4tm2'
 COMMIT_ID = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
 STAMPED_ID = re.compile(rf'(?:{COMMIT_ID.pattern})(?:-dirty)?')
-# A hung git (a stale network mount) must not hold up the PCell.
+# A git that hangs must not hold up the PCell. Nothing in the process can stop
+# one stuck in uninterruptible I/O on a dead hard mount, so that case is not
+# covered.
 GIT_TIMEOUT_S = 10
 
 
@@ -111,5 +118,9 @@ def pdk_version(root=ROOT):
     read reads 'unknown'."""
     version = declared_version(root) or 'unknown'
     root = pathlib.Path(root)
-    commit = _git_commit(root) if (root / '.git').exists() else _stamped_commit(root)
+    try:
+        commit = _git_commit(root) if (root / '.git').exists() else _stamped_commit(root)
+    except (OSError, RuntimeError):
+        # A directory it may not search, or a symbolic link loop.
+        commit = None
     return f'{NAME} {version} ({commit or "commit unknown"})'

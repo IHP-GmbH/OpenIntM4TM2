@@ -19,9 +19,9 @@
 the seal ring writes on TEXT 63/0.
 
 Each case builds a tree with its own pyproject.toml and, where it needs one,
-its own git repository, and checks the whole label: the commit comes from
-the tree's own checkout, else from the install stamp, else it reads 'commit
-unknown'. Neither a repository the tree only sits in nor GIT_* variables in
+its own git repository, and checks the whole label: a tree with .git takes
+the commit from its own checkout, a tree without it from the install stamp,
+and otherwise the label reads 'commit unknown'. Neither a repository the tree only sits in nor GIT_* variables in
 the environment can lend the tree another commit, and a stamp never speaks
 for a tree with .git.
 """
@@ -130,7 +130,7 @@ def test_tracked_change_is_dirty_untracked_file_is_not(tmp_path):
 
 
 @needs_git
-def test_checkout_wins_over_stamp(tmp_path):
+def test_stamp_in_a_checkout_is_ignored(tmp_path):
     root = _tree(tmp_path / "pdk", STAMPED)
     head = _commit(root)
     assert pdk_version.pdk_version(root) == _label(head)
@@ -183,6 +183,17 @@ def test_git_not_installed(tmp_path, monkeypatch):
     _commit(root)
     monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
     assert pdk_version.pdk_version(root) == _label("commit unknown")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_directory_it_may_not_search(tmp_path):
+    # Path.exists raises PermissionError here up to Python 3.13.
+    root = _tree(tmp_path / "pdk", STAMPED)
+    root.chmod(0o600)
+    try:
+        assert pdk_version.pdk_version(root) == _label("commit unknown", "unknown")
+    finally:
+        root.chmod(0o755)
 
 
 def test_hung_git(tmp_path, monkeypatch):
