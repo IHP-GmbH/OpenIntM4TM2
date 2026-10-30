@@ -153,6 +153,16 @@ def test_tree_inside_another_repository(tmp_path, stamp):
 
 
 @needs_git
+def test_broken_git_dir_inside_another_repository(tmp_path):
+    # git passes over a .git that is not a repository and finds the one the
+    # tree sits in.
+    root = _tree(tmp_path / "design" / "pdk")
+    _commit(tmp_path / "design")
+    (root / ".git").mkdir()
+    assert pdk_version.pdk_version(root) == _label("commit unknown")
+
+
+@needs_git
 def test_git_variables_do_not_redirect(tmp_path, monkeypatch):
     # As in a git hook of another repository that draws a ring.
     other = _tree(tmp_path / "other")
