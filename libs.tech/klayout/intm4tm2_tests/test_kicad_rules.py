@@ -20,8 +20,8 @@
 libs.tech/kicad/interposer_template.kicad_dru and interposer_template.kicad_pro are
 written by libs.tech/kicad/scripts/kicad_rules_gen.py from interposer_tech_default.json.
 A value changed in the JSON without running the script, or typed into either file, is
-a KiCad check that no longer agrees with the KLayout deck. The project's other values
-(netclass display keys, the copper-to-edge floor) are KiCad 9.99's own.
+a KiCad check that no longer agrees with the KLayout deck. The netclass display keys
+are KiCad 9.99's own; the copper-to-edge floor is the value measured on it.
 
 kicad-cli drops a rules file it cannot parse without a message, so the hermetic tests
 pin the units and the item properties to what KiCad 9.99 was seen to read. The
@@ -56,8 +56,9 @@ RULES = json.loads((ROOT / "libs.tech/klayout/tech/drc/rule_decks/"
 sys.path.insert(0, str(KICAD / "scripts"))
 import kicad_rules_gen  # noqa: E402
 
-# Read on its own, not from the generator: per rule, its JSON key, KiCad layer,
-# constraint, bound and severity, and the condition it carries (None for none).
+# Read on its own, not from the generator: per rule in file order, its JSON key,
+# KiCad layer, constraint, bound and severity, and the condition it carries (None
+# for none).
 LAYERS = {"TopMetal2": "F.Cu", "TopMetal1": "In1.Cu", "Metal5": "In2.Cu", "Metal4": "B.Cu"}
 
 
@@ -131,8 +132,10 @@ def test_every_rule_carries_its_json_value():
     text = DRU.read_text(encoding="utf-8")
     found = rules_in(text)
     assert text.count("(rule ") == len(found) == len(EXPECTED)
-    assert sorted((r["key"], r["layer"], r["constraint"], r["bound"], r["severity"] or "error",
-                   r["condition"]) for r in found) == sorted(EXPECTED)
+    # In file order: KiCad applies the last rule that matches a pair, so the TM2.bR pad
+    # rule must follow TM2.b, and the slit rules the width minimums.
+    assert [(r["key"], r["layer"], r["constraint"], r["bound"], r["severity"] or "error",
+             r["condition"]) for r in found] == EXPECTED
     for r in found:
         assert r["value"] == mm(r["key"]), r["name"]
 
@@ -179,9 +182,9 @@ def test_every_project_value_is_its_json_keys():
     assert floors.keys() == FLOORS.keys() | {EDGE_FLOOR}
     for field, keys in FLOORS.items():
         assert Decimal(str(floors[field])) * 1000 == um(*keys), field
-    # A range on purpose: any floor above 0 flags copper that touches the outline,
-    # and 1 um or less says nothing about the space inside it.
-    assert 0 < floors[EDGE_FLOOR] <= 0.001
+    # Measured on kicad-cli 9.99: 0 lets copper that touches the outline through,
+    # 0.001 mm flags it.
+    assert floors[EDGE_FLOOR] == 0.001
     classes = {c["name"]: c for c in doc["net_settings"]["classes"]}
     assert classes.keys() == CLASSES.keys()
     for name, (width, space, cut, enc) in CLASSES.items():
@@ -207,11 +210,14 @@ def test_every_netclass_carries_the_keys_kicad_needs_to_read_it():
     for c in classes:
         assert c.keys() == KICAD_CLASS_KEYS, c["name"]
         assert isinstance(c["priority"], int), c["name"]
+        assert isinstance(c["tuning_profile"], str), c["name"]
         assert (c["diff_pair_width"], c["diff_pair_gap"], c["diff_pair_via_gap"]) == (
             c["track_width"], c["clearance"], c["clearance"]), c["name"]
     priorities = [c["priority"] for c in classes]
     assert len(set(priorities)) == len(priorities)
+    # KiCad gives Default the lowest priority there is, the largest int32.
     assert max(classes, key=lambda c: c["priority"])["name"] == "Default"
+    assert max(priorities) == 2**31 - 1
 
 
 # ---------------------------------------------------------------------------

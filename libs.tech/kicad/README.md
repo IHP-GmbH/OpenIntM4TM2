@@ -83,7 +83,8 @@ board. The PDK ships one for the template, written by
 KLayout decks read. It carries the minimum track width and the minimum
 clearance of each metal (TM2.a/b, TM1.a/b, M5.a/b, M4.a/b), on the copper layer
 the template names after that metal, and the two width-dependent rules KiCad
-can check on one item's own size:
+can check on one item's own size (Mn.e and Mn.f have the same form, but their
+spaces, 0.24 and 0.6 um, sit near or under KiCad's 0.5 um DRC epsilon, below):
 
 - TM2.bR as a TopMetal2 clearance from a track wider than TM2_bR_w (a
   warning) and from a pad wider than TM2_bR_w and longer than TM2_bR_cr (a
@@ -91,7 +92,10 @@ can check on one item's own size:
   that long). The track rule is a physical
   clearance, a check of its own: KiCad gives a pair the severity of the last
   rule that matches it, so as a plain clearance the warning would take over a
-  TM2.b error beside a wide track.
+  TM2.b error beside a wide track. The pad rule is a plain clearance, so it
+  stays an error: as a warning it would take over a TM2.b error beside a wide
+  pad. As a clearance it also makes the router and zone fill keep TM2_bR from
+  such a pad, on runs the deck accepts too.
 - Slt.c as a maximum track width on every metal (a warning: a wider track
   needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
   the designer's step, with the KLayout slit macro
@@ -116,8 +120,8 @@ KiCad's check is an aid while drawing, and it misses violations:
   not the exported GDS.
 - It has no parallel-run condition, so the TM2.bR track rule also warns,
   and the pad rule errs, on runs the deck accepts. It checks one track or pad
-  at a time, so merged copper and zones stay KLayout checks for TM2.bR and
-  Slt.c.
+  at a time, so merged copper, zones and graphic shapes on copper stay
+  KLayout checks for TM2.bR and Slt.c.
 
 The KLayout decks on the GDS are the DRC that counts.
 

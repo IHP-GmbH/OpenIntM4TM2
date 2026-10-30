@@ -3,12 +3,9 @@
 # (version 1.7). Do not edit: change the JSON and run the script.
 #
 # KiCad loads the rules file named after the board, so copy this file beside
-# your board as <board>.kicad_dru. KiCad checks these rules while drawing; the
-# KLayout decks on the exported GDS are the DRC that counts.
-#
-# The deck states no metal-to-edge rule. The project file's copper-to-edge
-# floor, 0.001 mm, only keeps copper inside the outline. It sets no
-# keepout from a placed seal ring; the sealring deck checks the ring.
+# your board as <board>.kicad_dru. libs.tech/kicad/README.md says what each
+# rule catches and misses; the KLayout decks on the exported GDS are the DRC
+# that counts.
 #
 # Ported, per copper layer: minimum track width and minimum clearance.
 #   TopMetal2 (F.Cu): TM2_a, TM2_b
@@ -16,27 +13,9 @@
 #   Metal5 (In2.Cu): Mn_a, Mn_b
 #   Metal4 (B.Cu): Mn_a, Mn_b
 # Ported, on one item's own size:
-#   TopMetal2 (F.Cu): TM2_bR, TM2_bR_w, TM2_bR_cr, as a
-#   physical clearance from a track wider than TM2_bR_w (a warning, a
-#   check of its own, so a gap under the base space stays an error under
-#   that rule) and a clearance from a pad wider than TM2_bR_w and
-#   longer than TM2_bR_cr.
-#   Every copper layer: Slt_c, as a maximum track width (a warning:
-#   a wider track needs slits, and no flow step cuts them. Cutting them is
-#   the designer's step, with the KLayout slit macro on the GDS; the full
-#   deck, not the precheck, reports unslit copper wider than Slt_c).
-# What KiCad does not catch:
-# - It flags a clearance only below the rule less its DRC epsilon, 0.5 um by
-#   default. So the Metal5 and Metal4 space is never caught, and the TopMetal
-#   spaces only once a gap is 0.5 um under the rule.
-# - It enforces the width minimum at the rule value, but its report may name
-#   the limit "board setup constraints" rather than the rule.
-# - It measures clearance between different nets only, so a same-net notch
-#   stays a KLayout check.
-# - It has no parallel-run condition, so the track rule also warns, and the
-#   pad rule errs, on runs of TM2_bR_cr or less, which the deck accepts.
-# - It checks one track or pad at a time: copper merged from several items,
-#   and zones, stay KLayout checks for both width-dependent rules.
+#   TopMetal2 (F.Cu): TM2_bR, TM2_bR_w, TM2_bR_cr,
+#   as a clearance from a wide track (a warning) and from a wide pad.
+#   Every copper layer: Slt_c, as a maximum track width (a warning).
 #
 # KLayout only:
 #   Pad_aR Pad_a1 Pad_bR Pad_d Pad_dR Pad_eR Pad_fR Pad_gR Padb_a Padb_b
