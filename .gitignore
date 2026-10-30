@@ -49,3 +49,7 @@ ENV/
 # DRC / LVS regression run artifacts
 libs.tech/klayout/tech/drc/testing/regression_run/
 libs.tech/klayout/tech/lvs/testing/regression_run/
+
+# Written by an install without .git: the commit the PDK tree is at, which
+# the seal ring's version label reads.
+/.shipped-ref

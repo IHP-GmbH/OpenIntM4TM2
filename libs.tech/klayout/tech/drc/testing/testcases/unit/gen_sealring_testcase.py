@@ -5,12 +5,13 @@ Generate the Sealring DRC unit testcase (`sealring.gds`) for the interposer,
 following the IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS
 with intentional PASS / FAIL structures labeled by text on layer 63/0.
 
-The layout has two top cells, each checked as a whole by run_regression.py:
-  - sealring_viol : violates every surviving rule -> expects
+Every top cell is checked as a whole by run_regression.py. Two of them cover
+the rules of the sg13g2 sealring deck:
+  - sealring_viol : violates every one of them -> expects
                     {Seal.k, Seal.l, Seal.m, Seal.n}
-  - sealring_clean: near-limit legal versions      -> expects {}
+  - sealring_clean: near-limit legal versions  -> expects {}
 
-Surviving rules (interposer backend-only subset; the Seal.b family is dropped
+Those rules (interposer backend-only subset; the Seal.b family is dropped
 because its primary layer Activ does not exist here):
   - Seal.l : no drawn structure may fall outside the 39/4 sealring boundary.
   - Seal.n : the EdgeSeal (39/0) must be enclosed by an unbroken Passiv (9/0) ring.
@@ -55,6 +56,35 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
     through the ring into the margin) -> {SEAL.REQ.4}
   - sealreq_nested_ring: a second complete ring inside the first -> {Seal.m}
   - sealreq_off_no_seal: core only and no define -> {} (the default is unchanged)
+  - sealreq_slit: every metal and via ring cut once on the right side, the
+    metals by their minimum space, the vias by 2.81 um (the widest cut a slit
+    may have) -> {}; sealreq_slit_wide_TM2 (TopMetal2 cut 2.815 um) and
+    sealreq_slit_two_cuts_M4 (a second Metal4 cut) -> {SEAL.REQ.3_TM2,
+    SEAL.REQ.3_TV2} and {SEAL.REQ.3_M4, SEAL.REQ.3_V4}, the via ring lying
+    over the extra metal cut; sealreq_slit_es_cut (EdgeSeal cut as well)
+    -> {SEAL.REQ.3_ES};
+    sealreq_slit_via_short_TM2 (TopVia2 cut 0.5 um, inside the TopMetal2 cut)
+    -> {SEAL.REQ.3_TV2}; sealreq_slit_misaligned (the Metal5 cut on the top
+    side, the others on the right) -> {SEAL.REQ.3_V4, SEAL.REQ.3_TV1}
+  - sealreq_corner_marks: a ring whose corners step in, with 2 x 2 um Metal4
+    filler squares in the corners its Passiv ring cuts off -> {};
+    sealreq_corner_metal (a drawn Metal4 square there instead) and
+    sealreq_corner_marks_square (the squares beside a ring with square corners)
+    -> {SEAL.REQ.4}; so does sealreq_corner_tab, two Passiv tabs on the loop
+    that widen its bounding box into the left and bottom margins, with a
+    filler square in each of those margin strips more than Seal.k from the
+    box corners (two markers)
+
+seal_* cells measure the ring itself (full mode, no define), each on the
+complete ring of the sealreq cells, which sits at every limit (Passiv 1.00 um
+from the ring, the Seal.f floor):
+  - seal_a_<L>: Metal4, Metal5, TopMetal1 or TopMetal2 5 nm narrower for 10 um
+    -> {Seal.a_<L>}
+  - seal_c_narrow_<V> / seal_c_wide_<V>: a via ring 5 nm narrower or wider for
+    10 um -> {Seal.c1.Via4}, {Seal.c2}, {Seal.c3}
+  - seal_e: the Passiv ring 5 nm narrower for 10 um -> {Seal.e}
+  - seal_f_<L>: EdgeSeal and <L> 5 nm closer to the Passiv ring for 10 um
+    -> {Seal.f.<L>}
 
 Regenerate with:  python3 gen_sealring_testcase.py   (writes sealring.gds here)
 """
@@ -303,6 +333,118 @@ def build_presence(layout):
     cell("sealreq_nested_ring", shapes)
 
     cell("sealreq_off_no_seal", {}, boundary=False)
+
+    build_slit(cell)
+    build_corner_marks(cell)
+    build_ring_rules(cell)
+
+
+# Slit cuts on the right side, centred on y = 100 um.
+SLIT_CUTS = {(50, 0): 240, (67, 0): 240, (126, 0): 1640, (134, 0): 2000,
+             (66, 0): 2810, (125, 0): 2810, (133, 0): 2810}
+
+
+def _slit_shapes(cuts=SLIT_CUTS):
+    shapes = _ring_shapes()
+    right = SIDE - INSET - RING
+    for key, cut in cuts.items():
+        shapes[key] = _cut(shapes[key], right, 100000 - cut // 2, SIDE - INSET, 100000 + cut - cut // 2)
+    return shapes
+
+
+def build_slit(cell):
+    cell("sealreq_slit", _slit_shapes())
+    cell("sealreq_slit_wide_TM2", _slit_shapes(SLIT_CUTS | {(134, 0): 2815}))
+    shapes = _slit_shapes()
+    shapes[(50, 0)] = _cut(shapes[(50, 0)], INSET, 100000, INSET + RING, 100240)
+    cell("sealreq_slit_two_cuts_M4", shapes)
+    shapes = _slit_shapes()
+    shapes[L_EDGESEAL] = _cut(shapes[L_EDGESEAL], SIDE - INSET - RING, 99880, SIDE - INSET, 100120)
+    cell("sealreq_slit_es_cut", shapes)
+    cell("sealreq_slit_via_short_TM2", _slit_shapes(SLIT_CUTS | {(133, 0): 500}))
+    shapes = _slit_shapes({key: cut for key, cut in SLIT_CUTS.items() if key != (67, 0)})
+    shapes[(67, 0)] = _cut(shapes[(67, 0)], 99880, SIDE - INSET - RING, 100120, SIDE - INSET)
+    cell("sealreq_slit_misaligned", shapes)
+
+
+NOTCH = 10000          # corner step of the stepped ring
+
+
+def _stepped_ring_shapes():
+    """The complete ring of _ring_shapes with a NOTCH square stepped out of
+    every outer corner of the ring and of its Passiv loop."""
+    outer = db.Region(db.Box(INSET, INSET, SIDE - INSET, SIDE - INSET))
+    for x, y in ((INSET, INSET), (SIDE - INSET - NOTCH, INSET),
+                 (INSET, SIDE - INSET - NOTCH), (SIDE - INSET - NOTCH, SIDE - INSET - NOTCH)):
+        outer -= db.Region(db.Box(x, y, x + NOTCH, y + NOTCH))
+
+    def band(inset, width):
+        return outer.sized(-inset) - outer.sized(-(inset + width))
+
+    shapes = {L_EDGESEAL: band(0, RING)}
+    for key in STACK:
+        shapes[key] = band(0, RING)
+    for key, width in VIA_RINGS.items():
+        shapes[key] = band((RING - width) // 2, width)
+    shapes[L_PASSIV] = outer.sized(1000 + 4200) - outer.sized(1000)
+    return shapes
+
+
+def _corner_squares():
+    """Two 2 x 2 um squares in each corner the Passiv loop of the stepped
+    ring cuts off its bounding box ([24.8, 34.8] um from each outline corner)."""
+    squares = db.Region()
+    for dx, dy in ((25800, 25800), (28800, 25800)):
+        for x, y in ((dx, dy), (SIDE - dx - 2000, dy), (dx, SIDE - dy - 2000),
+                     (SIDE - dx - 2000, SIDE - dy - 2000)):
+            squares.insert(db.Box(x, y, x + 2000, y + 2000))
+    return squares
+
+
+def build_corner_marks(cell):
+    top = cell("sealreq_corner_marks", _stepped_ring_shapes())
+    top.shapes(top.layout().layer(50, 22)).insert(_corner_squares())
+    top = cell("sealreq_corner_metal", _stepped_ring_shapes())
+    top.shapes(top.layout().layer(*L_METAL4)).insert(db.Box(25800, 25800, 27800, 27800))
+    top = cell("sealreq_corner_marks_square", _ring_shapes())
+    top.shapes(top.layout().layer(50, 22)).insert(_corner_squares())
+    shapes = _ring_shapes()
+    passiv_outer = INSET - 1000 - 4200
+    shapes[L_PASSIV] += db.Region(db.Box(10000, 95000, passiv_outer, 105000))
+    shapes[L_PASSIV] += db.Region(db.Box(95000, 10000, 105000, passiv_outer))
+    top = cell("sealreq_corner_tab", shapes)
+    top.shapes(top.layout().layer(50, 22)).insert(db.Box(15000, 60000, 17000, 62000))
+    top.shapes(top.layout().layer(50, 22)).insert(db.Box(60000, 15000, 62000, 17000))
+
+
+METAL_NAMES = {(50, 0): 'Metal4', (67, 0): 'Metal5', (126, 0): 'TopMetal1', (134, 0): 'TopMetal2'}
+VIA_NAMES = {(66, 0): 'Via4', (125, 0): 'TopVia1', (133, 0): 'TopVia2'}
+
+
+def build_ring_rules(cell):
+    right = SIDE - INSET          # outer edge of the ring's right side
+    stretch = (95000, 105000)     # 10 um of the right side
+    for key, name in METAL_NAMES.items():
+        shapes = _ring_shapes()
+        shapes[key] = _cut(shapes[key], right - RING, stretch[0], right - RING + 5, stretch[1])
+        cell(f"seal_a_{name}", shapes)
+    for key, name in VIA_NAMES.items():
+        inner = right - (RING - VIA_RINGS[key]) // 2 - VIA_RINGS[key]   # via ring's inner edge
+        shapes = _ring_shapes()
+        shapes[key] = _cut(shapes[key], inner, stretch[0], inner + 5, stretch[1])
+        cell(f"seal_c_narrow_{name}", shapes)
+        shapes = _ring_shapes()
+        shapes[key] += db.Region(db.Box(inner - 5, stretch[0], inner, stretch[1]))
+        cell(f"seal_c_wide_{name}", shapes)
+    passiv_inner = right + 1000   # Passiv ring's inner edge on the right side
+    shapes = _ring_shapes()
+    shapes[L_PASSIV] = _cut(shapes[L_PASSIV], passiv_inner, stretch[0], passiv_inner + 5, stretch[1])
+    cell("seal_e", shapes)
+    for key, name in METAL_NAMES.items():
+        shapes = _ring_shapes()
+        for grown in (L_EDGESEAL, key):
+            shapes[grown] += db.Region(db.Box(right, stretch[0], right + 5, stretch[1]))
+        cell(f"seal_f_{name}", shapes)
 
 
 def main():
