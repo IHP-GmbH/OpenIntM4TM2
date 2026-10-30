@@ -313,7 +313,7 @@ def test_install_without_git(tmp_path, stamp):
     # stamp the install writes at the top of the tree.
     root = tmp_path / "pdk"
     shutil.copytree(REPO_KLAYOUT, root / "libs.tech" / "klayout",
-                    ignore=shutil.ignore_patterns("__pycache__", "intm4tm2_tests"))
+                    ignore=shutil.ignore_patterns("__pycache__", "intm4tm2_tests", "regression_run"))
     (root / "pyproject.toml").write_text('[project]\nname = "intm4tm2"\nversion = "9.8.7"\n')
     if stamp is not None:
         (root / ".shipped-ref").write_text(stamp + "\n")

@@ -35,7 +35,6 @@ the seal, filler and density decks. The fill macros stop, each with its own
 reason, on a ring that cannot bound the fill.
 """
 
-import importlib.util
 import json
 import os
 import re
@@ -159,6 +158,10 @@ PCELL_BATCH_SCRIPT = textwrap.dedent("""\
     for name, params in {cases!r}:
         build(name, params)
 
+    # The version as the PCell's own process reads it, for test_labels.
+    with open({out_dir!r} + "/pdk_version.txt", "w") as f:
+        f.write(sys.modules['intm4tm2_pycell_lib.ihp.pdk_version'].pdk_version())
+
     # A broken rule file must stop the PCell, not fall back or draw part of it.
     code = sys.modules['intm4tm2_pycell_lib.ihp.sealring_code']
     with open(code.RULES_FILE) as f:
@@ -241,6 +244,7 @@ def generated(tmp_path_factory):
         layout.read(str(out_dir / f"sealring_{name}.gds"))
         layouts[name] = (layout, layout.top_cell())
     return {"layouts": layouts, "log": result.stdout + result.stderr, "dir": out_dir,
+            "pdk_version": (out_dir / "pdk_version.txt").read_text(),
             "examples": {stem: regions for stem, (_, regions) in examples.items()}}
 
 
@@ -411,16 +415,6 @@ SIZE_LABEL = re.compile(r"Device registration size: x=([0-9.]+) um ; y=([0-9.]+)
                         r"Calculated area: ([0-9.e+-]+) sq mm")
 
 
-def _pdk_version():
-    """This tree's version label, from the module the PCell calls. The module
-    is loaded alone: the library package registers itself with KLayout."""
-    spec = importlib.util.spec_from_file_location(
-        "pdk_version", PYTHON_DIR / "intm4tm2_pycell_lib" / "ihp" / "pdk_version.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.pdk_version()
-
-
 def _texts(cell, index, trans=kdb.ICplxTrans()):
     """(x, y, string) of every text under `cell`, sorted, in nm."""
     texts = []
@@ -447,7 +441,7 @@ def test_labels(generated, case):
     # The area of the outline in mm^2, to the label's two digits.
     assert area_mm2 == pytest.approx(x_um * y_um / 1e6, rel=0.05)
     # Where the commit comes from is test_pdk_version.py's matter.
-    assert texts[1][2] == "PDK version: " + _pdk_version()
+    assert texts[1][2] == "PDK version: " + generated["pdk_version"]
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=[path.stem for path in EXAMPLES])

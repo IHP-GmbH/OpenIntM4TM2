@@ -22,13 +22,15 @@ Each case builds a tree with its own pyproject.toml and, where it needs one,
 its own git repository, and checks the whole label: the commit comes from
 the tree's own checkout, else from the install stamp, else it reads 'commit
 unknown'. Neither a repository the tree only sits in nor GIT_* variables in
-the environment can lend the tree another commit.
+the environment can lend the tree another commit, and a stamp never speaks
+for a tree with .git.
 """
 
 import importlib.util
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -76,7 +78,7 @@ def _commit(path):
     _git(path, "init", "-q")
     _git(path, "add", "-A")
     _git(path, "-c", "user.name=test", "-c", "user.email=test@example.com",
-         "commit", "-q", "--allow-empty", "-m", "test")
+         "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "--allow-empty", "-m", "test")
     return _git(path, "rev-parse", "HEAD")
 
 
@@ -98,9 +100,10 @@ def test_install_without_git(tmp_path):
     assert pdk_version.pdk_version(_tree(tmp_path)) == _label("commit unknown")
 
 
-@pytest.mark.parametrize("stamp", [STAMPED, STAMPED + "\n"], ids=["bare", "newline"])
+@pytest.mark.parametrize("stamp", [STAMPED, STAMPED + "\n", STAMPED + "-dirty\n"],
+                         ids=["bare", "newline", "dirty"])
 def test_install_with_stamp(tmp_path, stamp):
-    assert pdk_version.pdk_version(_tree(tmp_path, stamp)) == _label(STAMPED)
+    assert pdk_version.pdk_version(_tree(tmp_path, stamp)) == _label(stamp.strip())
 
 
 @pytest.mark.parametrize("stamp", ["", STAMPED[:7], STAMPED.upper(), f"{STAMPED}\n{STAMPED}\n", "v0.2.0"],
@@ -165,7 +168,22 @@ def test_git_variables_do_not_redirect(tmp_path, monkeypatch):
 
 @needs_git
 def test_git_not_installed(tmp_path, monkeypatch):
+    # A stamp left in a checkout is not the checkout's commit.
     root = _tree(tmp_path / "pdk", STAMPED)
     _commit(root)
     monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
-    assert pdk_version.pdk_version(root) == _label(STAMPED)
+    assert pdk_version.pdk_version(root) == _label("commit unknown")
+
+
+def test_hung_git(tmp_path, monkeypatch):
+    root = _tree(tmp_path / "pdk", STAMPED)
+    (root / ".git").mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "git").write_text(f"#!/bin/sh\nexec {shutil.which('sleep')} 30\n")
+    (bin_dir / "git").chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    monkeypatch.setattr(pdk_version, "GIT_TIMEOUT_S", 0.5)
+    start = time.monotonic()
+    assert pdk_version.pdk_version(root) == _label("commit unknown")
+    assert 0.5 <= time.monotonic() - start < 5
