@@ -42,6 +42,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -579,14 +580,19 @@ def _carrier(generated, name, pad_opening_left=None, ring="ok"):
     return path
 
 
-def _violations(path, deck, tmp_path, monkeypatch, defines=None, cell="TOP"):
+def _report(path, deck, tmp_path, monkeypatch, defines=None, cell="TOP"):
     monkeypatch.setenv("KLAYOUT_HOME", str(tmp_path))
     monkeypatch.delenv("KLAYOUT_PATH", raising=False)
     if str(DRC_DIR) not in sys.path:
         sys.path.insert(0, str(DRC_DIR))
-    from run_drc import run_deck, get_rules_with_violations
-    report = run_deck(str(DRC_DIR / "intm4tm2.drc"), deck, str(path), cell,
-                      tmp_path, threads=1, run_mode="flat", extra_defines=defines)
+    from run_drc import run_deck
+    return run_deck(str(DRC_DIR / "intm4tm2.drc"), deck, str(path), cell,
+                    tmp_path, threads=1, run_mode="flat", extra_defines=defines)
+
+
+def _violations(path, deck, tmp_path, monkeypatch, defines=None, cell="TOP"):
+    report = _report(path, deck, tmp_path, monkeypatch, defines, cell)
+    from run_drc import get_rules_with_violations
     return get_rules_with_violations(report)
 
 
@@ -607,13 +613,24 @@ def test_default_decks_clean_on_the_slit_ring(generated, tmp_path, monkeypatch):
     assert _violations(path, "all", tmp_path, monkeypatch) == set()
 
 
+SEAL_REQ_RINGS = ("ES", "M4", "V4", "M5", "TV1", "TM1", "TV2", "TM2")
+PRESENCE_CATEGORIES = {f"SEAL.REQ.3_{name}" for name in SEAL_REQ_RINGS} | {"SEAL.REQ.4"}
+
+
 @pytest.mark.live_tool
 @pytest.mark.parametrize("ring", ["ok", "slit"])
 def test_ring_passes_the_presence_rules(generated, tmp_path, monkeypatch, ring):
     # The regression cells use square corners; this is the staircase and the
     # PCell's own Passiv ring, with a pad inside.
     path = _carrier(generated, f"presence_{ring}", PAD_DR_LIMIT, ring=ring)
-    assert _violations(path, "sealring", tmp_path, monkeypatch, {"require_sealring": "true"}) == set()
+    report = _report(path, "sealring", tmp_path, monkeypatch, {"require_sealring": "true"})
+    from run_drc import get_rules_with_violations
+    assert get_rules_with_violations(report) == set()
+    # Every presence category is written, empty: a report without one reads
+    # as a deck that did not run, and a slit must not change that.
+    categories = ET.parse(report).getroot().findall("./categories/category/name")
+    names = {name.text.strip() for name in categories}
+    assert names >= PRESENCE_CATEGORIES, sorted(PRESENCE_CATEGORIES - names)
 
 
 @pytest.mark.live_tool

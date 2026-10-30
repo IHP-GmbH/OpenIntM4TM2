@@ -157,12 +157,15 @@ if BEOL
         seal_req_loop.forget
         [seal_req_name, seal_req_open, seal_req_slit]
       end
-      seal_req_all_cut = seal_req_rings.none? { |name, open, _| name != 'ES' && open.is_empty? }
+      seal_req_all_cut = seal_req_rings.none? do |seal_req_name, seal_req_open, _|
+        seal_req_name != 'ES' && seal_req_open.is_empty?
+      end
+      # An accepted cut still writes its category, empty: a report without
+      # it reads as a deck that did not run.
       seal_req_rings.each do |seal_req_name, seal_req_open, seal_req_slit|
-        unless seal_req_slit && seal_req_all_cut
-          seal_req_open.output("SEAL.REQ.3_#{seal_req_name}",
+        seal_req_marker = seal_req_slit && seal_req_all_cut ? polygon_layer : seal_req_open
+        seal_req_marker.output("SEAL.REQ.3_#{seal_req_name}",
                                "SEAL.REQ.3_#{seal_req_name} : Seal ring layer is not a closed loop inside EdgeSeal")
-        end
         seal_req_open.forget
       end
 
