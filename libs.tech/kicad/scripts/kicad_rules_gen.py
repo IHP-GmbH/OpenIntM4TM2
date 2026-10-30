@@ -30,10 +30,10 @@ that file's header as a KLayout-only rule. libs.tech/kicad/README.md says what e
 ported rule catches and misses; the KLayout decks on the exported GDS are the DRC that
 counts.
 
-KiCad applies, of the rules that match a pair, the last one in the file, with its
-severity. So a warning rule must not match what an error rule above it checks: the
-wide-track rule is a physical clearance, a check of its own, and the slit rule matches
-only the tracks it is about.
+KiCad reports a violation under the last rule in the file that matches, with that
+rule's severity. So a warning rule must not match what an error rule above it checks:
+the wide-track rule is a physical clearance, a check of its own, and the slit rule
+matches only the tracks it is about.
 
 kicad-cli drops a whole rules file with no message when one token of it is unknown,
 and checks the board against its printed-board defaults instead. So the rules use mm
@@ -156,9 +156,8 @@ def render(rules_doc, board_text):
     head += [f"  {metal} ({layers[metal]}): {width}, {space}" for metal, width, space in PORTED]
     head += [
         "Ported, on one item's own size:",
-        f"  {wide_metal} ({layers[wide_metal]}): {wide_space}, {wide_width}, {wide_run},",
-        "  as a clearance from a wide track (a warning) and from a wide pad.",
-        f"  Every copper layer: {SLIT_WIDTH}, as a maximum track width (a warning).",
+        f"  {wide_metal} ({layers[wide_metal]}): {wide_space}, {wide_width}, {wide_run}",
+        f"  Every copper layer: {SLIT_WIDTH}",
         "",
         "KLayout only:",
     ]
@@ -166,6 +165,8 @@ def render(rules_doc, board_text):
                           subsequent_indent="  ")
     out = ["# " + line if line else "#" for line in head]
     out += ["(version 1)"]
+    # In this order: the TM2.bR pad rule follows TM2.b and the slit rules follow the
+    # width minimums, so a violation is reported under them, with their severity.
     for metal, width, space in PORTED:
         for key, constraint, what in ((width, "track_width", "width"),
                                       (space, "clearance", "clearance")):

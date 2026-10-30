@@ -33,11 +33,11 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # ini key into an error instead of a silently ignored line.
 #
 # A bare `pytest` starts no external tool. The cases that run the klayout
-# binary, ngspice or xschem carry live_tool and are deselected here: a name on
-# PATH is enough to start them, and the klayout wheel ships the Python module
-# without the binary. The field solves that take more than about 1.5 s at one
-# CPU carry slow and are deselected too, so the default run stays fast. A
-# command-line -m replaces this one:
+# binary, ngspice, xschem or kicad-cli carry live_tool and are deselected
+# here: a name on PATH is enough to start them, and the klayout wheel ships
+# the Python module without the binary. The field solves that take more than
+# about 1.5 s at one CPU carry slow and are deselected too, so the default
+# run stays fast. A command-line -m replaces this one:
 #   pytest -m live_tool     the tool cases
 #   pytest -m slow          the long field solves
 #   pytest -m ""            every case

@@ -20,8 +20,9 @@
 libs.tech/kicad/interposer_template.kicad_dru and interposer_template.kicad_pro are
 written by libs.tech/kicad/scripts/kicad_rules_gen.py from interposer_tech_default.json.
 A value changed in the JSON without running the script, or typed into either file, is
-a KiCad check that no longer agrees with the KLayout deck. The netclass display keys
-are KiCad 9.99's own; the copper-to-edge floor is the value measured on it.
+a KiCad check that no longer agrees with the KLayout deck. The netclass keys with no
+interposer meaning are KiCad 9.99's own; the copper-to-edge floor is the value
+measured on it.
 
 kicad-cli drops a rules file it cannot parse without a message, so the hermetic tests
 pin the units and the item properties to what KiCad 9.99 was seen to read. The
@@ -56,9 +57,6 @@ RULES = json.loads((ROOT / "libs.tech/klayout/tech/drc/rule_decks/"
 sys.path.insert(0, str(KICAD / "scripts"))
 import kicad_rules_gen  # noqa: E402
 
-# Read on its own, not from the generator: per rule in file order, its JSON key,
-# KiCad layer, constraint, bound and severity, and the condition it carries (None
-# for none).
 LAYERS = {"TopMetal2": "F.Cu", "TopMetal1": "In1.Cu", "Metal5": "In2.Cu", "Metal4": "B.Cu"}
 
 
@@ -67,6 +65,9 @@ def mm(*keys):
     return format((sum(Decimal(str(RULES[k])) for k in keys) / 1000).normalize(), "f") + "mm"
 
 
+# Read on its own, not from the generator: per rule in file order, its JSON key,
+# KiCad layer, constraint, bound and severity, and the condition it carries (None
+# for none).
 EXPECTED = [
     ("TM2_a", "F.Cu", "track_width", "min", "error", None),
     ("TM2_b", "F.Cu", "clearance", "min", "error", None),
@@ -132,8 +133,9 @@ def test_every_rule_carries_its_json_value():
     text = DRU.read_text(encoding="utf-8")
     found = rules_in(text)
     assert text.count("(rule ") == len(found) == len(EXPECTED)
-    # In file order: KiCad applies the last rule that matches a pair, so the TM2.bR pad
-    # rule must follow TM2.b, and the slit rules the width minimums.
+    # In file order: KiCad reports a violation under the last rule that matches, with
+    # its severity, so the TM2.bR pad rule must follow TM2.b, and the slit rules the
+    # width minimums.
     assert [(r["key"], r["layer"], r["constraint"], r["bound"], r["severity"] or "error",
              r["condition"]) for r in found] == EXPECTED
     for r in found:

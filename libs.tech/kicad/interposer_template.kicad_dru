@@ -13,9 +13,8 @@
 #   Metal5 (In2.Cu): Mn_a, Mn_b
 #   Metal4 (B.Cu): Mn_a, Mn_b
 # Ported, on one item's own size:
-#   TopMetal2 (F.Cu): TM2_bR, TM2_bR_w, TM2_bR_cr,
-#   as a clearance from a wide track (a warning) and from a wide pad.
-#   Every copper layer: Slt_c, as a maximum track width (a warning).
+#   TopMetal2 (F.Cu): TM2_bR, TM2_bR_w, TM2_bR_cr
+#   Every copper layer: Slt_c
 #
 # KLayout only:
 #   Pad_aR Pad_a1 Pad_bR Pad_d Pad_dR Pad_eR Pad_fR Pad_gR Padb_a Padb_b
