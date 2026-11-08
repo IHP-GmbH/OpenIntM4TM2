@@ -135,8 +135,15 @@ recog_sbump = polygons(99, 36)
 # Note: the post-passivation 3D interconnect bodies (cu-pillar body 500/35,
 # SnAg cap 501/35, solder ball 502/36) are owned by the interconnect PDK
 # (interconnect_pdk/libs.tech/klayout/tech/drc/rule_decks/layers_def_3d.drc),
-# not this interposer deck. The interposer fabricates only the UBM openings
-# (9/35, 41/35, 99/35).
+# not this interposer deck. Of the three pillar-site layers the interposer
+# draws, only one is the fabricated opening: Passiv.pillar (9/35) is the
+# passivation opening. dfpad.pillar (41/35) is the pad-definition layer, and
+# Recog.pillar (99/35) is a recognition marker that no rule checks. Two rule
+# sets reach 9/35 and they measure different things: Padc.b measures the pad,
+# so it runs on cu_pillarpad (9/35 and 41/35 together), while PadU.w and
+# PadU.s measure the opening itself and run on Passiv.pillar joined with
+# Passiv.sbump. The same split applies to the solder-bump site
+# (9/36, 41/36, 99/36).
 
 #==================================
 # ------ ALIAS FOR DRC RULES ------

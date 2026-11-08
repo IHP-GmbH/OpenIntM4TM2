@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# IHP 130-nm IntM4TM2 aluminium BEOL interposer stackup for Chiplet Studio's 3D
+# view, in its BlenderGDS format (index/type are the GDS layer and datatype).
+#
+# Every z and height here is a copy of libs.tech/intm4tm2_stack.json, the one
+# source of the physical stack; libs.tech/klayout/intm4tm2_tests/
+# test_body_thickness.py names this file if it disagrees with the key. The frame
+# is the key's: z = 0 at the substrate top, the substrate below it at its real
+# thickness (Studio hides the slab named Substrate on request).
+#
+# Left out on purpose: BackMetal1 with its filler (the key holds no backside
+# metal), and the passivation over TopMetal2. The key carries the passivation
+# (beol.passivation), but this format extrudes a layer's polygons, and Passiv
+# (9/0) holds the openings in the film, not the film, so a Passiv entry would
+# draw the holes as solid. Drawing the film needs a slab over the whole outline,
+# like the one Studio makes for the substrate.
+#
+# 3D interconnect bodies (cu-pillar/solder-bump, layers 500+) are owned by the
+# interconnect PDK and merged in at render time per the assembly's
+# interconnect.adapter.
+
+# The surface this interposer offers to interconnect bodies: the exposed pad
+# top, TopMetal2's top. Fragments declaring z_reference: attachment_surface
+# are offset by this value at merge time.
+
+attachment_surface_z: 10.8103
+
+# --- Si substrate (40/0 is the slab Studio draws for it, not an IntM4TM2 layer) ---
+Substrate:
+  index: 40
+  type: 0
+  z: -250.0
+  height: 250.0
+
+# --- Routing metals, their fill, and the vias between them ---
+Metal4:
+  index: 50
+  type: 0
+  z: 0.64
+  height: 0.49
+Metal4.filler:
+  index: 50
+  type: 22
+  purpose: filler
+  z: 0.64
+  height: 0.49
+Via4:
+  index: 66
+  type: 0
+  z: 1.13
+  height: 0.54
+Metal5:
+  index: 67
+  type: 0
+  z: 1.67
+  height: 0.49
+Metal5.filler:
+  index: 67
+  type: 22
+  purpose: filler
+  z: 1.67
+  height: 0.49
+TopVia1:
+  index: 125
+  type: 0
+  z: 2.16
+  height: 0.8503
+TopMetal1:
+  index: 126
+  type: 0
+  z: 3.0103
+  height: 2.0
+TopMetal1.filler:
+  index: 126
+  type: 22
+  purpose: filler
+  z: 3.0103
+  height: 2.0
+TopVia2:
+  index: 133
+  type: 0
+  z: 5.0103
+  height: 2.8
+TopMetal2:
+  index: 134
+  type: 0
+  z: 7.8103
+  height: 3.0
+TopMetal2.filler:
+  index: 134
+  type: 22
+  purpose: filler
+  z: 7.8103
+  height: 3.0
+
+# --- Cu-pillar pad opening (datatype 35 on the passivation, pad and recognition
+# layers), drawn as TopMetal2 so it merges with the pad it opens onto ---
+Passiv.pillar:
+  index: 9
+  type: 35
+  z: 7.8103
+  height: 3.0
+dfpad.pillar:
+  index: 41
+  type: 35
+  z: 7.8103
+  height: 3.0
+Recog.pillar:
+  index: 99
+  type: 35
+  z: 7.8103
+  height: 3.0

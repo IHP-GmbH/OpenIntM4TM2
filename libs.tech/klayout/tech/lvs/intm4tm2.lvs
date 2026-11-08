@@ -86,6 +86,7 @@ lvs_files = [
 
 lvs_source = lvs_files.map { |f|
   path = File.join(rule_deck_path, f)
-  File.exist?(path) ? File.read(path) : ""
+  raise "Missing LVS rule deck: #{path}" unless File.file?(path)
+  File.read(path)
 }.join("\n")
 eval(lvs_source)

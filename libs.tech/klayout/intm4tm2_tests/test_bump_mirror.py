@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "python"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import bump_mirror
 from bump_mirror import (
     BumpLocation,
     CUPILLAR_TABLE_6_1,
@@ -30,16 +32,407 @@ from bump_mirror import (
     main,
 )
 
-# Also add gds_to_kicad for PinList. Resolve only via the upward sibling walk;
-# tests that need PinList skip when it is absent rather than relying on a
-# brittle fixed-depth (parents[4]) guess that could point at the wrong dir.
-GDS_TO_KICAD_DIR = next(
-    (base / "gds_to_kicad" for base in Path(__file__).resolve().parents
-     if (base / "gds_to_kicad").is_dir()),
-    None,
-)
-if GDS_TO_KICAD_DIR is not None:
-    sys.path.insert(0, str(GDS_TO_KICAD_DIR))
+# ---------------------------------------------------------------------------
+# Siblings. gds2kicad supplies PinList, and the interconnect PDK the 3D bump
+# bodies (bump_mirror._get_bump3d). A case that reads either one carries
+# needs_sibling_sources with the sibling's id, through the two marks below.
+# The tiered runner's T0 deselects those cases, and its T1 runs them with the
+# pinned siblings exported under $HCDP_ROOT.
+#
+# The door, per sibling: the explicit variable decides when it is set
+# (GDS_TO_KICAD_ROOT, INTERCONNECT_PDK_ROOT; empty counts as unset), otherwise
+# $HCDP_ROOT/<id>. It never walks up from this checkout. The case gets the
+# chosen root in that variable, so the exporter reads the same tree the door
+# checked. A root that does not hold the sibling fails and names the root,
+# because the run asked for a tree and did not get it. With neither set, the
+# case skips, which is what a bare clone does.
+# ---------------------------------------------------------------------------
+
+SIBLINGS = {
+    # id: (variable, the file that identifies the tree)
+    "gds_to_kicad": ("GDS_TO_KICAD_ROOT", Path("pin_list.py")),
+    "interconnect_pdk": ("INTERCONNECT_PDK_ROOT",
+                         Path("libs.tech", "klayout", "python", "bump3d_generator.py")),
+}
+
+
+def sibling_root(sibling_id, environ=os.environ):
+    """The root the door picks for a sibling, or None when nothing names one."""
+    variable, _ = SIBLINGS[sibling_id]
+    if environ.get(variable):
+        return Path(environ[variable]).expanduser()
+    if environ.get("HCDP_ROOT"):
+        return Path(environ["HCDP_ROOT"]) / sibling_id
+    return None
+
+
+def require_sibling(sibling_id, environ=os.environ):
+    """The sibling's root, or end the case: fail on a wrong root, skip on none."""
+    variable, marker = SIBLINGS[sibling_id]
+    root = sibling_root(sibling_id, environ)
+    if root is None:
+        pytest.skip(f"needs the {sibling_id} sibling: set {variable} or HCDP_ROOT")
+    if not (root / marker).is_file():
+        pytest.fail(f"{root} does not hold {sibling_id} (no {marker}). Refusing to "
+                    "look anywhere else: the case would measure a tree nobody selected.",
+                    pytrace=False)
+    return root
+
+
+needs_gds2kicad = pytest.mark.needs_sibling_sources("gds_to_kicad")
+needs_interconnect = pytest.mark.needs_sibling_sources("interconnect_pdk")
+
+
+@pytest.fixture(autouse=True)
+def _sibling_door(request, monkeypatch):
+    for mark in request.node.iter_markers("needs_sibling_sources"):
+        for sibling_id in mark.args:
+            variable, _ = SIBLINGS[sibling_id]
+            monkeypatch.setenv(variable, str(require_sibling(sibling_id)))
+
+
+# ---------------------------------------------------------------------------
+# The door itself. These run everywhere, with no sibling of their own: each
+# hands the door its own environment and fake trees under tmp_path.
+# ---------------------------------------------------------------------------
+
+
+def _fake_sibling(root, sibling_id):
+    """A directory that passes for the sibling, i.e. one holding its marker file."""
+    marker = root / SIBLINGS[sibling_id][1]
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("")
+    return root
+
+
+@pytest.mark.parametrize("sibling_id", sorted(SIBLINGS))
+class TestSiblingDoor:
+    """The variable decides, then $HCDP_ROOT/<id>; a wrong root fails, none skips."""
+
+    def test_the_variable_wins_over_hcdp_root(self, tmp_path, sibling_id):
+        variable, _ = SIBLINGS[sibling_id]
+        chosen = _fake_sibling(tmp_path / "chosen", sibling_id)
+        _fake_sibling(tmp_path / "umbrella" / sibling_id, sibling_id)
+        environ = {variable: str(chosen), "HCDP_ROOT": str(tmp_path / "umbrella")}
+        assert require_sibling(sibling_id, environ) == chosen
+
+    def test_hcdp_root_names_the_sibling_when_the_variable_is_unset(self, tmp_path, sibling_id):
+        exported = _fake_sibling(tmp_path / "siblings" / sibling_id, sibling_id)
+        assert require_sibling(sibling_id, {"HCDP_ROOT": str(tmp_path / "siblings")}) == exported
+
+    def test_an_empty_variable_counts_as_unset(self, tmp_path, sibling_id):
+        variable, _ = SIBLINGS[sibling_id]
+        exported = _fake_sibling(tmp_path / "siblings" / sibling_id, sibling_id)
+        environ = {variable: "", "HCDP_ROOT": str(tmp_path / "siblings")}
+        assert require_sibling(sibling_id, environ) == exported
+
+    def test_a_wrong_variable_fails_and_names_the_root(self, tmp_path, sibling_id):
+        variable, _ = SIBLINGS[sibling_id]
+        _fake_sibling(tmp_path / "siblings" / sibling_id, sibling_id)
+        environ = {variable: str(tmp_path / "typo"), "HCDP_ROOT": str(tmp_path / "siblings")}
+        with pytest.raises(pytest.fail.Exception) as excinfo:
+            require_sibling(sibling_id, environ)
+        assert str(tmp_path / "typo") in str(excinfo.value)
+
+    def test_a_sibling_missing_from_hcdp_root_fails(self, tmp_path, sibling_id):
+        # The runner's T1 exports every sibling it selects for, so an absent one
+        # is a broken export, never a reason to skip.
+        with pytest.raises(pytest.fail.Exception) as excinfo:
+            require_sibling(sibling_id, {"HCDP_ROOT": str(tmp_path)})
+        assert str(tmp_path / sibling_id) in str(excinfo.value)
+
+    def test_nothing_named_skips(self, sibling_id):
+        assert sibling_root(sibling_id, {}) is None
+        with pytest.raises(pytest.skip.Exception):
+            require_sibling(sibling_id, {})
+
+
+# ---------------------------------------------------------------------------
+# The interconnect-PDK resolver behind the 3D bodies. This one is in the
+# exporter, and the door above hands it its root: the full coupon path
+# reaches _get_bump3d, so a mistyped INTERCONNECT_PDK_ROOT that fell through to
+# an ambient checkout would draw bodies from a tree nobody selected and produce
+# a GDS that looks complete. Fake trees under tmp_path, so no host sibling can
+# decide the outcome.
+# ---------------------------------------------------------------------------
+
+
+def _fake_interconnect(root, body="def add_3d_bodies(*a, **k):\n    return None\n"):
+    """A directory laid out like the interconnect PDK, holding a generator."""
+    py_dir = root.joinpath("libs.tech", "klayout", "python")
+    py_dir.mkdir(parents=True, exist_ok=True)
+    (py_dir / "bump3d_generator.py").write_text(body)
+    return root
+
+
+class TestInterconnectRootResolution:
+    """INTERCONNECT_PDK_ROOT decides when set, and refuses rather than drift."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch, tmp_path):
+        # Both caches cleared, and the module's idea of where it lives pointed
+        # into tmp_path so the sibling walk searches a tree we control.
+        monkeypatch.setattr(bump_mirror, "_bump3d_cache", None)
+        # raising=False so this class stays runnable against a bump_mirror that
+        # has no root-keyed cache: an ablation must fail on the behaviour under
+        # test, not on a missing attribute in the fixture.
+        monkeypatch.setattr(bump_mirror, "_bump3d_cache_root", None, raising=False)
+        here = tmp_path / "ambient" / "interposer" / "libs.tech" / "klayout" / "python"
+        here.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(bump_mirror, "__file__", str(here / "bump_mirror.py"))
+        saved_path = list(sys.path)
+        saved_mod = sys.modules.pop("bump3d_generator", None)
+        yield
+        sys.path[:] = saved_path
+        sys.modules.pop("bump3d_generator", None)
+        if saved_mod is not None:
+            sys.modules["bump3d_generator"] = saved_mod
+
+    def test_a_valid_explicit_root_is_the_tree_that_gets_loaded(
+            self, monkeypatch, tmp_path):
+        chosen = _fake_interconnect(tmp_path / "chosen")
+        _fake_interconnect(tmp_path / "ambient" / "interconnect_pdk")
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", str(chosen))
+        mod = bump_mirror._get_bump3d()
+        assert Path(mod.__file__).is_relative_to(chosen)
+
+    def test_an_invalid_explicit_root_refuses_the_ambient_sibling(
+            self, monkeypatch, tmp_path):
+        # The ambient tree is right there and perfectly usable. Using it would
+        # be the silent failure: bodies from a tree nobody asked for.
+        _fake_interconnect(tmp_path / "ambient" / "interconnect_pdk")
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", str(tmp_path / "typo"))
+        with pytest.raises(RuntimeError) as excinfo:
+            bump_mirror._get_bump3d()
+        assert str(tmp_path / "typo") in str(excinfo.value)
+
+    def test_an_unset_root_still_discovers_the_sibling(
+            self, monkeypatch, tmp_path):
+        ambient = _fake_interconnect(tmp_path / "ambient" / "interconnect_pdk")
+        monkeypatch.delenv("INTERCONNECT_PDK_ROOT", raising=False)
+        mod = bump_mirror._get_bump3d()
+        assert Path(mod.__file__).is_relative_to(ambient)
+
+    def test_an_empty_root_counts_as_unconfigured_not_as_invalid(
+            self, monkeypatch, tmp_path):
+        # Exporting the variable empty is how a shell says "not set", so it
+        # discovers rather than refusing. Only a non-empty wrong value refuses.
+        ambient = _fake_interconnect(tmp_path / "ambient" / "interconnect_pdk")
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", "")
+        mod = bump_mirror._get_bump3d()
+        assert mod is not None and Path(mod.__file__).is_relative_to(ambient)
+
+    def test_an_unset_root_with_no_sibling_is_still_a_quiet_absence(
+            self, monkeypatch):
+        monkeypatch.delenv("INTERCONNECT_PDK_ROOT", raising=False)
+        assert bump_mirror._get_bump3d() is None
+
+    def test_a_cached_selection_does_not_survive_a_new_explicit_root(
+            self, monkeypatch, tmp_path):
+        # Resolve once with discovery, then point the variable somewhere wrong.
+        _fake_interconnect(tmp_path / "ambient" / "interconnect_pdk")
+        monkeypatch.delenv("INTERCONNECT_PDK_ROOT", raising=False)
+        assert bump_mirror._get_bump3d() is not None
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", str(tmp_path / "typo"))
+        with pytest.raises(RuntimeError):
+            bump_mirror._get_bump3d()
+
+    def test_a_cached_absence_does_not_survive_a_valid_explicit_root(
+            self, monkeypatch, tmp_path):
+        monkeypatch.delenv("INTERCONNECT_PDK_ROOT", raising=False)
+        assert bump_mirror._get_bump3d() is None      # caches the absence
+        chosen = _fake_interconnect(tmp_path / "chosen")
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", str(chosen))
+        mod = bump_mirror._get_bump3d()
+        assert mod is not None and Path(mod.__file__).is_relative_to(chosen)
+
+    def test_a_broken_generator_keeps_its_own_traceback(
+            self, monkeypatch, tmp_path):
+        # Discovery is guarded; the import is not. A syntax or dependency error
+        # must not be reported as "interconnect_pdk not found".
+        chosen = _fake_interconnect(tmp_path / "chosen",
+                                    body="raise ValueError('boom')\n")
+        monkeypatch.setenv("INTERCONNECT_PDK_ROOT", str(chosen))
+        with pytest.raises(ValueError, match="boom"):
+            bump_mirror._get_bump3d()
+        assert bump_mirror._bump3d_cache is None       # a failed import is not cached
+
+
+class TestPinListRootResolution:
+    """GDS_TO_KICAD_ROOT decides when set, and refuses rather than drift."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self, monkeypatch, tmp_path):
+        here = tmp_path / "ambient" / "interposer" / "libs.tech" / "klayout" / "python"
+        here.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(bump_mirror, "__file__", str(here / "bump_mirror.py"))
+        # raising=False, as for _bump3d_cache_root above: an ablation without
+        # the binding must fail on the behaviour, not on the fixture.
+        monkeypatch.setattr(bump_mirror, "_pinlist_file", None, raising=False)
+        saved_path = list(sys.path)
+        saved_mod = sys.modules.pop("pin_list", None)
+        yield
+        sys.path[:] = saved_path
+        sys.modules.pop("pin_list", None)
+        if saved_mod is not None:
+            sys.modules["pin_list"] = saved_mod
+
+    @staticmethod
+    def _fake_gds2kicad(root):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "pin_list.py").write_text("class PinList:\n    pass\n")
+        return root
+
+    def test_a_valid_explicit_root_is_the_tree_that_gets_loaded(
+            self, monkeypatch, tmp_path):
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        self._fake_gds2kicad(tmp_path / "ambient" / "gds_to_kicad")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        bump_mirror._import_pinlist()
+        assert Path(sys.modules["pin_list"].__file__).is_relative_to(chosen)
+
+    def test_an_invalid_explicit_root_refuses_the_ambient_sibling(
+            self, monkeypatch, tmp_path):
+        self._fake_gds2kicad(tmp_path / "ambient" / "gds_to_kicad")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(tmp_path / "typo"))
+        path_before = list(sys.path)
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(tmp_path / "typo") in str(excinfo.value)
+        assert "pin_list" not in sys.modules
+        assert sys.path == path_before
+
+    def test_an_empty_root_counts_as_unconfigured_not_as_invalid(
+            self, monkeypatch, tmp_path):
+        ambient = self._fake_gds2kicad(tmp_path / "ambient" / "gds_to_kicad")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", "")
+        bump_mirror._import_pinlist()
+        assert Path(sys.modules["pin_list"].__file__).is_relative_to(ambient)
+
+    def test_the_loaded_pin_list_is_reused_through_another_path_to_it(
+            self, monkeypatch, tmp_path):
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        bump_mirror._import_pinlist()
+        first = sys.modules["pin_list"]
+        (tmp_path / "link").symlink_to(chosen)
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(tmp_path / "link"))
+        bump_mirror._import_pinlist()
+        assert sys.modules["pin_list"] is first
+
+    def test_the_root_goes_on_sys_path_as_found_not_resolved(
+            self, monkeypatch, tmp_path):
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        (tmp_path / "link").symlink_to(chosen)
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(tmp_path / "link"))
+        bump_mirror._import_pinlist()
+        assert str(tmp_path / "link") in sys.path
+        assert str((tmp_path / "link").resolve()) not in sys.path
+
+    def test_a_pin_list_loaded_from_another_root_is_refused(
+            self, monkeypatch, tmp_path):
+        ambient = self._fake_gds2kicad(tmp_path / "ambient" / "gds_to_kicad")
+        monkeypatch.delenv("GDS_TO_KICAD_ROOT", raising=False)
+        bump_mirror._import_pinlist()
+        first = sys.modules["pin_list"]
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        path_before = list(sys.path)
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(ambient) in str(excinfo.value) and str(chosen) in str(excinfo.value)
+        assert sys.modules["pin_list"] is first
+        assert sys.path == path_before
+
+    def test_an_invalid_root_is_refused_with_a_pin_list_already_loaded(
+            self, monkeypatch, tmp_path):
+        self._fake_gds2kicad(tmp_path / "ambient" / "gds_to_kicad")
+        monkeypatch.delenv("GDS_TO_KICAD_ROOT", raising=False)
+        bump_mirror._import_pinlist()
+        first = sys.modules["pin_list"]
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(tmp_path / "typo"))
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(tmp_path / "typo") in str(excinfo.value)
+        assert sys.modules["pin_list"] is first
+
+    def test_a_pin_list_that_fails_to_load_is_not_left_behind(
+            self, monkeypatch, tmp_path):
+        chosen = tmp_path / "chosen"
+        chosen.mkdir()
+        (chosen / "pin_list.py").write_text("raise ValueError('boom')\n")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        with pytest.raises(ValueError, match="boom"):
+            bump_mirror._import_pinlist()
+        assert "pin_list" not in sys.modules
+
+    def test_a_failed_load_binds_its_checkout_and_reruns_that_file(
+            self, monkeypatch, tmp_path):
+        broken = tmp_path / "broken"
+        broken.mkdir()
+        (broken / "pin_list.py").write_text("raise ValueError('boom')\n")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(broken))
+        with pytest.raises(ValueError, match="boom"):
+            bump_mirror._import_pinlist()
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        path_before = list(sys.path)
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(broken) in str(excinfo.value) and str(chosen) in str(excinfo.value)
+        assert "pin_list" not in sys.modules
+        assert sys.path == path_before
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(broken))
+        with pytest.raises(ValueError, match="boom"):    # the same file is run again
+            bump_mirror._import_pinlist()
+
+    def test_the_binding_holds_when_another_pin_list_was_imported_meanwhile(
+            self, monkeypatch, tmp_path):
+        broken = tmp_path / "broken"
+        broken.mkdir()
+        (broken / "pin_list.py").write_text("raise ValueError('boom')\n")
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(broken))
+        with pytest.raises(ValueError, match="boom"):
+            bump_mirror._import_pinlist()
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        imported = types.ModuleType("pin_list")    # as a plain import would leave it
+        imported.__file__ = str(chosen / "pin_list.py")
+        # A loader that wrongly reuses it must fail on the missing refusal, not
+        # on an AttributeError.
+        imported.PinList = object
+        sys.modules["pin_list"] = imported
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(broken) in str(excinfo.value) and str(chosen) in str(excinfo.value)
+        assert sys.modules["pin_list"] is imported
+
+    def test_a_loaded_pin_list_without_a_source_file_is_refused(
+            self, monkeypatch, tmp_path):
+        chosen = self._fake_gds2kicad(tmp_path / "chosen")
+        imported = types.ModuleType("pin_list")    # built in memory, so no __file__
+        imported.PinList = object
+        sys.modules["pin_list"] = imported
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(chosen))
+        with pytest.raises(bump_mirror.CliInputError, match="no source file"):
+            bump_mirror._import_pinlist()
+        assert sys.modules["pin_list"] is imported
+
+    def test_a_symlinked_checkout_retargeted_after_the_load_is_refused(
+            self, monkeypatch, tmp_path):
+        first = self._fake_gds2kicad(tmp_path / "first")
+        second = self._fake_gds2kicad(tmp_path / "second")
+        link = tmp_path / "link"
+        link.symlink_to(first)
+        monkeypatch.setenv("GDS_TO_KICAD_ROOT", str(link))
+        bump_mirror._import_pinlist()
+        loaded = sys.modules["pin_list"]
+        link.unlink()
+        link.symlink_to(second)
+        with pytest.raises(bump_mirror.CliInputError) as excinfo:
+            bump_mirror._import_pinlist()
+        assert str(first) in str(excinfo.value) and str(second) in str(excinfo.value)
+        assert sys.modules["pin_list"] is loaded
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +587,7 @@ class TestValidation:
         report = validator.validate(bumps)
         assert report.passed
 
+    @needs_interconnect
     def test_gds_output_has_expected_layers(self):
         """Generated GDS contains fab layers 9/35, 41/35, 134/0, 99/35."""
         import klayout.db as kdb
@@ -252,6 +646,7 @@ class TestValidation:
         finally:
             os.unlink(path)
 
+    @needs_gds2kicad
     def test_validate_only_no_gds(self):
         """CLI --validate-only creates report but no GDS file."""
         pins_path = _make_pin_list_json([
@@ -360,10 +755,10 @@ class TestAdditionalValidation:
         # Report should still pass (warnings don't block)
         assert report.passed
 
-    def test_rotation_transform(self):
+    @needs_gds2kicad
+    def test_rotation_transform(self, monkeypatch):
         """Pin at (40000, 0) dbu + 90deg rotation -> (0, 40) um offset."""
-        if GDS_TO_KICAD_DIR is None:
-            pytest.skip("gds_to_kicad sibling not found")
+        monkeypatch.syspath_prepend(str(require_sibling("gds_to_kicad")))
         from pin_list import PinList, PinEntry
 
         pin_list = PinList(pins=[
@@ -404,6 +799,7 @@ class TestAdditionalValidation:
 
 class TestCuPillarGenerator:
 
+    @needs_interconnect
     def test_cell_hierarchy(self):
         """Generated GDS has TOP > CUPILLARS_U1 > CUPILLAR_49um_opt2 instances."""
         import klayout.db as kdb
@@ -432,6 +828,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_bump_count(self):
         """add_bumps returns correct count."""
         bumps = [
@@ -441,6 +838,7 @@ class TestCuPillarGenerator:
         gen = CuPillarGenerator()
         assert gen.add_bumps(bumps) == 5
 
+    @needs_interconnect
     def test_custom_bodies_select_method_layers(self):
         """bodies= draws the method's 3D layers (e.g. a vendor's 510/511)
         instead of the default IHP cu-pillar pair."""
@@ -469,6 +867,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_written_gds_rereads_static_without_library_context(self):
         """Written GDS re-reads in a fresh Layout with no library context.
 
@@ -502,6 +901,7 @@ class TestCuPillarGenerator:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_foreign_lyp_env_cannot_poison_fab_layers(self):
         """KLAYOUT_LYP_FILE must not reach the PCell library registration.
 
@@ -577,6 +977,7 @@ class TestCuPillarGenerator:
         with pytest.raises(RuntimeError, match="instead of the fabrication"):
             gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
 
+    @needs_interconnect
     def test_write_infers_format_from_suffix(self):
         """write() keeps stream-format inference from the file suffix
         (an .oas path must produce OASIS bytes, not GDS2)."""
@@ -600,10 +1001,15 @@ class TestCuPillarGenerator:
         import bump_mirror
 
         monkeypatch.setattr(bump_mirror, "_bump3d_cache", False)
+        # The absence is cached under the root this case runs with, so a body
+        # cached by an earlier sibling case cannot answer for it.
+        monkeypatch.setattr(bump_mirror, "_bump3d_cache_root",
+                            os.environ.get("INTERCONNECT_PDK_ROOT"), raising=False)
         gen = CuPillarGenerator()
         with pytest.raises(RuntimeError, match="interconnect_pdk not found"):
             gen.add_bumps([BumpLocation("U1", "Pin1", 0.0, 0.0)])
 
+    @needs_interconnect
     def test_manifest_opening_enables_non_table_diameter(self):
         """A diameter outside Table 6.1 draws with the method-supplied
         passivation opening (manifest fab_params); Table 6.1 still wins
@@ -645,6 +1051,8 @@ class TestCuPillarGenerator:
 
 class TestCLI:
 
+    @needs_gds2kicad
+    @needs_interconnect
     def test_full_generation(self):
         """End-to-end CLI test: pins + position -> GDS output."""
         pins_path = _make_pin_list_json([
@@ -668,7 +1076,8 @@ class TestCLI:
                 if Path(p).exists():
                     os.unlink(p)
 
-    def test_validation_failure_blocks_gds(self):
+    @needs_gds2kicad
+    def test_validation_failure_blocks_gds(self, capsys):
         """--no-auto-resolve + pitch violation -> exit 1, no GDS.
 
         This is the strict contract: with auto-resolve disabled a DRC
@@ -689,12 +1098,15 @@ class TestCLI:
                 '-o', gds_path,
             ])
             assert ret == 1
+            assert "ERROR  [Padc.e]" in capsys.readouterr().out
             assert not Path(gds_path).exists()
         finally:
             for p in [pins_path, gds_path]:
                 if Path(p).exists():
                     os.unlink(p)
 
+    @needs_gds2kicad
+    @needs_interconnect
     def test_default_auto_resolve_recovers_and_writes_gds(self):
         """Default contract (auto-resolve ON): a pitch violation within the
         displacement budget is shifted until DRC passes and GDS is written."""
@@ -833,6 +1245,7 @@ class TestPerDeviceDimensions:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_mixed_option_gds_has_two_pillar_cells(self):
         """Mixed opt1 + opt2 assembly creates two different pillar cells."""
         import klayout.db as kdb
@@ -859,6 +1272,7 @@ class TestPerDeviceDimensions:
         finally:
             os.unlink(path)
 
+    @needs_interconnect
     def test_pillar_cell_caching(self):
         """Same body_diameter + with_cap reuses cached pillar cell."""
         gen = CuPillarGenerator()
@@ -872,6 +1286,7 @@ class TestPerDeviceDimensions:
         assert len(gen._pillar_cells) == 1
         assert (49, True) in gen._pillar_cells
 
+    @needs_interconnect
     def test_nocap_creates_separate_cell(self):
         """with_cap=False creates a different cell without SnAgCap layer."""
         import klayout.db as kdb
@@ -936,7 +1351,7 @@ class TestPerDeviceDimensions:
 
 
 # ---------------------------------------------------------------------------
-# Phase 6 robustness / contract regressions
+# Robustness and contract regressions
 # ---------------------------------------------------------------------------
 
 class TestRobustness:
@@ -979,7 +1394,8 @@ class TestRobustness:
         with pytest.raises(CliInputError):
             parse_rotations(["U1=spin"], pos)    # non-numeric angle
 
-    def test_diameter_no_table_match_errors(self):
+    @needs_gds2kicad
+    def test_diameter_no_table_match_errors(self, capsys):
         """An unmatched --diameter hard-errors (exit 1, no GDS) instead of
         silently validating against a fallback diameter the user did not ask
         for."""
@@ -993,6 +1409,7 @@ class TestRobustness:
             ret = main(['--pins', f'U1={pins_path}', '--position', 'U1=0,0',
                         '--diameter', '33', '-o', gds_path])
             assert ret == 1
+            assert "does not match any Table 6.1" in capsys.readouterr().err
             assert not Path(gds_path).exists()
         finally:
             for p in (pins_path, gds_path):
@@ -1036,6 +1453,7 @@ class TestRobustness:
         assert d01 > 1e-6                            # no longer stuck-coincident
         assert report["coincident_skipped"] is False
 
+    @needs_interconnect
     def test_bump3d_signature_contract(self):
         """The interposer calls bump3d_generator.add_3d_bodies(layout, cell,
         body_radius_um, bodies=, with_cap=, num_points=) across the repo split.

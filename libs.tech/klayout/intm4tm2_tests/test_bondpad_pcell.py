@@ -54,6 +54,8 @@ STACK_METALS = [(50, 0), (67, 0), (126, 0)]           # Metal4, Metal5, TopMetal
 STACK_VIAS   = [(66, 0), (125, 0), (133, 0)]          # Via4, TopVia1, TopVia2
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 PCELL_BATCH_SCRIPT = textwrap.dedent("""\
     import sys

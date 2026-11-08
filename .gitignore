@@ -1,9 +1,3 @@
-# Project documentation (internal use only)
-CLAUDE.md
-SESSION_LOG.md
-LAYER_PARITY_AUDIT.md
-EM_STACKUP_AUDIT.md
-
 # GDS files
 *.gds
 *.gds.gz
@@ -55,3 +49,7 @@ ENV/
 # DRC / LVS regression run artifacts
 libs.tech/klayout/tech/drc/testing/regression_run/
 libs.tech/klayout/tech/lvs/testing/regression_run/
+
+# The commit stamp of a tree installed without .git, which the seal ring's
+# version label reads (pdk_version.py); never tracked here.
+/.shipped-ref

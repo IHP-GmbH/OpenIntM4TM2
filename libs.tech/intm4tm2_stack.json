@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.1",
+  "note": "Physical stack of the IntM4TM2 interposer, in um, z = 0 at the substrate top. The interposer body is substrate.thickness_um + beol.attachment_surface_z_um; consumers derive it and no file stores it. Every copy of these values in this PDK is checked against this file by libs.tech/klayout/intm4tm2_tests/test_body_thickness.py.",
+  "substrate": {
+    "material": "Si",
+    "epsilon_r": 11.9,
+    "loss_tangent": 0.0,
+    "thickness_um": 250.0,
+    "source": "nominal thickness of fabricated vehicles",
+    "citation": {
+      "title": "Experimental Investigation of Local Backside Etching Patterns for Passive Thermal Management in TSV-Free RF Silicon Interposers",
+      "venue": "APMC 2026"
+    }
+  },
+  "beol": {
+    "attachment_surface_z_um": 10.8103,
+    "attachment_surface_note": "Top of TopMetal2 in the reduced back-end, the mount plane; equal to the zmax_um of the top metal below.",
+    "dielectric": {
+      "material": "SiO2",
+      "epsilon_r": 4.1,
+      "loss_tangent": 0.0
+    },
+    "metals_note": "Routing metals from the bottom up. The oxide between two metals spans the upper metal's zmin_um down to the lower one's zmax_um; the base oxide spans the substrate top up to the first metal's zmin_um.",
+    "metals": [
+      {"name": "Metal4", "zmin_um": 0.64, "zmax_um": 1.13},
+      {"name": "Metal5", "zmin_um": 1.67, "zmax_um": 2.16},
+      {"name": "TopMetal1", "zmin_um": 3.0103, "zmax_um": 5.0103},
+      {"name": "TopMetal2", "zmin_um": 7.8103, "zmax_um": 10.8103}
+    ],
+    "passivation_note": "Dielectric films over the attach plane, from the bottom up: the first starts at attachment_surface_z_um and each next one on the one below. They lie above the plane, so they are not part of the body; pads are opened through them (Passiv).",
+    "passivation": [
+      {"name": "oxide", "material": "SiO2", "epsilon_r": 4.1, "loss_tangent": 0.0, "thickness_um": 1.5},
+      {"name": "nitride", "material": "SiN", "epsilon_r": 6.6, "loss_tangent": 0.0, "thickness_um": 0.4}
+    ],
+    "passivation_source": "the public IHP SG13G2 process specification, ihp-sg13g2/libs.doc/doc/SG13G2_os_process_spec.pdf (Rev. 1.2): TPASS1, 1500 nm oxide, and TPASS2, 400 nm SiN (p. 17), with epsilon_r 6.6 in the SiN (p. 5). The oxide takes the BEOL oxide's 4.1, as the public SG13G2 EM stack does (ihp-sg13g2/libs.tech/openems/openems_ihp_sg13g2/workflow/SG13G2_200um.xml, SiO2 up to 1.5 um over the top of TopMetal2, then Passive 0.4 um)."
+  }
+}

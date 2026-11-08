@@ -44,6 +44,40 @@ if BEOL
                          "5.18. M#{metalnfil_no}Fil.c : Min. Metal#{metalnfil_no}:filler space to Metal#{metalnfil_no} is #{metalnfil_c_val} um")
     metalnfil_c_l.forget
 
+    # Rule MFil.iso: Metal(n):filler must not touch or overlap Metal(n).
+    #
+    # DEVIATION: not in the sg13g2 source, which checks filler-to-metal only with
+    # the MFil.c separation above. A separation rule constrains shapes that are
+    # apart, so it is silent on a filler polygon that overlaps drawn metal. Two
+    # shapes it cannot see: a filler wholly inside a drawn polygon, and a filler
+    # overlapping two drawn polygons at once.
+    #
+    # Retained pre-fix measurements used separate Metal4 layouts. The bridge
+    # passed the twenty default decks. The containment layout was checked only
+    # against metalnfiller: its deliberate near-spacing control was reported,
+    # while the contained filler was not. These are not measurements of every
+    # contact shape or of the corresponding TopMetal layers.
+    #
+    # Not measured, and recorded here as reasoning rather than as established
+    # fact. That the datatypes of a metal layer are merged into one fabricated
+    # shape, which is what would make the bridging case an electrical rather than
+    # a geometric defect. And that LVS would not catch it, which is a reading of
+    # the connect statements in layers_definitions.lvs with no extraction run
+    # behind it. Confirm both with IHP before either is repeated as fact.
+    #
+    # This rule is not aimed at fill produced by the generators in this repo, and
+    # says nothing about whether any generator is safe. It is aimed at fill that
+    # arrives already placed, hand-drawn, from another generator, or inside an
+    # imported block, where nothing in this flow constrains how it was made.
+    # `interacting` is the right predicate rather than an overlap area test:
+    # MFil.c already requires 0.42 um of space, so any contact at all is a
+    # violation and a corner touch is as wrong as an overlap.
+    logger.info("Executing rule M#{metalnfil_no}Fil.iso")
+    metalnfil_iso_l = metalnfil_filler.interacting(metalnfil_metal)
+    metalnfil_iso_l.output("M#{metalnfil_no}Fil.iso",
+                           "5.18. M#{metalnfil_no}Fil.iso : Metal#{metalnfil_no}:filler must not touch or overlap Metal#{metalnfil_no} (isolation)")
+    metalnfil_iso_l.forget
+
     next if PRECHECK_DRC
 
     # Rule MFil.a2: Max. Metal(n):filler width is 5.00 um

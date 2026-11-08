@@ -20,8 +20,11 @@
 # ------------------ 6.10 Sealring -------------
 #===============================================
 #
-# Only four EdgeSeal rules survive the interposer backend-only layer subset:
-#   Seal.l, Seal.n, Seal.k and Seal.m.
+# The EdgeSeal rules that survive the interposer backend-only layer subset:
+#   Seal.l, Seal.n, Seal.k and Seal.m, as in the sg13g2 sealring deck, and
+#   Seal.a, Seal.c1-c3, Seal.e and Seal.f, ported from the sg13g2 maximal deck
+#   to the Metal4..TopMetal2 stack, with its rule ids (Seal.a_<layer>,
+#   Seal.c1.Via4, Seal.c2, Seal.c3, Seal.e, Seal.f.<layer>).
 #
 # DEVIATION: the entire Seal.b family (Min. Activ space to EdgeSeal-Activ,
 # EdgeSeal-pSD, EdgeSeal-Metal1..5, EdgeSeal-TopMetal1, EdgeSeal-TopMetal2) is
@@ -29,7 +32,9 @@
 # Metal1..3 -- does not exist in this backend-only (Metal4..TopMetal2) stack.
 # Without Activ there is nothing to measure the EdgeSeal spacing against, so the
 # rule is meaningless here rather than merely relaxed, and no Seal_b key is
-# provided in interposer_tech_default.json.
+# provided in interposer_tech_default.json. Seal.d (EdgeSeal-Activ enclosure of
+# the via rings) and the Activ, pSD, Cont and Metal1..3 parts of Seal.a, c and f
+# are dropped for the same reason.
 #
 # DEVIATION: the source deck wraps Seal.l in an en_tiles/setup_run_mode block;
 # that wrapper is stripped here like in the filler decks (the interposer engine
@@ -85,6 +90,116 @@ if BEOL
   seal_n_holes.forget
   seal_n_l.forget
 
+  # EdgeSeal's interior and the Passiv loop around EdgeSeal, for the presence
+  # rules and the ring rules below. A Passiv shape outside the ring belongs to
+  # the loop if it is a closed loop around EdgeSeal or touches one. Not needed
+  # by a precheck run without the presence rules.
+  seal_checked = REQUIRE_SEALRING || !PRECHECK_DRC
+  if seal_checked
+    seal_interior = edgeseal_drw.holes
+    seal_inside = edgeseal_drw.or(seal_interior)
+    seal_pas_out = passiv_drw.not(seal_inside)
+    seal_pas_loops = seal_pas_out.with_holes(1, nil)
+    seal_pas_ring = seal_pas_loops.inside(seal_pas_loops.hulls.covering(edgeseal_drw))
+  end
+
+  # Seal-ring presence, with -rd require_sealring=true (parsed in intm4tm2.drc).
+  # Without a ring Seal.l is skipped (it needs 39/4), and Seal.n, Pas.c, Pad.dR,
+  # Padc.d, Padb.d and LBE.d pass because they have no EdgeSeal to measure to.
+  # These rules make a missing, broken or misplaced ring an error. They are not
+  # SG13G2 rules, hence the SEAL.REQ names.
+  if REQUIRE_SEALRING
+    logger.info('Executing rules SEAL.REQ.*')
+
+    # Rule SEAL.REQ.1 / SEAL.REQ.2: EdgeSeal and the sealring boundary are drawn.
+    if edgeseal_drw.is_empty?
+      CHIP.output('SEAL.REQ.1', 'SEAL.REQ.1 : No EdgeSeal (39/0) drawn')
+    end
+    if edgeseal_boundary.is_empty?
+      CHIP.output('SEAL.REQ.2', 'SEAL.REQ.2 : No sealring boundary (39/4) drawn, so Seal.l cannot run')
+    end
+
+    # Rule SEAL.REQ.3_<L>: EdgeSeal and each ring layer inside it form a closed
+    # loop around the whole EdgeSeal interior. The layer is shrunk by half the
+    # narrowest ring (Seal.c1) less one 5 nm grid step, 0.09 um, and not grown
+    # back, so a point contact or a neck of 0.18 um or less counts as broken.
+    # The marker is the part of the interior the shrunk loop no longer surrounds.
+    # With no interior at all, EdgeSeal itself is the marker and REQ.4 is
+    # skipped: everything would be "outside" and the report would drown.
+    #
+    # A slit is accepted: every metal and via ring open, each in one piece cut
+    # once by at most 2.81 um, the widest cut of the sealring PCell (its via
+    # rings stop Seal.d, 1.30 um, short of both sides of a 0.21 um notch, the
+    # SG13G2 Act.b space), and every via ring under both of its metals, so
+    # that each via cut covers the metal cuts beside it and the cuts line up.
+    # EdgeSeal must stay closed. One cut layer on a closed stack is still
+    # reported; with every ring layer open, so are the layers that are not
+    # such a cut.
+    seal_req_shrink = (fetch_rule(drc_rules, 'Seal_c1') / 2 - 0.005).round(3)
+    seal_req_bridge = ((2.81 + 2 * seal_req_shrink) / 2).round(3)
+    if seal_interior.is_empty?
+      edgeseal_drw.output('SEAL.REQ.3_ES', 'SEAL.REQ.3_ES : EdgeSeal is not a closed ring')
+    else
+      # [name, layer, and for a via ring the two metals it joins]
+      seal_req_rings = [['ES', edgeseal_drw], ['M4', metal4_drw], ['V4', via4_drw, metal4_drw, metal5_drw],
+                        ['M5', metal5_drw], ['TV1', topvia1_drw, metal5_drw, topmetal1_drw],
+                        ['TM1', topmetal1_drw], ['TV2', topvia2_drw, topmetal1_drw, topmetal2_drw],
+                        ['TM2', topmetal2_drw]].map do |seal_req_name, seal_req_layer, *seal_req_metals|
+        seal_req_ring = seal_req_layer.and(edgeseal_drw)
+        seal_req_loop = seal_req_ring.sized(-seal_req_shrink)
+        seal_req_open = seal_interior.not(seal_req_loop.holes)
+        # One piece whose cut closes when bridged over the slit width.
+        seal_req_slit = seal_req_name != 'ES' && !seal_req_open.is_empty? && seal_req_loop.count == 1 &&
+                        seal_interior.not(seal_req_loop.sized(seal_req_bridge).sized(-seal_req_bridge).holes).is_empty? &&
+                        (seal_req_metals.empty? ||
+                         seal_req_ring.not(seal_req_metals[0].and(seal_req_metals[1])).is_empty?)
+        seal_req_ring.forget
+        seal_req_loop.forget
+        [seal_req_name, seal_req_open, seal_req_slit]
+      end
+      seal_req_all_cut = seal_req_rings.none? do |seal_req_name, seal_req_open, _|
+        seal_req_name != 'ES' && seal_req_open.is_empty?
+      end
+      # An accepted cut still writes its category, empty: a report without
+      # it reads as a deck that did not run.
+      seal_req_rings.each do |seal_req_name, seal_req_open, seal_req_slit|
+        seal_req_marker = seal_req_slit && seal_req_all_cut ? polygon_layer : seal_req_open
+        seal_req_marker.output("SEAL.REQ.3_#{seal_req_name}",
+                               "SEAL.REQ.3_#{seal_req_name} : Seal ring layer is not a closed loop inside EdgeSeal")
+        seal_req_open.forget
+      end
+
+      # Rule SEAL.REQ.4: the ring encloses everything that is fabricated.
+      # Marker layers are left out on purpose (a keep-out may reach the board
+      # edge). Passiv 9/0 outside the ring is allowed only as the Passiv loop
+      # around EdgeSeal; other 9/0 there is reported. Metal4 filler is allowed
+      # in the corners that a stepped Passiv loop cuts off its bounding box,
+      # within Seal.k of the box corner, where IHP-made rings carry their
+      # version marks (2 x 2 um 50/22 squares).
+      seal_req_box = seal_pas_ring.extents
+      seal_req_k = fetch_rule(drc_rules, 'Seal_k')
+      seal_req_corners = seal_req_box.not(seal_req_box.sized(-seal_req_k.um, 0))
+                                     .not(seal_req_box.sized(0, -seal_req_k.um))
+                                     .not(seal_pas_ring.hulls)
+      seal_req_out = seal_pas_out.not(seal_pas_ring)
+      # The layer list is read by the KiCad exporter's seal-ring clearance
+      # test; keep it one literal array.
+      [metal4_drw, metal4_filler, metal4_mask, metal4_opc, via4_drw, metal5_drw,
+       metal5_filler, metal5_mask, metal5_opc, topvia1_drw, topmetal1_drw,
+       topmetal1_filler, topmetal1_mask, topvia2_drw, topmetal2_drw, topmetal2_filler,
+       topmetal2_mask, passiv_pillar, passiv_sbump, passiv_pdl, mim_drw, vmim_drw,
+       thinfilmres_drw, lbe_drw].each do |seal_req_layer|
+        seal_req_layer_out = seal_req_layer.not(seal_inside)
+        seal_req_layer_out = seal_req_layer_out.not(seal_req_corners) if seal_req_layer.equal?(metal4_filler)
+        seal_req_out += seal_req_layer_out
+      end
+      seal_req_out.output('SEAL.REQ.4', 'SEAL.REQ.4 : Fabricated shape outside the seal ring')
+      seal_req_box.forget
+      seal_req_corners.forget
+      seal_req_out.forget
+    end
+  end
+
   unless PRECHECK_DRC
     # Rule Seal.k : Min. EdgeSeal 45-degree corner length is 21.00 um
     logger.info('Executing rule Seal.k')
@@ -102,5 +217,66 @@ if BEOL
     seal_m_l.output('Seal.m', '6.10. Seal.m : Only one sealring per chip allowed')
     seal_m_chip.forget
     seal_m_l.forget
+
+    # Seal.a, Seal.c1-c3, Seal.e and Seal.f measure the ring itself: each
+    # layer AND an EdgeSeal polygon with a hole, and the Passiv loop around it.
+    seal_ring = edgeseal_drw.with_holes(1, nil)
+    seal_metals = [['Metal4', metal4_drw], ['Metal5', metal5_drw],
+                   ['TopMetal1', topmetal1_drw], ['TopMetal2', topmetal2_drw]].map do |name, layer|
+      [name, layer.and(seal_ring)]
+    end
+
+    # Rule Seal.a_<L>: Min. EdgeSeal-<L> width is 3.50 um
+    logger.info('Executing rule Seal.a')
+    seal_a_value = fetch_rule(drc_rules, 'Seal_a')
+    seal_metals.each do |name, layer|
+      seal_a_l = layer.width(seal_a_value.um, projection)
+      seal_a_l.output("Seal.a_#{name}", "6.10. Seal.a_#{name} : Min. EdgeSeal-#{name} width is #{seal_a_value} um")
+      seal_a_l.forget
+    end
+
+    # Rule Seal.c1 / c2 / c3: the EdgeSeal via rings are exactly their width,
+    # neither narrower nor wider anywhere.
+    logger.info('Executing rules Seal.c1, Seal.c2, Seal.c3')
+    [['Seal.c1.Via4', 'Seal_c1', via4_drw, 'Via4'], ['Seal.c2', 'Seal_c2', topvia1_drw, 'TopVia1'],
+     ['Seal.c3', 'Seal_c3', topvia2_drw, 'TopVia2']].each do |rule, key, layer, name|
+      seal_c_value = fetch_rule(drc_rules, key)
+      seal_c_ring = layer.and(seal_ring)
+      seal_c_half = (seal_c_value / 2).round(3)
+      [seal_c_ring.width(seal_c_value.um),
+       seal_c_ring.sized(-seal_c_half.um).sized(seal_c_half.um)].each do |seal_c_l|
+        seal_c_l.output(rule, "6.10. #{rule} : EdgeSeal-#{name} ring width is #{seal_c_value} um")
+        seal_c_l.forget
+      end
+      seal_c_ring.forget
+    end
+
+    # Rule Seal.e: Min. Passiv ring width outside of sealring is 4.20 um
+    logger.info('Executing rule Seal.e')
+    seal_e_value = fetch_rule(drc_rules, 'Seal_e')
+    seal_e_l = seal_pas_ring.width(seal_e_value.um)
+    seal_e_l.output('Seal.e', "6.10. Seal.e : Min. Passiv ring width outside of sealring is #{seal_e_value} um")
+    seal_e_l.forget
+
+    # Rule Seal.f.<L>: Min. Passiv ring outside of sealring space to EdgeSeal-<L> is 1.00 um
+    logger.info('Executing rule Seal.f')
+    seal_f_value = fetch_rule(drc_rules, 'Seal_f')
+    seal_metals.each do |name, layer|
+      seal_f_l = seal_pas_ring.separation(layer, seal_f_value.um)
+      seal_f_l.output("Seal.f.#{name}",
+                      "6.10. Seal.f.#{name} : Min. Passiv ring outside of sealring space to EdgeSeal-#{name} is #{seal_f_value} um")
+      seal_f_l.forget
+    end
+
+    seal_metals.each { |_, layer| layer.forget }
+    seal_ring.forget
+  end
+
+  if seal_checked
+    seal_interior.forget
+    seal_inside.forget
+    seal_pas_out.forget
+    seal_pas_loops.forget
+    seal_pas_ring.forget
   end
 end

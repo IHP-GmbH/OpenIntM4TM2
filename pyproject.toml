@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intm4tm2"
+version = "0.4.1"
+description = "KLayout PDK and assembly tooling for the IHP 130-nm IntM4TM2 aluminium BEOL interposer."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+# What the suites import: klayout (klayout.db, and pya from the same wheel),
+# PyYAML for bump_mirror's chiplet mode, and psutil, which the PCell library
+# reads when it is present. One requirement per entry, no markers.
+dependencies = ["klayout", "PyYAML", "psutil"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+# Nothing is installed as a module. The PDK is used in place from libs.tech,
+# and each suite puts libs.tech/klayout/python on sys.path itself.
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+# The deck registry self-test (tech/drc/testing) needs ruby and stays a
+# separate CI step.
+testpaths = ["libs.tech/klayout/intm4tm2_tests"]
+# -ra prints the reason for every skip, so a new one is visible the day it
+# appears. --strict-markers and --strict-config turn a typo in a marker or an
+# ini key into an error instead of a silently ignored line.
+#
+# A bare `pytest` starts none of the design tools. It does run git, for the
+# PDK version label (test_pdk_version.py, whose git cases skip without it).
+# The cases that run the klayout binary, ngspice, xschem or kicad-cli carry
+# live_tool and are deselected here: a name on PATH is enough to start them,
+# and the klayout wheel ships the Python module without the binary. The field
+# solves that take more than about 1.5 s at one CPU carry slow and are
+# deselected too, so the default run stays fast. A command-line -m replaces
+# this one:
+#   pytest -m live_tool     the tool cases
+#   pytest -m slow          the long field solves
+#   pytest -m ""            every case
+# needs_sibling_sources stays selected. The tiered runner ANDs this -m with its
+# own selection, and its T1 is exactly those cases.
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not live_tool and not slow"]
+markers = [
+    "live_tool: starts the klayout binary, ngspice, xschem or kicad-cli (opt-in, pytest -m live_tool); skips when the tool is not on PATH",
+    "slow: a field solve that takes more than about 1.5 s at one CPU (opt-in, pytest -m slow)",
+    "needs_sibling_sources(*ids): reads a sibling repository's tree, from its variable or from $HCDP_ROOT/<id>",
+]
+
+# The skips the tiered runner accepts, each a reason fragment and a node id
+# fragment, optionally narrowed to some tiers; any other skip fails the tier.
+# In the host tiers the tool cases are deselected, and a sibling case either
+# finds its sibling or fails. The image tier (T2) runs the tool cases, and the
+# runtime image carries libngspice for co-simulation but not the ngspice CLI
+# or xschem, so the CMIM model cases and the CMIM symbol netlist skip there;
+# the host tier still runs them.
+[tool.tierrun]
+declared-skips = [
+    {reason = "ngspice not on PATH", nodeid = "test_cmim_model.py::", tiers = ["T2"]},
+    {reason = "xschem binary not on PATH", nodeid = "test_cmim_symbol.py::test_cap_cmim_symbol_netlists", tiers = ["T2"]},
+]
+
+# Each mutation must turn its tier red on the runner. Without live_tool the
+# default selection starts the klayout sentinel; without slow the cached
+# section solve runs past the tier's per-case time budget. With the section
+# cache keyed on coordinates rounded to 1 nm, one lane takes another lane's
+# solve, which only the cached-section case in the slow tier sees. A rule
+# value changed in the JSON without regenerating the KiCad rules leaves the
+# template's .kicad_dru stale.
+mutations = [
+    {name = "live-tool-marker-dropped", path = "libs.tech/klayout/intm4tm2_tests/test_cmim_footprint.py", old = "@pytest.mark.live_tool\n@pytest.mark.skipif(KLAYOUT_BIN is None, reason=\"klayout binary not on PATH\")\ndef test_committed_footprints_match_pcell", new = "@pytest.mark.skipif(KLAYOUT_BIN is None, reason=\"klayout binary not on PATH\")\ndef test_committed_footprints_match_pcell", tiers = ["T0"]},
+    {name = "slow-marker-dropped", path = "libs.tech/klayout/intm4tm2_tests/test_routed_load.py", old = "@pytest.mark.slow\ndef test_a_section_solve_is_cached_on_its_exact_conductors", new = "def test_a_section_solve_is_cached_on_its_exact_conductors", tiers = ["T0"]},
+    {name = "section-cache-key-rounded", path = "libs.tech/parasitics/routed_load.py", old = "        key = ('section', target, tuple(others), x0, x1)\n", new = "        key = ('section',) + tuple(round(v, 3) if isinstance(v, float) else v for v in target + tuple(x for o in others for x in o) + (x0, x1))\n", tiers = ["T0-slow"]},
+    {name = "kicad-rules-stale", path = "libs.tech/klayout/tech/drc/rule_decks/interposer_tech_default.json", old = "\"TM2_b\": 2.00,", new = "\"TM2_b\": 2.10,", tiers = ["T0"]},
+]

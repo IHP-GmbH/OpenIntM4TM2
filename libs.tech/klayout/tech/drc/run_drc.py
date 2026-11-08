@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import logging
-import klayout.db
 from datetime import datetime, timezone
 import time
 from subprocess import check_call, CalledProcessError, run as _run
@@ -21,29 +20,19 @@ import concurrent.futures
 import traceback
 from typing import Dict, List, Set, Union, Tuple
 
-# Available DRC decks (must match keys in intm4tm2.drc all_decks hash)
-AVAILABLE_DECKS = [
-    'offgrid', 'angle',
-    'metaln', 'metalnfiller',
-    'via4', 'topvia1',
-    'topmetal1', 'topmetal1filler',
-    'topvia2', 'topmetal2', 'topmetal2filler',
-    'passiv', 'pad', 'copperpillar', 'solderbump',
-    'sealring', 'mim', 'metalslits', 'lbe',
-    'density',
-]
-
-# Decks excluded from the default "all" run (must match intm4tm2.drc).
-# Density carries global minimum-density rules that fail on partial layouts;
-# opt in with --density or an explicit --deck density.
-DEFAULT_SKIP_DECKS = {'density'}
-
-# Decks that have been moved out of the interposer PDK. Recognised here so
-# that a stale CLI invocation prints a useful redirect instead of "unknown".
-RELOCATED_DECKS = {
-    'assembly': "Promoted to the ADK. Use adk/klayout/drc/run_drc.py "
-                "with --interposer-adapter <name>.",
-}
+try:
+    import klayout.db
+    # Deck registry (deck names, default-skip, relocation) shared with the runset's
+    # Ruby side (intm4tm2_decks.rb) and the registry CI check via intm4tm2_decks.py,
+    # so the Python and Ruby halves cannot drift.
+    from intm4tm2_decks import AVAILABLE_DECKS, DEFAULT_SKIP_DECKS, RELOCATED_DECKS
+except Exception:
+    if __name__ != "__main__":
+        raise
+    # Run as a script, a broken dependency is no verdict (exit 2); Python's own
+    # exit 1 would read as markers.
+    traceback.print_exc()
+    sys.exit(2)
 
 
 # ================================================================
@@ -54,6 +43,13 @@ RELOCATED_DECKS = {
 def get_rules_with_violations(results_database: Union[str, Path]) -> Set[str]:
     """
     Parse a KLayout RDB file and return rule names that have violations.
+    """
+    return set(get_violation_counts(results_database))
+
+
+def get_violation_counts(results_database: Union[str, Path]) -> Dict[str, int]:
+    """
+    Parse a KLayout RDB file and return the number of markers per rule name.
     """
     results_database = Path(results_database)
     if not results_database.is_file():
@@ -67,11 +63,12 @@ def get_rules_with_violations(results_database: Union[str, Path]) -> Set[str]:
         logging.error(f"Failed to parse results database: {results_database}")
         raise e
 
-    violating_rules = set()
-    for rule in root[7]:  # root[7] : List rules with violations
-        violating_rules.add(f"{rule[1].text}".replace("'", ""))
+    counts: Dict[str, int] = {}
+    for item in root.find("items").findall("item"):
+        rule = f"{item.findtext('category')}".replace("'", "")
+        counts[rule] = counts.get(rule, 0) + 1
 
-    return violating_rules
+    return counts
 
 
 def _get_cell_key(cell: ET.Element) -> str:
@@ -169,15 +166,13 @@ def merge_klayout_drc_reports(input_files: List[str], output_file: str):
         )
 
     existing_keys = {_get_cell_key(c) for c in base_cells.findall("cell")}
+    # No report is ever skipped: a merge that dropped one could report a
+    # clean run. check_drc_results rejects unreadable reports before this.
     for file_path in input_files[1:]:
-        try:
-            tree = ET.parse(file_path)
-            root = tree.getroot()
-            _merge_categories(base_categories, root)
-            _merge_cells(base_cells, root, existing_keys)
-            _merge_items(base_items, root)
-        except ET.ParseError as e:
-            logging.error(f"Error parsing '{file_path}': {e}. Skipping.")
+        root = ET.parse(file_path).getroot()
+        _merge_categories(base_categories, root)
+        _merge_cells(base_cells, root, existing_keys)
+        _merge_items(base_items, root)
 
     _rename_plain_variants(base_cells, base_items)
     base_tree.write(output_file, encoding="utf-8", xml_declaration=True)
@@ -304,14 +299,29 @@ def run_deck(drc_script: str, deck_name: str, layout_path: str,
     return str(report_path)
 
 
+def _report_is_readable(path: Path) -> bool:
+    """Well-formed XML with the sections a KLayout report always has."""
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError):
+        return False
+    return all(root.find(tag) is not None for tag in ("categories", "cells", "items"))
+
+
 def check_drc_results(report_files: List[str], run_dir: Path,
                       layout_path: str, topcell: str):
     """Check and report DRC results, merge reports if multiple."""
-    report_files = [Path(f) for f in report_files if Path(f).is_file()]
-
-    if not report_files:
-        logging.error("No result databases generated. Check the logs.")
-        sys.exit(1)
+    report_files = [Path(f) for f in report_files]
+    missing = [f for f in report_files if not f.is_file() or f.stat().st_size == 0]
+    if not report_files or missing:
+        logging.error("Incomplete DRC results; missing or empty expected reports: %s",
+                      ", ".join(map(str, missing)) if missing else "no reports requested")
+        sys.exit(2)
+    unreadable = [f for f in report_files if not _report_is_readable(f)]
+    if unreadable:
+        logging.error("Incomplete DRC results; unreadable reports: %s",
+                      ", ".join(map(str, unreadable)))
+        sys.exit(2)
 
     if len(report_files) > 1:
         layout_stem = Path(layout_path).stem
@@ -401,6 +411,11 @@ Examples:
         "--density_sanity", action="store_true",
         help="Enable the DEN.BND.* boundary sanity rules of the density deck.",
     )
+    parser.add_argument(
+        "--require_sealring", action="store_true",
+        help="Enable the SEAL.REQ.* rules of the sealring deck: fail unless a "
+             "closed seal ring and its 39/4 boundary enclose the design.",
+    )
 
     return parser.parse_args()
 
@@ -453,10 +468,22 @@ def main():
             logging.error(f"Unknown deck '{d}'. Available: {', '.join(AVAILABLE_DECKS)}")
             sys.exit(1)
 
+    if args.require_sealring and decks_to_run and 'sealring' not in decks_to_run:
+        logging.error("--require_sealring needs the sealring deck; add --deck sealring "
+                      "or run the default decks.")
+        sys.exit(1)
+
     # Defines forwarded to every deck invocation
     extra_defines = {}
     if args.density_sanity:
         extra_defines["density_sanity"] = "true"
+
+    def defines_for(deck):
+        # require_sealring goes only to the run that loads the sealring deck:
+        # the runset rejects it anywhere else, and --mp runs one deck per call.
+        if args.require_sealring and deck in ("all", "sealring"):
+            return dict(extra_defines, require_sealring="true")
+        return extra_defines
 
     # Execution strategy
     report_files = []
@@ -475,12 +502,12 @@ def main():
             logging.info("Running all default decks in single invocation")
             report = run_deck(drc_script, "all", layout_path, topcell,
                               run_dir, args.threads, args.run_mode,
-                              extra_defines)
+                              defines_for("all"))
             report_files.append(report)
             if args.density:
                 report = run_deck(drc_script, "density", layout_path, topcell,
                                   run_dir, args.threads, args.run_mode,
-                                  extra_defines)
+                                  defines_for("density"))
                 report_files.append(report)
     elif args.density and 'density' not in decks_to_run:
         decks_to_run.append('density')
@@ -488,11 +515,12 @@ def main():
     if decks_to_run and not report_files:
         if args.mp > 1 and len(decks_to_run) > 1:
             # Parallel execution
+            failed = []
             with concurrent.futures.ProcessPoolExecutor(max_workers=args.mp) as executor:
                 futures = {
                     executor.submit(
                         run_deck, drc_script, deck, layout_path, topcell,
-                        run_dir, args.threads, args.run_mode, extra_defines
+                        run_dir, args.threads, args.run_mode, defines_for(deck)
                     ): deck
                     for deck in decks_to_run
                 }
@@ -503,12 +531,18 @@ def main():
                     except Exception as e:
                         logging.error(f"Deck '{deck}' failed: {e}")
                         traceback.print_exc()
+                        failed.append(deck)
+            # A crashed deck returns no report, so the report check below
+            # cannot see it; without this the run could still say PASSED.
+            if failed:
+                logging.error("Incomplete DRC results; decks failed: %s", ", ".join(sorted(failed)))
+                sys.exit(2)
         else:
             # Sequential execution
             for deck in decks_to_run:
                 report = run_deck(drc_script, deck, layout_path, topcell,
                                   run_dir, args.threads, args.run_mode,
-                                  extra_defines)
+                                  defines_for(deck))
                 report_files.append(report)
 
     # Check results
@@ -521,4 +555,11 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        # A deck crashed in a sequential run (run_deck logged which one), or
+        # the run broke before its verdict. Exit 1 reads as markers, so none
+        # of these may end with it. Deliberate refusals use sys.exit(1).
+        logging.exception("Incomplete DRC results; the run did not complete")
+        sys.exit(2)

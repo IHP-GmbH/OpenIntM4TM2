@@ -19,8 +19,8 @@
 
 The cmim PCell is ported from the IHP-Open-PDK (SG13G2 open PDK) and the
 interposer metal stack keeps the same layer numbering for the MIM module
-(MIM 36/0, Metal5 67/0, TopMetal1 126/0, Vmim 129/0, TEXT 63/0). Two
-things are pinned here:
+(MIM 36/0, Metal5 67/0, TopMetal1 126/0, Vmim 129/0, TEXT 63/0). Three
+things are checked here:
 
 1. Geometry: for a set of (w, l) cases the drawn boxes must match the
    reference formulas exactly (MIM plate, Metal5 bottom plate sized by
@@ -30,12 +30,17 @@ things are pinned here:
    checkout, the same cases are generated with the upstream PCell
    library in a second headless batch and each fabrication layer must
    XOR empty against ours. The test skips cleanly when PDK_ROOT is
-   unset.
+   unset. UPSTREAM_VERIFIED records the upstream commit it was last
+   verified against, and a failure prints the command that shows what
+   moved.
+3. DRC: the smallest cmim passes TM1.a in the deck this PDK ships.
 
 The PCell side runs inside a headless klayout batch process because the
 PCell library registers through pya. Note that the default 'Calculate'
-parameter is 'w&l' (derive w and l from C), so cases that pin w and l
-explicitly must also pass Calculate='C' -- same behavior as upstream.
+parameter is 'w&l': where tkinter is available the parameter callback
+derives w and l from C, so cases that pin w and l explicitly must also
+pass Calculate='C' -- same behavior as upstream. Without tkinter the
+callback does not run and w and l are drawn as passed.
 """
 
 import math
@@ -50,11 +55,15 @@ from pathlib import Path
 import pytest
 
 import klayout.db as kdb
+import klayout.rdb as rdb
 
 REPO_KLAYOUT = Path(__file__).resolve().parents[1]
 PYTHON_DIR = REPO_KLAYOUT / "python"
+DRC_DIR = REPO_KLAYOUT / "tech" / "drc"
 
 KLAYOUT_BIN = shutil.which("klayout")
+# Every case here starts the klayout binary.
+pytestmark = pytest.mark.live_tool
 
 # (case name, PCell parameter dict, w_um, l_um). The first case uses the
 # PCell defaults (w = l = cmim_defLW = 6.99 um); the coercion callback
@@ -63,10 +72,17 @@ CASES = [
     ("default", {}, 6.99, 6.99),
     ("rect", {"Calculate": "C", "w": "10u", "l": "5u"}, 10.0, 5.0),
     ("nearmin", {"Calculate": "C", "w": "1.14u", "l": "1.14u"}, 1.14, 1.14),
+    ("narrow", {"Calculate": "C", "w": "2.0u", "l": "4.0u"}, 2.0, 4.0),
 ]
 
 FAB_LAYERS = [(36, 0), (67, 0), (126, 0), (129, 0)]
 TEXT_LAYER = (63, 0)
+
+# The IHP-Open-PDK commit (dev, 2026-09-21) the parity test was last
+# verified against. The last upstream change to the cmim geometry is
+# 17dc8dc3. Nothing checks PDK_ROOT against it; update it on a re-check.
+UPSTREAM_VERIFIED = "7a6e2faa8d33759e4f63cf6225dc2e61d4cff8b1"
+UPSTREAM_PYCELL_LIB = "ihp-sg13g2/libs.tech/klayout/python/sg13g2_pycell_lib"
 
 # Tech parameters mirrored from intm4tm2_tech.json (values identical to
 # the SG13G2 open PDK): used to recompute the expected geometry.
@@ -78,6 +94,7 @@ MIM_D = 0.36          # via array inset from the MIM plate (cont_over)
 TV1_A = 0.42          # Vmim via size (cont_size)
 TV1_D = 0.42
 CONT_DIST = 0.84      # via spacing, fixed in the PCell code
+TM1_A = 1.64          # TopMetal1 min width, rule TM1.a in our own DRC deck
 
 
 BATCH_SCRIPT = textwrap.dedent("""\
@@ -153,11 +170,18 @@ def _expected_geometry(w, l):
     x1 = MIM_D - TV1_D + xoffset
     y1 = MIM_D - TV1_D + yoffset
 
+    # TM1.a is enforced per axis: the via array alone leaves TopMetal1 at
+    # 1.26 um for the minimum 1.14 um cmim, below the 1.64 um minimum width.
+    tm1_x1 = _grid_fix((w - TM1_A) / 2)
+    tm1_y1 = _grid_fix((l - TM1_A) / 2)
+
     return {
         "mim": (0, 0, _dbu(w), _dbu(l)),
         "metal5": (_dbu(-MIM_C), _dbu(-MIM_C),
                    _dbu(w + MIM_C), _dbu(l + MIM_C)),
-        "topmetal1": (_dbu(x1), _dbu(y1), _dbu(x2), _dbu(y2)),
+        "topmetal1": (_dbu(min(x1, tm1_x1)), _dbu(min(y1, tm1_y1)),
+                      _dbu(max(x2, tm1_x1 + TM1_A)),
+                      _dbu(max(y2, tm1_y1 + TM1_A))),
         "vias": vias,
         "nvias": xanz * yanz,
     }
@@ -319,6 +343,37 @@ def test_cmim_upstream_parity():
                 assert not ours_region.is_empty(), (
                     f"pcell drew nothing on {layer}/{datatype} ({name})")
                 xor = ours_region ^ oracle_region
+                pin = UPSTREAM_VERIFIED[:10]
                 assert xor.is_empty(), (
                     f"layer {layer}/{datatype} differs for case {name}: "
-                    f"XOR area {xor.area()} dbu^2")
+                    f"XOR area {xor.area()} dbu^2. Parity was last verified "
+                    f"against IHP-Open-PDK {pin}; to see what moved: "
+                    f"git -C $PDK_ROOT diff --stat {pin} HEAD "
+                    f"-- {UPSTREAM_PYCELL_LIB}")
+
+
+@pytest.mark.skipif(KLAYOUT_BIN is None, reason="klayout binary not on PATH")
+def test_nearmin_cmim_passes_tm1a():
+    """At w = l = 1.14 um the via array alone gives a 1.26 um TopMetal1 plate;
+    the PCell grows it to TM1.a, and the shipped deck must agree."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        nearmin = [(name, params) for name, params, _, _ in CASES
+                   if name == "nearmin"]
+        _generate_ours(out_dir, nearmin)
+        gds = out_dir / "ours_nearmin.gds"
+        report = out_dir / "nearmin.lyrdb"
+        result = subprocess.run(
+            [KLAYOUT_BIN, "-b", "-r", str(DRC_DIR / "intm4tm2.drc"),
+             "-rd", f"input={gds}", "-rd", "topcell=TOP",
+             "-rd", f"report={report}", "-rd", "deck=topmetal1",
+             "-rd", "run_mode=flat", "-rd", "threads=1"],
+            capture_output=True, text=True, env=_batch_env(out_dir),
+            timeout=300)
+        assert result.returncode == 0, (
+            f"DRC run failed:\n{result.stdout}\n{result.stderr}")
+        db = rdb.ReportDatabase("")
+        db.load(str(report))
+        found = {cat.name(): cat.num_items() for cat in db.each_category()}
+        assert "TM1.a" in found, f"TM1.a did not run: {sorted(found)}"
+        assert found["TM1.a"] == 0, f"TM1.a fired {found['TM1.a']} time(s)"

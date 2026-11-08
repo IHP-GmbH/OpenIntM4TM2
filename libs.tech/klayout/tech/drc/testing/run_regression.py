@@ -6,7 +6,7 @@ Slim DRC regression runner for the interposer, following the IHP-SG13G2
 top cell is run through its deck and the set of violated rules is compared
 against the reference ("golden") expectation declared below.
 
-This reuses the interposer's own `run_drc.run_deck` / `get_rules_with_violations`
+This reuses the interposer's own `run_drc.run_deck` / `get_violation_counts`
 (one klayout -b invocation per top cell) instead of a standalone harness, so the
 DRC tests are exercised through the same runner as sign-off.
 
@@ -18,29 +18,137 @@ Usage:
 """
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
-import klayout.db as db
+# NB: klayout.db is imported lazily inside run_table (it is only needed to read
+# the testcase GDS), so this module stays importable without a KLayout install,
+# e.g. by the deck-registry CI check that reads GOLDEN / KNOWN_UNTESTED_DECKS.
+
+# ---------------------------------------------------------------------------
+# Provenance pin -- canonical run configuration the GOLDEN sets were validated
+# under. The GOLDEN marker sets were captured under exactly ONE KLayout version
+# and ONE run_mode/thread configuration; a different KLayout, run_mode or thread
+# count can shift which markers a deck emits, and a mismatched-but-self-
+# consistent run would still compare green against GOLDEN. So the run is pinned
+# to that configuration, never merely recorded.
+#
+# The two halves are pinned differently, and the difference is deliberate.
+# run_mode and threads are pinned BY CONSTRUCTION: run_table passes the
+# constants below to every deck run and nothing can vary them, so there is
+# nothing left to assert. The KLayout version is the half that can drift under
+# the run, so it is the half asserted at startup (a cheap metadata check, not a
+# second regression), and it is read from the BINARY that produces the markers,
+# never from the like-named Python module.
+#
+# CANONICAL_KLAYOUT_VERSION must track the ecosystem pin: the CI env in
+# .github/workflows/tests.yml sets KLAYOUT_VERSION="0.30.5". run_table below
+# takes its run_mode/threads from these constants, so there is exactly one
+# authority for all three.
+#
+# The decks run flat whatever the run mode says, so that pin binds nothing. The
+# thread count binds since the main deck hands it to the engine; before that
+# every deck ran on one thread, which is how the GOLDEN sets were captured, and
+# they hold unchanged at CANONICAL_THREADS.
+CANONICAL_KLAYOUT_VERSION = "0.30.5"
+CANONICAL_RUN_MODE = "flat"
+CANONICAL_THREADS = 2
+
+
+def _detect_klayout_version():
+    """Read the version of the KLayout BINARY the deck runs will spawn.
+
+    The markers GOLDEN is compared against are produced by the `klayout`
+    binary: run_drc.run_deck builds `["klayout", "-b", "-r", ...]` and each
+    deck runs in that subprocess. The pip `klayout` Python module is a
+    different artefact that merely shares the name, and the two routinely
+    differ on one host, so reading the module proves nothing about the run: it
+    can refuse a correct setup and it can pass a mismatched one. Read the
+    producer.
+
+    Returns the version string, or None if it cannot be read at all (no binary
+    on PATH, no output, unparseable output). None is a fail-closed signal for
+    assert_canonical_config; it is never treated as a match.
+    """
+    try:
+        completed = subprocess.run(
+            ["klayout", "-b", "-v"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    output = (completed.stdout or "").strip()
+    if not output:
+        return None
+    # `klayout -b -v` prints e.g. "KLayout 0.30.5"; the version is the last field.
+    return output.split()[-1] or None
+
+
+def assert_canonical_config(running_version):
+    """Fail loudly unless the running KLayout is the pinned one.
+
+    run_mode and threads are not arguments here on purpose: run_table passes
+    CANONICAL_RUN_MODE and CANONICAL_THREADS to every deck run and the CLI
+    exposes no way to change them, so a check against those same constants
+    could never fail and would be a check that does not discriminate. If either
+    ever becomes configurable, this assertion must take the value the run will
+    actually use, not the constant.
+
+    Args:
+        running_version: the version of the KLayout binary the runs will spawn,
+            or None when it could not be determined (fail closed).
+
+    Raises:
+        RuntimeError naming BOTH the expected and the actual value on any
+        divergence, and on an undeterminable version. Never warns-and-continues.
+    """
+    if not running_version:
+        raise RuntimeError(
+            "provenance pin: could not determine the running KLayout version "
+            f"(expected {CANONICAL_KLAYOUT_VERSION!r}). Refusing to compare "
+            "against GOLDEN under an unknown KLayout; put the pinned 'klayout' "
+            "binary on PATH and re-run.")
+    if running_version != CANONICAL_KLAYOUT_VERSION:
+        raise RuntimeError(
+            f"provenance pin: running KLayout version {running_version!r} != "
+            f"pinned {CANONICAL_KLAYOUT_VERSION!r}. GOLDEN was validated under "
+            "the pinned version; a different KLayout can shift deck markers and "
+            "pass a mismatched run green. Install the pinned KLayout, or update "
+            "GOLDEN and the pin together in the same change.")
 
 # Reference expectations: table -> {deck, cells: {top_cell: expected_violated_rule_set}}.
 # A clean cell must yield an empty set (also guards against false positives on the
 # other rules of that deck); a violation cell must yield exactly its rule set.
 # The optional 'defines' key maps a top cell to extra `-rd key=value` defines for
 # its run (e.g. density_sanity=true for the DEN.BND.* boundary sanity rules).
+# The optional 'counts' key maps a top cell to {rule: exact marker count} for
+# rules whose marker count matters, not just their presence. Every rule named
+# there must also be in that cell's expected set.
 GOLDEN = {
     'angle': {
         'deck': 'angle',
         'cells': {
-            'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute'},
+            'angle_viol':  {'via4_drw_Angle90', 'metal4_drw_Angle45', 'metal4_drw_Acute',
+                            'topmetal2_drw_Acute', 'topmetal2_drw_Angle45'},
+            'angle_crossing': {'metal5_drw_Acute', 'metal5_drw_Angle45'},
             'angle_clean': set(),
+        },
+        # One marker per bad corner or edge. The deck runs a raw and a merged
+        # pass into the same category; outputs append, so a violation both
+        # passes see must still be counted once.
+        'counts': {
+            'angle_viol': {'via4_drw_Angle90': 1, 'metal4_drw_Angle45': 1,
+                           'metal4_drw_Acute': 2, 'topmetal2_drw_Acute': 2,
+                           'topmetal2_drw_Angle45': 1},
+            'angle_crossing': {'metal5_drw_Acute': 4, 'metal5_drw_Angle45': 4},
         },
     },
     'copperpillar': {
         'deck': 'copperpillar',
         'cells': {
             'copperpillar_viol':  {'Padc.a', 'Padc.b', 'Padc.c',
-                                   'Padc.d', 'Padc.e', 'Padc.f'},
+                                   'Padc.d', 'Padc.f'},
             'copperpillar_clean': set(),
         },
     },
@@ -77,6 +185,21 @@ GOLDEN = {
         'deck': 'metalnfiller',
         'cells': {
             'metalnfiller_viol':  {'M4Fil.c', 'M4Fil.a2', 'M5Fil.c', 'M5Fil.a2'},
+            # One cell per contact shape. Combined, they would be
+            # indistinguishable: all four emit the same M{n}Fil.iso name, so a
+            # containment-only implementation would produce the same set as a
+            # correct one and the bridging case would stop discriminating.
+            # The edge and corner cells expect M{n}Fil.c as well, and that is
+            # correct rather than tolerated: touching is zero space, which is
+            # below the 0.42 um separation limit, so the separation rule is
+            # right to report it. They still discriminate, because a
+            # containment-only implementation would emit the .c markers alone.
+            'metalnfiller_iso_contained': {'M4Fil.iso', 'M5Fil.iso'},
+            'metalnfiller_iso_bridge':    {'M4Fil.iso', 'M5Fil.iso'},
+            'metalnfiller_iso_edge':      {'M4Fil.c', 'M4Fil.iso',
+                                           'M5Fil.c', 'M5Fil.iso'},
+            'metalnfiller_iso_corner':    {'M4Fil.c', 'M4Fil.iso',
+                                           'M5Fil.c', 'M5Fil.iso'},
             'metalnfiller_clean': set(),
         },
     },
@@ -107,8 +230,16 @@ GOLDEN = {
     'offgrid': {
         'deck': 'offgrid',
         'cells': {
-            'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid'},
+            'offgrid_viol':  {'metal4_drw_Offgrid', 'via4_drw_Offgrid', 'topmetal2_drw_Offgrid'},
+            'offgrid_crossing': {'metal5_drw_Offgrid'},
             'offgrid_clean': set(),
+        },
+        # One marker per off-grid vertex, for the same reason as the angle
+        # table: the raw and merged passes must not both report a vertex.
+        'counts': {
+            'offgrid_viol': {'metal4_drw_Offgrid': 1, 'via4_drw_Offgrid': 1,
+                             'topmetal2_drw_Offgrid': 2},
+            'offgrid_crossing': {'metal5_drw_Offgrid': 7},
         },
     },
     'pad': {
@@ -123,20 +254,87 @@ GOLDEN = {
         'cells': {
             'sealring_viol':  {'Seal.k', 'Seal.l', 'Seal.m', 'Seal.n'},
             'sealring_clean': set(),
+            'sealreq_clean': set(),
+            'sealreq_sub_cell': set(),
+            'sealreq_touching_core': set(),
+            'sealreq_markers': set(),
+            'sealreq_crossbar_ES': set(),
+            'sealreq_no_edgeseal': {'SEAL.REQ.1'},
+            'sealreq_no_boundary': {'SEAL.REQ.2'},
+            'sealreq_es_open': {'SEAL.REQ.3_ES'},
+            'sealreq_break_M4': {'SEAL.REQ.3_M4'},
+            'sealreq_break_V4': {'SEAL.REQ.3_V4'},
+            'sealreq_break_M5': {'SEAL.REQ.3_M5'},
+            'sealreq_break_TV1': {'SEAL.REQ.3_TV1'},
+            'sealreq_break_TM1': {'SEAL.REQ.3_TM1'},
+            'sealreq_break_TV2': {'SEAL.REQ.3_TV2'},
+            'sealreq_break_TM2': {'SEAL.REQ.3_TM2'},
+            'sealreq_point_contact_M5': {'SEAL.REQ.3_M5', 'Seal.a_Metal5'},
+            'sealreq_gap_5nm_TM1': {'SEAL.REQ.3_TM1'},
+            'sealreq_neck_M4': {'SEAL.REQ.3_M4', 'Seal.a_Metal4'},
+            'sealreq_missing_TV2': {'SEAL.REQ.3_TV2'},
+            'sealreq_corner_ring': {'SEAL.REQ.4'},
+            'sealreq_fill_in_margin': {'SEAL.REQ.4'},
+            'sealreq_stray_passiv': {'SEAL.REQ.4'},
+            'sealreq_passiv_loop': {'SEAL.REQ.4'},
+            'sealreq_trace_crossing': {'SEAL.REQ.4'},
+            'sealreq_nested_ring': {'Seal.m'},
+            'sealreq_off_no_seal': set(),
+            'sealreq_slit': set(),
+            'sealreq_slit_wide_TM2': {'SEAL.REQ.3_TM2', 'SEAL.REQ.3_TV2'},
+            'sealreq_slit_two_cuts_M4': {'SEAL.REQ.3_M4', 'SEAL.REQ.3_V4'},
+            'sealreq_slit_es_cut': {'SEAL.REQ.3_ES'},
+            'sealreq_slit_via_short_TM2': {'SEAL.REQ.3_TV2'},
+            'sealreq_slit_misaligned': {'SEAL.REQ.3_V4', 'SEAL.REQ.3_TV1'},
+            'sealreq_corner_marks': set(),
+            'sealreq_corner_metal': {'SEAL.REQ.4'},
+            'sealreq_corner_marks_square': {'SEAL.REQ.4'},
+            'sealreq_corner_tab': {'SEAL.REQ.4'},
+            'seal_a_Metal4': {'Seal.a_Metal4'},
+            'seal_a_Metal5': {'Seal.a_Metal5'},
+            'seal_a_TopMetal1': {'Seal.a_TopMetal1'},
+            'seal_a_TopMetal2': {'Seal.a_TopMetal2'},
+            'seal_c_narrow_Via4': {'Seal.c1.Via4'},
+            'seal_c_wide_Via4': {'Seal.c1.Via4'},
+            'seal_c_narrow_TopVia1': {'Seal.c2'},
+            'seal_c_wide_TopVia1': {'Seal.c2'},
+            'seal_c_narrow_TopVia2': {'Seal.c3'},
+            'seal_c_wide_TopVia2': {'Seal.c3'},
+            'seal_e': {'Seal.e'},
+            'seal_f_Metal4': {'Seal.f.Metal4'},
+            'seal_f_Metal5': {'Seal.f.Metal5'},
+            'seal_f_TopMetal1': {'Seal.f.TopMetal1'},
+            'seal_f_TopMetal2': {'Seal.f.TopMetal2'},
+        },
+        # All eight version-mark squares, not only those of some corners.
+        'counts': {
+            'sealreq_corner_marks_square': {'SEAL.REQ.4': 8},
+            'sealreq_corner_tab': {'SEAL.REQ.4': 2},
         },
     },
     'solderbump': {
         'deck': 'solderbump',
         'cells': {
             'solderbump_viol':  {'Padb.a', 'Padb.b', 'Padb.c', 'Padb.d',
-                                 'Padb.e', 'Padb.f'},
+                                 'Padb.f'},
             'solderbump_clean': set(),
+        },
+    },
+    'ubm_floor': {
+        'deck': 'ubm_floor',
+        'cells': {
+            'ubm_floor_viol':  {'PadU.w', 'PadU.s'},
+            'ubm_floor_clean': set(),
         },
     },
     'topmetal1filler': {
         'deck': 'topmetal1filler',
         'cells': {
-            'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1'},
+            'topmetal1filler_viol':  {'TM1Fil.c', 'TM1Fil.a1', 'TM1Fil.b'},
+            'topmetal1filler_iso_contained': {'TM1Fil.iso'},
+            'topmetal1filler_iso_bridge':    {'TM1Fil.iso'},
+            'topmetal1filler_iso_edge':      {'TM1Fil.c', 'TM1Fil.iso'},
+            'topmetal1filler_iso_corner':    {'TM1Fil.c', 'TM1Fil.iso'},
             'topmetal1filler_clean': set(),
         },
     },
@@ -150,7 +348,11 @@ GOLDEN = {
     'topmetal2filler': {
         'deck': 'topmetal2filler',
         'cells': {
-            'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1'},
+            'topmetal2filler_viol':  {'TM2Fil.c', 'TM2Fil.a1', 'TM2Fil.b'},
+            'topmetal2filler_iso_contained': {'TM2Fil.iso'},
+            'topmetal2filler_iso_bridge':    {'TM2Fil.iso'},
+            'topmetal2filler_iso_edge':      {'TM2Fil.c', 'TM2Fil.iso'},
+            'topmetal2filler_iso_corner':    {'TM2Fil.c', 'TM2Fil.iso'},
             'topmetal2filler_clean': set(),
         },
     },
@@ -163,9 +365,30 @@ GOLDEN = {
     },
 }
 
+# Every sealreq_* cell except the define-off control runs with the presence
+# rules on. Derived from the cell list so that a new cell cannot be left out.
+GOLDEN['sealring']['defines'] = {
+    cell: {'require_sealring': 'true'}
+    for cell in GOLDEN['sealring']['cells']
+    if cell.startswith('sealreq_') and cell != 'sealreq_off_no_seal'}
+
+# Decks intentionally without a regression fixture yet (tracked coverage debt).
+# The deck-registry CI check asserts that the decks covered by GOLDEN plus this
+# set exactly equal the full deck registry, so a NEW deck cannot be added
+# without either a fixture in GOLDEN or an explicit acknowledgement here.
+KNOWN_UNTESTED_DECKS = frozenset({'topvia1', 'topmetal1', 'topvia2', 'passiv'})
+
+# Coverage debt, distinct from the fixture debt above: ThinFilmRes (layer 146)
+# is present in the module layer map but has no geometry deck, so its rule
+# family is unchecked. That is a different gap from a deck without a fixture,
+# and the deck-registry check above cannot see it: registered-vs-on-disk
+# completeness is not coverage-vs-oracle completeness. Preexisting and
+# inherited; a ThinFilmRes deck is the natural next addition.
+
 
 def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
-              run_deck, get_rules_with_violations, drc_script: str) -> bool:
+              run_deck, get_violation_counts, drc_script: str) -> bool:
+    import klayout.db as db  # deferred: keeps this module importable without klayout
     gds = unit_dir / f"{table}.gds"
     if not gds.is_file():
         print(f"  FAIL {table}: testcase not found: {gds} (run gen_{table}_testcase.py)")
@@ -183,11 +406,28 @@ def run_table(table: str, spec: dict, unit_dir: Path, run_dir: Path,
             continue
         extra_defines = spec.get('defines', {}).get(cell)
         report = run_deck(drc_script, spec['deck'], str(gds), cell,
-                          run_dir, threads=2, run_mode="flat",
+                          run_dir, threads=CANONICAL_THREADS,
+                          run_mode=CANONICAL_RUN_MODE,
                           extra_defines=extra_defines)
-        violated = get_rules_with_violations(report)
-        if violated == expected:
+        counts = get_violation_counts(report)
+        violated = set(counts)
+        expected_counts = spec.get('counts', {}).get(cell, {})
+        stray = set(expected_counts) - expected
+        if stray:
+            print(f"  FAIL {table}/{cell}: GOLDEN counts name rules outside the "
+                  f"expected set: {sorted(stray)}")
+            ok = False
+            continue
+        miscounted = {rule: (n, counts.get(rule, 0))
+                      for rule, n in expected_counts.items()
+                      if counts.get(rule, 0) != n}
+        if violated == expected and not miscounted:
             print(f"  PASS {table}/{cell}: {sorted(expected) if expected else 'clean'}")
+        elif violated == expected:
+            detail = ", ".join(f"{rule} expected {want} got {got}"
+                               for rule, (want, got) in sorted(miscounted.items()))
+            print(f"  FAIL {table}/{cell}: marker count {detail}")
+            ok = False
         else:
             missing = expected - violated
             extra = violated - expected
@@ -207,6 +447,15 @@ def main():
                         help="Run a single rule table (default: all). e.g. --table via4")
     args = parser.parse_args()
 
+    # Provenance pin: verify the running KLayout and the run configuration match
+    # the canonical one GOLDEN was validated under, BEFORE running any table. On
+    # any divergence this raises (naming expected vs actual) rather than letting
+    # a mismatched-but-self-consistent run pass green.
+    running_version = _detect_klayout_version()
+    assert_canonical_config(running_version)
+    print(f"Provenance pin OK: KLayout {running_version}, "
+          f"run_mode={CANONICAL_RUN_MODE}, threads={CANONICAL_THREADS}")
+
     testing_dir = Path(__file__).resolve().parent
     drc_dir = testing_dir.parent                       # .../tech/drc
     unit_dir = testing_dir / "testcases" / "unit"
@@ -214,7 +463,7 @@ def main():
     run_dir.mkdir(exist_ok=True)
 
     sys.path.insert(0, str(drc_dir))
-    from run_drc import run_deck, get_rules_with_violations
+    from run_drc import run_deck, get_violation_counts
     drc_script = str(drc_dir / "intm4tm2.drc")
 
     tables = {args.table: GOLDEN[args.table]} if args.table else GOLDEN
@@ -226,7 +475,7 @@ def main():
     all_ok = True
     for table, spec in tables.items():
         all_ok &= run_table(table, spec, unit_dir, run_dir,
-                            run_deck, get_rules_with_violations, drc_script)
+                            run_deck, get_violation_counts, drc_script)
 
     if all_ok:
         print("\nAll DRC regression checks passed.")

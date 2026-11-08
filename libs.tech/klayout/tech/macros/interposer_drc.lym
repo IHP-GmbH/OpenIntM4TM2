@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Interposer DRC…</description>
+ <version>0.1</version>
+ <category>pymacros</category>
+ <autorun>false</autorun>
+ <show-in-menu>true</show-in-menu>
+ <menu-path>intm4tm2_menu&gt;end("IntM4TM2 Interposer").verification&gt;end("Verification").end</menu-path>
+ <interpreter>python</interpreter>
+ <text># SPDX-License-Identifier: Apache-2.0
+import os
+import sys
+
+python_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "python"))
+if python_dir not in sys.path:
+    sys.path.insert(0, python_dir)
+import interposer_verification_gui
+interposer_verification_gui.show("drc")
+</text>
+</klayout-macro>

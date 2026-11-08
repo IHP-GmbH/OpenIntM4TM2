@@ -49,7 +49,10 @@ import pya
 
 import sys
 import traceback
-import tkinter
+try:
+    import tkinter
+except ImportError:
+    print("Could not import tkinter. No callback support.")
 import re
 import pathlib
 import os
@@ -288,6 +291,12 @@ class PCellWrapper(pya.PCellDeclaration):
                 self._changedParameter = name
 
     def coerce_parameters(self, layout, parameterValues):
+        # Without tkinter there is no Tcl interpreter to run the parameter
+        # callbacks, so the values are used as given. Backport of upstream
+        # 839c565 (merged in 2ffdf79f); drop on re-vendor.
+        if "tkinter" not in sys.modules:
+            return parameterValues
+
         if PCellWrapper._tcl is None:
             PCellWrapper._tcl = tkinter.Tcl()
             PCellWrapper._initializeCallbacks()
