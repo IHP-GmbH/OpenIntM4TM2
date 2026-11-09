@@ -1276,7 +1276,9 @@ Examples:
     )
     parser.add_argument(
         '--auto-resolve-best-effort', action='store_true',
-        help='Generate GDS even if auto-resolve does not converge (with warnings)',
+        help=('Do not print the auto-resolve FAILED line when auto-resolve does not '
+              'converge; a device left with collisions still fails DRC and '
+              'is left out of the GDS'),
     )
     parser.add_argument(
         '--report', metavar='FILE',
@@ -1368,6 +1370,16 @@ def _resolve_body_diameter(positions: Dict[str, dict], ref: str,
         print(f"Warning: body diameter {body_diam} for {ref} is not in Table "
               f"6.1; using default {DEFAULT_BODY_DIAMETER}", file=sys.stderr)
     return float(DEFAULT_BODY_DIAMETER)
+
+
+def _exit_for(failed_devices: List[str]) -> int:
+    """0 when no device failed, else 1, named on stderr: an exit 0 never
+    hides a failed check. Skipped devices (no connection) are not failures."""
+    if not failed_devices:
+        return 0
+    print(f"Exiting non-zero: {len(failed_devices)} device(s) failed: "
+          f"{', '.join(failed_devices)}", file=sys.stderr)
+    return 1
 
 
 def _run_main(args) -> int:
@@ -1485,12 +1497,13 @@ def _run_main(args) -> int:
         print(f"Report written to: {args.report}")
 
     if args.validate_only:
-        return 0
+        return _exit_for(failed_devices)
 
     # Generate GDS for devices that passed, with per-device geometry
     if not passed_devices:
         print("\nNo devices passed DRC. GDS generation skipped.",
               file=sys.stderr)
+        _exit_for(failed_devices)
         return 1
 
     generator = CuPillarGenerator(enclosure_um=enclosure)
@@ -1508,7 +1521,7 @@ def _run_main(args) -> int:
         print(f"Skipped {len(failed_devices)} device(s) with DRC errors: "
               f"{', '.join(failed_devices)}")
 
-    return 0
+    return _exit_for(failed_devices)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

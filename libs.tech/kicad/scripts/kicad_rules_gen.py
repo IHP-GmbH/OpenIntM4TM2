@@ -32,15 +32,16 @@ counts.
 
 KiCad's documentation says it checks a pair against the last rule in the file that
 matches, and none above it, and it reports a violation with that rule's severity. So
-a later rule must be at least as strict as an earlier one it shadows (the TM2.bR pad
-rule follows TM2.b), the slit rules follow the width minimums, and a warning rule must
-not match what an error rule above it checks: the wide-track rule is a physical
-clearance, a check of its own, and the slit rule matches only the tracks it is about.
+a later rule must be at least as strict as an earlier one it shadows, the slit rules
+follow the width minimums, and a warning rule must not match what an error rule above
+it checks: the two TM2.bR rules are physical clearances, a check of their own, and the
+slit rule matches only the tracks it is about.
 
 kicad-cli drops a whole rules file with no message when one token of it is unknown,
 and checks the board against its printed-board defaults instead. So the rules use mm
-only, and only the item properties Type, Width, Size_X, Size_Y and Net, which KiCad
-9.99 was seen to parse. A live test in test_kicad_rules.py runs kicad-cli on them.
+only, and only the item properties Type, Width, Size_X, Size_Y and Net, and the
+function existsOnLayer, which KiCad 9.99 was seen to parse. A live test in
+test_kicad_rules.py runs kicad-cli on them.
 
 The ``.kicad_pro`` carries the board setup floors and the netclasses, so the template
 does not open against KiCad's printed-board defaults. A KiCad via stands for the via
@@ -178,20 +179,25 @@ def render(rules_doc, board_text):
                 f"\t(constraint {constraint} (min {mm(rules[key])})))",
             ]
     space, width, run = (mm(rules[k]) for k in (wide_space, wide_width, wide_run))
+    wide_layer = layers[wide_metal]
+    # TM2.bR is metal to metal: a physical clearance also holds copper to the board
+    # outline, so the other item must be on the layer too.
+    b_copper = f"A.Net != B.Net && B.existsOnLayer('{wide_layer}')"
     out += [
         "",
         f'(rule "{wide_metal} clearance from a track wider than {width} ({wide_space})"',
         "\t(severity warning)",
-        f'\t(layer "{layers[wide_metal]}")',
-        f"\t(condition \"A.Type == 'Track' && A.Width > {width} && A.Net != B.Net\")",
+        f'\t(layer "{wide_layer}")',
+        f"\t(condition \"A.Type == 'Track' && A.Width > {width} && {b_copper}\")",
         f"\t(constraint physical_clearance (min {space})))",
         "",
         f'(rule "{wide_metal} clearance from a pad wider than {width} and longer than {run} '
         f'({wide_space})"',
-        f'\t(layer "{layers[wide_metal]}")',
+        "\t(severity warning)",
+        f'\t(layer "{wide_layer}")',
         f"\t(condition \"A.Type == 'Pad' && (A.Size_X > {run} || A.Size_Y > {run})"
-        f" && A.Size_X > {width} && A.Size_Y > {width}\")",
-        f"\t(constraint clearance (min {space})))",
+        f" && A.Size_X > {width} && A.Size_Y > {width} && {b_copper}\")",
+        f"\t(constraint physical_clearance (min {space})))",
     ]
     widest = mm(rules[SLIT_WIDTH])
     for metal, _, _ in PORTED:
