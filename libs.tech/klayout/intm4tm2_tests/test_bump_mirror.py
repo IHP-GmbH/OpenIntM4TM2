@@ -1132,6 +1132,104 @@ class TestCLI:
                     os.unlink(p)
 
 
+    #: Two pins 60 um apart: under the 80 um minimum pitch of the default
+    #: 49 um body (Padc.e). The passing pair sits at exactly that pitch.
+    FAILING_PINS = (
+        {"name": "Pin1", "center_x_dbu": 0.0, "center_y_dbu": 0.0},
+        {"name": "Pin2", "center_x_dbu": 60000.0, "center_y_dbu": 0.0},
+    )
+    PASSING_PINS = (
+        {"name": "Pin1", "center_x_dbu": 0.0, "center_y_dbu": 0.0},
+        {"name": "Pin2", "center_x_dbu": 80000.0, "center_y_dbu": 0.0},
+    )
+
+    @needs_gds2kicad
+    def test_validate_only_with_a_failing_device_exits_1(self, tmp_path, capsys):
+        """--validate-only never exits 0 over a failed device, and still
+        writes the report naming it."""
+        pins_path = _make_pin_list_json(self.FAILING_PINS)
+        report_path = tmp_path / "report.json"
+        try:
+            ret = main([
+                '--pins', f'U1={pins_path}',
+                '--position', 'U1=0,0',
+                '--no-auto-resolve',
+                '--validate-only',
+                '--report', str(report_path),
+            ])
+        finally:
+            os.unlink(pins_path)
+        assert ret == 1
+        assert json.loads(report_path.read_text())["failed_devices"] == ["U1"]
+        assert "Exiting non-zero: 1 device(s) failed: U1" in capsys.readouterr().err
+
+    @needs_gds2kicad
+    @needs_interconnect
+    def test_generate_with_a_failing_device_exits_1_with_the_passing_pads(
+            self, tmp_path, capsys):
+        """The passed device's pads are still written (a partial GDS is worth
+        inspecting), but the run exits 1 and names the failed device."""
+        import klayout.db as kdb
+
+        failing = _make_pin_list_json(self.FAILING_PINS)
+        passing = _make_pin_list_json(self.PASSING_PINS)
+        gds_path = tmp_path / "out.gds"
+        try:
+            ret = main([
+                '--pins', f'U1={failing}', f'U2={passing}',
+                '--position', 'U1=0,0', 'U2=2000,0',
+                '--no-auto-resolve',
+                '-o', str(gds_path),
+            ])
+        finally:
+            os.unlink(failing)
+            os.unlink(passing)
+        assert ret == 1
+        assert "Exiting non-zero: 1 device(s) failed: U1" in capsys.readouterr().err
+        layout = kdb.Layout()
+        layout.read(str(gds_path))
+        cell_names = {layout.cell(i).name for i in range(layout.cells())}
+        assert "CUPILLARS_U2" in cell_names
+        assert "CUPILLARS_U1" not in cell_names
+
+    def _skipped_alone(self, tmp_path, *args):
+        """Run U1 with no connection stack in --chiplet mode; return the exit
+        status and the report."""
+        pins_path = _make_pin_list_json(self.PASSING_PINS)
+        chiplet = _make_chiplet_yaml([{"id": "U1", "x": 0.0, "y": 0.0}])
+        report_path = tmp_path / "report.json"
+        try:
+            ret = main([
+                '--pins', f'U1={pins_path}',
+                '--chiplet', chiplet,
+                '--report', str(report_path),
+                *args,
+            ])
+        finally:
+            os.unlink(pins_path)
+            os.unlink(chiplet)
+        return ret, json.loads(report_path.read_text())
+
+    @needs_gds2kicad
+    def test_a_skipped_device_alone_exits_0(self, tmp_path):
+        """A device with no connection stack is skipped in --chiplet mode,
+        which is not a failure."""
+        ret, report = self._skipped_alone(tmp_path, '--validate-only')
+        assert ret == 0
+        assert (report["skipped_devices"], report["failed_devices"]) == (["U1"], [])
+
+    @needs_gds2kicad
+    def test_a_generate_run_with_only_a_skipped_device_writes_nothing_and_exits_1(
+            self, tmp_path):
+        """Generate mode has no device to write, so it exits 1 with no GDS,
+        though nothing failed."""
+        gds_path = tmp_path / "out.gds"
+        ret, report = self._skipped_alone(tmp_path, '-o', str(gds_path))
+        assert ret == 1
+        assert (report["skipped_devices"], report["failed_devices"]) == (["U1"], [])
+        assert not gds_path.exists()
+
+
 # ---------------------------------------------------------------------------
 # Table 6.1 per-device dimension tests
 # ---------------------------------------------------------------------------

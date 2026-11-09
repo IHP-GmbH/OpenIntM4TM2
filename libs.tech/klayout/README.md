@@ -472,9 +472,19 @@ Key arguments:
 - `--auto-resolve` / `--no-auto-resolve`: auto-resolve is ON by default; the
   no-form fails on any DRC violation.
 - `--max-displacement UM`: per-pillar shift budget for auto-resolve (default 10).
-- `--auto-resolve-best-effort`: emit GDS even if auto-resolve does not converge.
+- `--auto-resolve-best-effort`: do not print the auto-resolve FAILED line when
+  auto-resolve does not converge. A device left with collisions still fails DRC
+  and is left out of the GDS.
 - `--report FILE`: write a JSON validation report.
 - `-o`, `--output FILE`: output GDS path (default `cupillars.gds`).
+
+Exit codes: 0 when no device failed; a device skipped in `--chiplet` mode for
+having no connection stack is not a failure. 1 when any device failed DRC or
+had no bump locations, or the input was bad; the failed devices are named on
+stderr. The report still names every failed and skipped device, and a generate
+run still writes the GDS of the devices that passed, so exit 1 can come with a
+partial GDS. A generate run in which no device passed, skipped ones included,
+writes no GDS and exits 1.
 
 Interconnect PDK requirement: drawing the 3D pillar and bump bodies needs the
 interconnect PDK. `bump_mirror.py` resolves it via `$INTERCONNECT_PDK_ROOT` first,
