@@ -63,13 +63,14 @@
 (rule "TopMetal2 clearance from a track wider than 0.005mm (TM2_bR)"
 	(severity warning)
 	(layer "F.Cu")
-	(condition "A.Type == 'Track' && A.Width > 0.005mm && A.Net != B.Net")
+	(condition "A.Type == 'Track' && A.Width > 0.005mm && A.Net != B.Net && B.existsOnLayer('F.Cu')")
 	(constraint physical_clearance (min 0.005mm)))
 
 (rule "TopMetal2 clearance from a pad wider than 0.005mm and longer than 0.05mm (TM2_bR)"
+	(severity warning)
 	(layer "F.Cu")
-	(condition "A.Type == 'Pad' && (A.Size_X > 0.05mm || A.Size_Y > 0.05mm) && A.Size_X > 0.005mm && A.Size_Y > 0.005mm")
-	(constraint clearance (min 0.005mm)))
+	(condition "A.Type == 'Pad' && (A.Size_X > 0.05mm || A.Size_Y > 0.05mm) && A.Size_X > 0.005mm && A.Size_Y > 0.005mm && A.Net != B.Net && B.existsOnLayer('F.Cu')")
+	(constraint physical_clearance (min 0.005mm)))
 
 (rule "TopMetal2 track wider than 0.03mm needs slits (Slt_c)"
 	(severity warning)

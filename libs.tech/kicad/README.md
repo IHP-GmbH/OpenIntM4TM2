@@ -85,18 +85,22 @@ clearance of each metal (TM2.a/b, TM1.a/b, M5.a/b, M4.a/b), on the copper layer
 the template names after that metal, and two width-dependent rules that rest
 on one item's own size:
 
-- TM2.bR as a TopMetal2 clearance from a track wider than TM2_bR_w (a
-  warning) and from a pad wider than TM2_bR_w and longer than TM2_bR_cr (a
-  narrower pad is no wide line, and a shorter one cannot hold a parallel run
-  that long). The track rule is a physical
-  clearance, a check of its own: KiCad gives a pair the severity of the last
-  rule that matches it, so as a plain clearance the warning would take over a
-  TM2.b error beside a wide track. The pad rule is a plain clearance and an
-  error (as a plain-clearance warning it would take over a TM2.b error beside
-  a wide pad). Its length gate fits rectangular pads. A round pad, or an
-  octagonal one like the default 80 um bond pad with sides of about 33 um, may
-  have no side as long as TM2_bR_cr, and then a track between TM2_b and
-  TM2_bR from it is a KiCad error that the deck accepts.
+- TM2.bR as a TopMetal2 clearance from another net's track wider than TM2_bR_w
+  and from a pad wider than TM2_bR_w and longer than TM2_bR_cr (a narrower pad
+  is no wide line, and a shorter one cannot hold a parallel run that long).
+  Both are warnings and physical clearances, a check of their own: KiCad gives
+  a pair the severity of the last rule that matches it, so as a plain
+  clearance either warning would take over a TM2.b error beside it. Both hold
+  TopMetal2 copper to other TopMetal2 copper only: a physical clearance also
+  holds copper to the board outline, whose drawn stroke the deck does not see.
+  KiCad 9.99 reads an arc as a track here. The pad rule's length gate fits
+  rectangular pads. A round pad, or an octagonal one like the default 80 um
+  bond pad with sides of about 33 um, may have no side as long as TM2_bR_cr,
+  and then a track between TM2_b and TM2_bR from it is a warning the deck does
+  not raise. KiCad 9.99 raises it beside such an octagon drawn as a chamfered
+  rectangle, or as a custom pad sized to it, since the rule reads Size_X and
+  Size_Y, which for a custom pad is the anchor's; a custom pad on a small
+  anchor raises nothing. The probe board (below) holds all three.
 - Slt.c as a maximum track width on every metal (a warning: a wider track
   needs slits, or a width of Slt_c or less). No flow step cuts slits: that is
   the designer's step, with the KLayout slit macro
@@ -119,19 +123,29 @@ KiCad's check is an aid while drawing, and it misses violations:
   limit "board setup constraints" instead of the rule.
 - It measures clearance between different nets only, and it sees the board,
   not the exported GDS.
-- It has no parallel-run condition, so the TM2.bR track rule also warns,
-  and the pad rule errs, on runs the deck accepts. It checks one track or pad
-  at a time, so merged copper, zones and graphic shapes on copper stay
-  KLayout checks for TM2.bR and Slt.c.
+- It has no parallel-run condition, so both TM2.bR rules also warn on runs
+  the deck accepts. It checks one track or pad at a time, so merged copper,
+  zones and graphic shapes on copper stay KLayout checks for TM2.bR and Slt.c.
+  A board KiCad reports with no error can still fail TM2.bR in KLayout.
 
 The KLayout decks on the GDS are the DRC that counts.
 
 kicad-cli drops the whole rules file, with no message, when one token in it is
 unknown (a unit other than mm, an item property KiCad does not know), and then
-checks the board against its printed-board defaults. The generator writes mm
-and the properties Type, Width, Size_X, Size_Y and Net only, and a live test
-in `test_kicad_rules.py` runs kicad-cli 9.99 on a probe board that breaks each
-rule.
+checks the board against its printed-board defaults. The generator writes mm,
+the properties Type, Width, Size_X, Size_Y and Net, and the function
+existsOnLayer only, and a live test in `test_kicad_rules.py` runs kicad-cli
+9.99 on a probe board that breaks each rule. Each probe item states what it
+breaks from its own geometry and the rule values, so the test checks that
+KiCad reports each rule as often as the copper breaks it. A wide track and a
+wide pad near the outline break nothing, so a TM2.bR rule that holds copper to
+the outline would raise counts the test does not expect.
+
+A board takes this file and the project beside it, and a consumer may pin
+their digests, so one intm4tm2 version names one set of their bytes.
+`test_kicad_rules.py` holds the digests each version from 0.3.0 carries, and
+fails when the files differ from the newest row or pyproject.toml declares
+another version: new bytes need a new row and the version moved to it.
 
 The project file carries the board setup and the netclasses, from the same
 JSON, so the template does not open against KiCad's printed-board defaults
