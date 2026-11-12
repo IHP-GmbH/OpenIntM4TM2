@@ -54,28 +54,21 @@ class FabAnchor:
     layers: every fabrication layer the PCell draws, as name -> (layer,
         datatype). TopMetal2 is the landing; the rest are the anchor's
         openings, the layers the interconnect manifest lists for the anchor.
+    defaults: the in-code fallback of that rule set, used when no tech JSON
+        is found; its <rules>_c is also the enclosure the generator draws
+        when the caller names none.
+    cell_prefix: the name the generator gives the anchor's pad cells.
+    table_6_1: True when the body diameter picks the opening from Table 6.1
+        (the Cu pillar); otherwise the opening always comes from the method.
     """
     pcell: str
     rules: str
     layers: Dict[str, Tuple[int, int]]
+    defaults: Dict[str, float]
+    cell_prefix: str
+    table_6_1: bool
 
 
-FAB_ANCHORS = {
-    'ihp_cupillar_anchor': FabAnchor('CuPillarPad', 'Padc', {
-        'TopMetal2':      (134, 0),
-        'Passiv:pillar':  (9, 35),
-        'dfpad:pillar':   (41, 35),
-        'Recog:pillar':   (99, 35),
-    }),
-    'ihp_sbump_anchor': FabAnchor('SolderBumpPad', 'Padb', {
-        'TopMetal2':      (134, 0),
-        'Passiv:sbump':   (9, 36),
-        'dfpad:sbump':    (41, 36),
-        'Recog:sbump':    (99, 36),
-    }),
-}
-DEFAULT_FAB_ANCHOR = 'ihp_cupillar_anchor'
-CUPILLAR_FAB_LAYERS = FAB_ANCHORS[DEFAULT_FAB_ANCHOR].layers
 
 
 def fab_anchor(anchor_id: str) -> FabAnchor:
@@ -152,7 +145,22 @@ DEFAULT_SBUMP_DRC_PARAMS = {
     'Padb_d': 50.0,
     'Padb_e': 130.0,
 }
-_DEFAULT_RULES = {'Padc': DEFAULT_DRC_PARAMS, 'Padb': DEFAULT_SBUMP_DRC_PARAMS}
+FAB_ANCHORS = {
+    'ihp_cupillar_anchor': FabAnchor('CuPillarPad', 'Padc', {
+        'TopMetal2':      (134, 0),
+        'Passiv:pillar':  (9, 35),
+        'dfpad:pillar':   (41, 35),
+        'Recog:pillar':   (99, 35),
+    }, DEFAULT_DRC_PARAMS, 'CUPILLAR', True),
+    'ihp_sbump_anchor': FabAnchor('SolderBumpPad', 'Padb', {
+        'TopMetal2':      (134, 0),
+        'Passiv:sbump':   (9, 36),
+        'dfpad:sbump':    (41, 36),
+        'Recog:sbump':    (99, 36),
+    }, DEFAULT_SBUMP_DRC_PARAMS, 'SBUMP', False),
+}
+DEFAULT_FAB_ANCHOR = 'ihp_cupillar_anchor'
+CUPILLAR_FAB_LAYERS = FAB_ANCHORS[DEFAULT_FAB_ANCHOR].layers
 
 
 # Interconnect PDK 3D body generator (sibling repo). bump_mirror draws the fab
@@ -326,7 +334,7 @@ class DrcParams:
     Field defaults are the Cu-pillar Option 2 (40 um opening) fallback,
     matching DEFAULT_BODY_DIAMETER. ``load()`` overrides these from a tech JSON
     when one is found (the shipped interposer_tech_default.json carries
-    Option 1), and ``load(fab_anchor='ihp_sbump_anchor')`` reads the Padb set.
+    Option 1), and ``load(fab_anchor_id='ihp_sbump_anchor')`` reads the Padb set.
     """
     diameter_um: float = 40.0       # Padc_a (Option 2 default)
     min_spacing_um: float = 40.0    # Padc_b (edge-to-edge)
@@ -338,7 +346,7 @@ class DrcParams:
 
     @classmethod
     def _from_rules(cls, rules: str, values: dict) -> 'DrcParams':
-        defaults = _DEFAULT_RULES[rules]
+        defaults = next(a.defaults for a in FAB_ANCHORS.values() if a.rules == rules)
         def get(suffix):
             return values.get(f'{rules}_{suffix}', defaults[f'{rules}_{suffix}'])
         return cls(diameter_um=get('a'), min_spacing_um=get('b'),
@@ -708,13 +716,15 @@ class CuPillarGenerator:
     it from the body (the SAC305 ball).
     """
 
-    def __init__(self, enclosure_um: float = 7.5, num_points: int = 256,
+    def __init__(self, enclosure_um: Optional[float] = None, num_points: int = 256,
                  bodies: Optional[List[Tuple[str, int, int]]] = None,
                  passiv_opening_um: Optional[float] = None,
                  fab_anchor_id: str = DEFAULT_FAB_ANCHOR):
         """
         Args:
-            enclosure_um: TM2 enclosure around the passiv opening.
+            enclosure_um: TM2 enclosure around the passiv opening; None =
+                          the anchor's <rules>_c fallback (7.5 um for the
+                          Cu pillar, 10 um for the solder bump).
             num_points:   circle discretization of the 3D bodies only; the
                           fabrication circles are PCell-defined at a fixed
                           256 points.
@@ -734,12 +744,13 @@ class CuPillarGenerator:
         if db is None:
             raise ImportError("klayout package required for GDS generation. "
                               "Install with: pip install klayout")
-        self.enclosure_um = enclosure_um
+        self.fab_anchor_id = fab_anchor_id
+        self.anchor = fab_anchor(fab_anchor_id)
+        self.enclosure_um = (self.anchor.defaults[f'{self.anchor.rules}_c']
+                             if enclosure_um is None else enclosure_um)
         self.num_points = num_points
         self.bodies = bodies
         self.passiv_opening_um = passiv_opening_um
-        self.fab_anchor_id = fab_anchor_id
-        self.anchor = fab_anchor(fab_anchor_id)
         self.layout = db.Layout()
         self.layout.dbu = 0.001  # 1 nm
         self.top_cell = self.layout.create_cell("TOP")
@@ -763,14 +774,14 @@ class CuPillarGenerator:
             return self._pillar_cells[key]
 
         option = (CUPILLAR_TABLE_6_1.get(body_diameter_um)
-                  if self.fab_anchor_id == DEFAULT_FAB_ANCHOR else None)
+                  if self.anchor.table_6_1 else None)
         if option is None and self.passiv_opening_um is not None:
             # Method-supplied fab geometry (interconnect manifest
             # fab_params): diameters outside the IHP Table 6.1 carry
             # their own passivation opening.
             option = {'option': 'manifest',
                       'passiv_opening': self.passiv_opening_um}
-        if option is None and self.fab_anchor_id != DEFAULT_FAB_ANCHOR:
+        if option is None and not self.anchor.table_6_1:
             raise ValueError(
                 f"{self.anchor.pcell} pads for {self.fab_anchor_id} take their "
                 f"opening from the method, not from the {body_diameter_um} um "
@@ -787,9 +798,8 @@ class CuPillarGenerator:
         cap_suffix = "" if with_cap else "_nocap"
         opt_val = option['option']
         opt_token = f"opt{opt_val}" if isinstance(opt_val, int) else str(opt_val)
-        kind = "CUPILLAR" if self.fab_anchor_id == DEFAULT_FAB_ANCHOR else "SBUMP"
         cell = self.layout.create_cell(
-            f"{kind}_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
+            f"{self.anchor.cell_prefix}_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
 
         # Fabrication layers (the anchor's FabAnchor.layers) come from its
         # PCell -- the single source of that pad's geometry. The variant
@@ -854,10 +864,11 @@ class CuPillarGenerator:
                          with_cap: bool = True) -> int:
         """Place Cu-pillar instances for a single device.
 
-        Creates cell hierarchy: TOP > CUPILLARS_{ref} > CUPILLAR_{diam}um
+        Creates cell hierarchy: TOP > <prefix>S_{ref} > <prefix>_{diam}um,
+        with the anchor's cell_prefix (CUPILLAR or SBUMP).
         """
         pillar_cell = self._get_pillar_cell(body_diameter_um, with_cap)
-        group_cell = self.layout.create_cell(f"CUPILLARS_{ref}")
+        group_cell = self.layout.create_cell(f"{self.anchor.cell_prefix}S_{ref}")
         self.top_cell.insert(db.DCellInstArray(group_cell, db.DTrans()))
 
         count = 0

@@ -51,8 +51,9 @@ def _row(pitch_um, count=3):
 
 
 def _sbump_generator():
-    return CuPillarGenerator(enclosure_um=10.0, bodies=[SOLDER_BALL],
-                             passiv_opening_um=60.0, fab_anchor_id=SBUMP)
+    # No enclosure named: the anchor's Padb.c (10 um), never the pillar's 7.5.
+    return CuPillarGenerator(bodies=[SOLDER_BALL], passiv_opening_um=60.0,
+                             fab_anchor_id=SBUMP)
 
 
 def test_each_anchor_names_its_cell_rules_and_openings():
@@ -139,7 +140,9 @@ def test_generated_solder_bump_pads_draw_the_sbump_layers_and_the_ball(tmp_path)
             info = layout.get_info(idx)
             drawn[(info.layer, info.datatype)] = idx
     assert set(drawn) == SBUMP_LAYERS | {SOLDER_BALL[1:]}
-    assert "SolderBumpPad" not in {c.name for c in layout.each_cell()}
+    names = {c.name for c in layout.each_cell()}
+    assert "SolderBumpPad" not in names
+    assert not any(n.startswith("CUPILLAR") for n in names), names
     pad = layout.cell("SBUMP_80um_manifest")
     widths = {key: pad.bbox_per_layer(idx).width() for key, idx in drawn.items()}
     # 1 nm dbu: opening 60, landing 60 + 2 * 10, ball 80.

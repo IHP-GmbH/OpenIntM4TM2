@@ -964,17 +964,20 @@ class TestCuPillarGenerator:
                 f"foreign layer numbers leaked into the output: "
                 f"{sorted(drawn)}")
 
-    def test_fab_layer_contract_guard(self, monkeypatch):
+    @pytest.mark.parametrize("anchor_id,kwargs", [
+        ("ihp_cupillar_anchor", {}),
+        ("ihp_sbump_anchor", {"passiv_opening_um": 60.0})])
+    def test_fab_layer_contract_guard(self, monkeypatch, anchor_id, kwargs):
         """A wrong library layer table cannot pass silently: the drawn
         set is checked against the anchor's layers after PCell flatten."""
+        import dataclasses
         import bump_mirror
 
-        monkeypatch.setitem(
-            bump_mirror.FAB_ANCHORS, "ihp_cupillar_anchor",
-            bump_mirror.FabAnchor("CuPillarPad", "Padc", {
-                "TopMetal2": (777, 0), "Passiv:pillar": (888, 88),
-                "dfpad:pillar": (889, 88), "Recog:pillar": (890, 88)}))
-        gen = CuPillarGenerator()
+        anchor = bump_mirror.FAB_ANCHORS[anchor_id]
+        foreign = dict(zip(anchor.layers, [(777, 0), (888, 88), (889, 88), (890, 88)]))
+        monkeypatch.setitem(bump_mirror.FAB_ANCHORS, anchor_id,
+                            dataclasses.replace(anchor, layers=foreign))
+        gen = CuPillarGenerator(fab_anchor_id=anchor_id, **kwargs)
         with pytest.raises(RuntimeError, match="instead of the fabrication"):
             gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])
 
