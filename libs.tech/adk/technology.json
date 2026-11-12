@@ -5,7 +5,7 @@
   "roles": [
     "carrier"
   ],
-  "revision": "0.4.1",
+  "revision": "0.5.0",
   "description": "IHP 130-nm IntM4TM2 aluminium BEOL interposer.",
   "dbu_um": 0.001,
   "manufacturing_grid_um": 0.005,
@@ -27,6 +27,10 @@
       "rdl2": {
         "path": "libs.tech/adk/routing/ihp_sg13g2_intm4tm2_rdl2.routing_tech.json",
         "sha256": "998ac0cdd5a8127fce1f715ae7bf33d30af154efa67a89276c789a16ab3085cf"
+      },
+      "rdl2_sbump": {
+        "path": "libs.tech/adk/routing/ihp_sg13g2_intm4tm2_rdl2_sbump.routing_tech.json",
+        "sha256": "256a6167ad95e3f90aa49657930c5cf19b4e6a1aa7c271e6343133853c14b96f"
       }
     }
   },
