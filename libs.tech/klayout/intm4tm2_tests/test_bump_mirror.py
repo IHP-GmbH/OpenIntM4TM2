@@ -966,13 +966,14 @@ class TestCuPillarGenerator:
 
     def test_fab_layer_contract_guard(self, monkeypatch):
         """A wrong library layer table cannot pass silently: the drawn
-        set is checked against CUPILLAR_FAB_LAYERS after PCell flatten."""
+        set is checked against the anchor's layers after PCell flatten."""
         import bump_mirror
 
-        monkeypatch.setattr(
-            bump_mirror, "CUPILLAR_FAB_LAYERS",
-            {"TopMetal2": (777, 0), "Passiv:pillar": (888, 88),
-             "dfpad:pillar": (889, 88), "Recog:pillar": (890, 88)})
+        monkeypatch.setitem(
+            bump_mirror.FAB_ANCHORS, "ihp_cupillar_anchor",
+            bump_mirror.FabAnchor("CuPillarPad", "Padc", {
+                "TopMetal2": (777, 0), "Passiv:pillar": (888, 88),
+                "dfpad:pillar": (889, 88), "Recog:pillar": (890, 88)}))
         gen = CuPillarGenerator()
         with pytest.raises(RuntimeError, match="instead of the fabrication"):
             gen.add_bumps([BumpLocation("U1", "P1", 0.0, 0.0)])

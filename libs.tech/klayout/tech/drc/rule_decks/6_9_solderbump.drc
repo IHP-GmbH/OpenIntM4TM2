@@ -36,7 +36,7 @@
 #                    deck. The Padc_e/Padb_e JSON keys are retained as cross-repo
 #                    API, read by the assembly-stage mirror in the sibling repos,
 #                    not by this interposer deck; the in-repo bump_mirror.py reads
-#                    Padc_e. See the Padb.e note below.)
+#                    Padc_e and Padb_e. See the Padb.e note below.)
 #=========================================================================================
 
 if BEOL

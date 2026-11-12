@@ -392,6 +392,7 @@ Cells:
 | Cell | Parameters | Output |
 |---|---|---|
 | `CuPillarPad` | `diameter` (Passiv opening, default `35u` = Table 6.1 Option 1), `passEncl` (TopMetal2 enclosure, default `7.5u`), `addFillerEx` (`nil`/`t`) | TopMetal2 134/0, dfpad:pillar 41/35 and Recog:pillar 99/35 at pad size; Passiv:pillar 9/35 at the opening; optional nofill circles on the interposer metal stack. 256-point circles, the discretization the assembly flow and the copperpillar DRC tolerances assume. |
+| `SolderBumpPad` | `diameter` (Passiv opening, default `60u` = Padb.a), `passEncl` (TopMetal2 enclosure, default `10u` = Padb.c), `addFillerEx` (`nil`/`t`) | The `CuPillarPad` drawing on the solder-bump purposes: TopMetal2 134/0, dfpad:sbump 41/36 and Recog:sbump 99/36 at pad size; Passiv:sbump 9/36 at the opening; the same optional nofill circles and 256-point circles. `intm4tm2_tests/test_sbump_pad.py` places it through `bump_mirror` and runs the solderbump, copperpillar, pad and UBM-floor decks on the result: clean at the 130 um pitch, Padb.b alone at 125 um. |
 | `cmim` | `w`, `l` (plate size, default `6.99u`), `C`/`Calculate` (capacitance-driven sizing via the `CbCap` callback; the default `Calculate='w&l'` recomputes `w`/`l` from `C` -- pass `Calculate='C'` to pin `w`/`l`) | MIM 36/0 plate of `w` x `l`; Metal5 67/0 bottom plate (Mim.c enclosure 0.6); TopMetal1 126/0 top plate; Vmim 129/0 via array (0.42 vias, 0.84 spacing, Mim.d enclosure 0.36); TEXT 63/0 labels. Ported from the SG13G2 open PDK `cmim`; `intm4tm2_tests/test_cmim_pcell.py` pins it XOR-identical to the upstream cell (`PDK_ROOT`-gated oracle) and the `mim` DRC deck runs clean on its output. |
 | `bondpad` | `shape` (`octagon`/`square`/`circle`, default `octagon`), `padType` (`bondpad`/`probepad`), `diameter` (default `80u`), `topMetal` (`TM1`/`TM2`), `bottomMetal` (`4`/`5`/`TM1`), `stack` (`nil`/`t`), `addFillerEx` (`nil`/`t`), `passEncl`, `hwquota` | Top-metal pad (TopMetal2 134/0 or TopMetal1 126/0) with a Passiv 9/0 opening inset by the enclosure (`Pas_c`, or `passEncl` for `probepad`). `bondpad` draws a dfpad 41/0 marker over the pad so bond-pad rules apply -- the deliberate complement of `CuPillarPad`, which rides the pillar purpose to avoid them; `probepad` draws none. `stack='t'` adds Metal4/Metal5/TopMetal1 rings tied together with Via4 66/0, TopVia1 125/0 and TopVia2 133/0 arrays; `addFillerEx='t'` adds nofill exclusion on the interposer metals. Reduced from the SG13G2 open PDK `bondpad` to the passive BEOL stack (no FEOL layers); `intm4tm2_tests/test_bondpad_pcell.py` pins the drawn layer set and proves no base-PDK layer leaks. |
 | `sealring` | `l`, `w` (outline size in X and Y, strings such as `5000.000u` on the 5 nm grid, each at least 114.25 um; the whole outline, unlike the SG13G2 `sealring` whose `l`/`w` leave out its edge box), `addSlit` (`nil`/`t`) | Origin at the outline's lower-left corner. EdgeSeal.boundary 39/4 fills the outline (the sealring boundary; the fab adds the scribe outside it). The ring is drawn as the open SG13G2 magic seal-ring generator draws it, 30 um inside the outline: EdgeSeal 39/0 plus Metal4 50/0, Metal5 67/0, TopMetal1 126/0 and TopMetal2 134/0, 3.5 um wide on the straight sides (Seal.a); Via4 66/0, TopVia1 125/0 and TopVia2 133/0 as continuous rings 1.30 um from the outer edge (Seal.c1/c2/c3 widths, Seal.d offset); a Passiv 9/0 ring 4.2 um wide (Seal.e) and 3.0 um outside it, above the 1.00 Seal.f floor. Each corner is a four-step Manhattan staircase in a Seal.k square, the same piece turned at every corner. `addSlit='t'` cuts the metals at the middle of the left side by their minimum space (Mn.e, TM1.b, TM2.b) and the via rings by 2.81 um; EdgeSeal and Passiv stay closed. TEXT 63/0 labels give the registration size and area, and the PDK version as `PDK version: intm4tm2 <version> (<commit>)`. `intm4tm2_pycell_lib/ihp/pdk_version.py` says where the version and the commit come from, and what an install that drops `.git` has to keep at its top (`pyproject.toml`, and a `.shipped-ref` stamp that this repository never writes). Widths and spaces are read from `tech/drc/rule_decks/interposer_tech_default.json`; a missing or off-grid value, or a bad outline or flag, leaves the cell empty. `intm4tm2_tests/test_sealring_pcell.py` checks the geometry, XORs it against the rings of the reference interposer layouts in `libs.ref/intm4tm2_examples`, measures the slit, runs the default decks on it and the seal deck with the presence rules on it and on every example ring, and fills a carrier with it (fill stays inside prBoundary and the ring interior; the seal, filler and density decks pass). |
@@ -440,7 +441,9 @@ from it. The output carries no PCell context. The script exits 0 after one
 The PCell is the single source of the Cu-pillar pad fabrication geometry:
 `bump_mirror.CuPillarGenerator` is a thin placer that instantiates
 `CuPillarPad` (flattened to static geometry in the output GDS) and only adds
-the 3D interconnect bodies itself.
+the 3D interconnect bodies itself. For the solder-bump anchor it places
+`SolderBumpPad` the same way; `bump_mirror.FAB_ANCHORS` names each anchor's
+cell, its layers and its rule set.
 `intm4tm2_tests/test_cupillar_pcell_parity.py` remains as the regression that
 pins the placed output to a directly-instantiated PCell (per-layer XOR empty
 for every Table 6.1 option); parameter values keep coming from the
@@ -451,6 +454,17 @@ interconnect PDK manifest in the assembly flow.
 Cu-pillar GDS generator with DRC pre-validation. It places and mirrors Cu pillars
 for chiplet attachment, optionally auto-resolving DRC collisions by shifting
 pillars within a budget.
+
+The library also places solder-bump pads. `CuPillarGenerator(fab_anchor_id=
+'ihp_sbump_anchor', passiv_opening_um=...)` draws `SolderBumpPad`, taking the
+opening from the method and never from the body (the SAC305 ball), and
+`DrcParams.load(fab_anchor_id='ihp_sbump_anchor')` gives the Padb rules, so the
+validator reports Padb.a/b/c/e/f. Padb.e is checked center to center at 130 um,
+and Padb.a refuses any opening other than 60 um. Padb.d (it needs the EdgeSeal)
+and Padb.f (the shape) are checked by the deck only.
+`fab_anchor_openings(id)` returns the openings a pad cell draws, keyed as the
+interconnect manifest keys `fab_anchors.<id>.layers`. The command line below
+is Cu-pillar only.
 
 ```bash
 # Validate only (no GDS output):
