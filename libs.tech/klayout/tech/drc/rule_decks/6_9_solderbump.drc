@@ -91,18 +91,17 @@ if BEOL
   # Rule Padb.c: Min. TopMetal2 (within dfpad) enclosure of SBumpPad is 10 um.
   # enclosed() catches insufficient enclosure; the miss branch catches SBumpPad area
   # with NO TopMetal2 landing at all (enclosed() is blind to total non-overlap, the
-  # same catch pattern the via decks use). Ported from the sg13g2 source, including
-  # its -2*drc_tole enclosure margin.
-  # DEVIATION (deliberately stricter than source): as in Padb.a, the "- 2 * drc_tole"
-  # margin below is the source expression reused verbatim, but here drc_tole = 1e-6 um
-  # (0.001 nm) versus 0.005 um (5 nm) in the sg13g2 source, so 2 * drc_tole = 2e-6 um
-  # is ~5000x tighter and the enclosure threshold is effectively exact (10 um). This
-  # is an intentional stricter-than-source deviation, and is intentionally different
-  # from Padb.b, which instead carries an explicit 10 nm circle-discretization
-  # tolerance.
+  # same catch pattern the via decks use). Ported from the sg13g2 source.
+  # The margin is an explicit 10 nm circle-discretization tolerance, the one Padb.b
+  # and copperpillar Padc.c carry, and the same 10 nm the source's -2*drc_tole comes
+  # to (drc_tole = 5 nm there). The interposer's drc_tole is 1e-6 um, so the source
+  # expression reused verbatim made the threshold exact, and a 256-point circular
+  # opening drawn at exactly 10 um enclosure (the SolderBumpPad PCell) measured ~3 nm
+  # short at its edge midpoints and failed.
   logger.info('Executing rule Padb.c')
   padb_c_value = fetch_rule(drc_rules, 'Padb_c')
-  padb_c_l1 = sbumppad.enclosed(topmetal2_drw, padb_c_value.um - 2 * drc_tole, projection).polygons
+  padb_c_tol = 0.01  # 10 nm tolerance for circle-approximated enclosure
+  padb_c_l1 = sbumppad.enclosed(topmetal2_drw, padb_c_value.um - padb_c_tol, projection).polygons
   padb_c_l2 = dfpad_sbump.and(passiv_sbump).not(topmetal2_drw)
   padb_c_l = padb_c_l1.join(padb_c_l2)
   padb_c_l.output('Padb.c', "6.9. Padb.c : Min. TopMetal2 (within dfpad) enclosure of SBumpPad is #{padb_c_value} um")
