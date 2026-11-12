@@ -26,7 +26,7 @@ The repository follows the directory organization of the IHP open PDKs
 | `libs.tech/klayout/intm4tm2_tests/` | Cu-pillar PCell, DRC and LVS connectivity tests |
 | `libs.tech/kicad/` | KiCad template board for assembly designs (copper layers pre-named after the PDK metals) |
 | `libs.tech/adk/technology.json` | Technology manifest: where a design flow finds this PDK's files (layer sheet, routing descriptors, stack, DRC, KiCad template) and facts (grid, attach methods, seal ring cell); paths are relative to the repository root |
-| `libs.tech/adk/routing/` | Routing descriptors for the interposer router, one per variant (`base`, `rdl2`), bound by sha256 in the manifest |
+| `libs.tech/adk/routing/` | Routing descriptors for the interposer router, one per variant (`base`, `rdl2`, `rdl2_sbump`), bound by sha256 in the manifest |
 | `libs.tech/intm4tm2_stack.json` | Physical stack: the silicon substrate thickness with its source, the routing metals' z bounds, the attach plane, and the passivation over it |
 | `libs.tech/chiplet_studio/intm4tm2.stackup.yaml` | 3D stackup for Chiplet Studio, derived from the physical stack |
 | `libs.ref/intm4tm2_examples/gds/` | Example layouts (measurement test structures) |
