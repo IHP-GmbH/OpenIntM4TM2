@@ -5,6 +5,9 @@ bump_mirror.py -- Standalone Cu-Pillar Generator with DRC Pre-Validation
 
 Generates Cu-pillar pad GDS from pin_list JSON files, with DRC validation
 against IHP SG13G2 interposer design rules (Table 6.1) before GDS output.
+The library side also places solder-bump pads (the SolderBumpPad PCell,
+checked against the Padb rules): each fab anchor names its pad cell, its
+layers and its rule set in FAB_ANCHORS.
 
 Can be used standalone or to pre-generate a GDS that hyp_to_gds.py merges
 via --cupillar-gds.
@@ -40,12 +43,52 @@ class CliInputError(ValueError):
 # Constants -- mirrored from hyp_to_gds.py GDSGenerator
 # ---------------------------------------------------------------------------
 
-CUPILLAR_FAB_LAYERS = {
-    'TopMetal2':      (134, 0),
-    'Passiv:pillar':  (9, 35),
-    'dfpad:pillar':   (41, 35),
-    'Recog:pillar':   (99, 35),
-}
+@dataclass(frozen=True)
+class FabAnchor:
+    """The pad an interconnect fab anchor lands on, as the interposer draws it.
+
+    pcell: the IntM4TM2 PCell that draws it (diameter = the passivation
+        opening, passEncl = the TopMetal2 enclosure of that opening).
+    rules: the prefix of its rule set in interposer_tech_default.json
+        (Padc for the Cu pillar, Padb for the solder bump).
+    layers: every fabrication layer the PCell draws, as name -> (layer,
+        datatype). TopMetal2 is the landing; the rest are the anchor's
+        openings, the layers the interconnect manifest lists for the anchor.
+    defaults: the in-code fallback of that rule set, used when no tech JSON
+        is found; its <rules>_c is also the enclosure the generator draws
+        when the caller names none.
+    cell_prefix: the name the generator gives the anchor's pad cells.
+    table_6_1: True when the body diameter picks the opening from Table 6.1
+        (the Cu pillar); otherwise the opening always comes from the method.
+    """
+    pcell: str
+    rules: str
+    layers: Dict[str, Tuple[int, int]]
+    defaults: Dict[str, float]
+    cell_prefix: str
+    table_6_1: bool
+
+
+
+
+def fab_anchor(anchor_id: str) -> FabAnchor:
+    """The FabAnchor for ``anchor_id``; any other id is refused by name."""
+    try:
+        return FAB_ANCHORS[anchor_id]
+    except KeyError:
+        raise ValueError(
+            f"no interposer pad for fab anchor {anchor_id!r}; known: "
+            f"{', '.join(sorted(FAB_ANCHORS))}") from None
+
+
+def fab_anchor_openings(anchor_id: str) -> Dict[str, Tuple[int, int]]:
+    """The openings the pad cell of ``anchor_id`` draws, keyed as the
+    interconnect manifest keys fab_anchors.<id>.layers (passiv, dfpad,
+    recog), so a caller can hold the two to each other. TopMetal2, the
+    landing, is not an opening and is left out."""
+    return {name.split(':')[0].lower(): layer
+            for name, layer in fab_anchor(anchor_id).layers.items()
+            if name != 'TopMetal2'}
 
 # IHP SG13G2 Layout Rules Table 6.1 -- Cu-pillar options
 # Keyed by body diameter (um)
@@ -93,6 +136,31 @@ DEFAULT_DRC_PARAMS = {
     'Padc_d': 30.0,
     'Padc_e': 80.0,
 }
+# The solder bump has one option, so its fallback is the shipped values
+# (Section 6.9 Padb, with the 130 um pitch the tech JSON adds).
+DEFAULT_SBUMP_DRC_PARAMS = {
+    'Padb_a': 60.0,
+    'Padb_b': 70.0,
+    'Padb_c': 10.0,
+    'Padb_d': 50.0,
+    'Padb_e': 130.0,
+}
+FAB_ANCHORS = {
+    'ihp_cupillar_anchor': FabAnchor('CuPillarPad', 'Padc', {
+        'TopMetal2':      (134, 0),
+        'Passiv:pillar':  (9, 35),
+        'dfpad:pillar':   (41, 35),
+        'Recog:pillar':   (99, 35),
+    }, DEFAULT_DRC_PARAMS, 'CUPILLAR', True),
+    'ihp_sbump_anchor': FabAnchor('SolderBumpPad', 'Padb', {
+        'TopMetal2':      (134, 0),
+        'Passiv:sbump':   (9, 36),
+        'dfpad:sbump':    (41, 36),
+        'Recog:sbump':    (99, 36),
+    }, DEFAULT_SBUMP_DRC_PARAMS, 'SBUMP', False),
+}
+DEFAULT_FAB_ANCHOR = 'ihp_cupillar_anchor'
+CUPILLAR_FAB_LAYERS = FAB_ANCHORS[DEFAULT_FAB_ANCHOR].layers
 
 
 # Interconnect PDK 3D body generator (sibling repo). bump_mirror draws the fab
@@ -261,17 +329,29 @@ def _um_str(value: float) -> str:
 
 @dataclass
 class DrcParams:
-    """Cu-pillar DRC parameters.
+    """Pad DRC parameters of one rule set (``rules``: Padc or Padb).
 
-    Field defaults are the Option 2 (40 um opening) fallback, matching
-    DEFAULT_BODY_DIAMETER. ``load()`` overrides these from a tech JSON when one
-    is found (the shipped interposer_tech_default.json carries Option 1).
+    Field defaults are the Cu-pillar Option 2 (40 um opening) fallback,
+    matching DEFAULT_BODY_DIAMETER. ``load()`` overrides these from a tech JSON
+    when one is found (the shipped interposer_tech_default.json carries
+    Option 1), and ``load(fab_anchor_id='ihp_sbump_anchor')`` reads the Padb set.
     """
     diameter_um: float = 40.0       # Padc_a (Option 2 default)
     min_spacing_um: float = 40.0    # Padc_b (edge-to-edge)
     min_enclosure_um: float = 7.5   # Padc_c (TM2 enclosure around passiv)
     min_edgeseal_um: float = 30.0   # Padc_d
     min_pitch_um: float = 80.0      # Padc_e (center-to-center, Option 2)
+    rules: str = 'Padc'             # the rule set these values are, and the
+                                    # prefix of the rule ids checked against them
+
+    @classmethod
+    def _from_rules(cls, rules: str, values: dict) -> 'DrcParams':
+        defaults = next(a.defaults for a in FAB_ANCHORS.values() if a.rules == rules)
+        def get(suffix):
+            return values.get(f'{rules}_{suffix}', defaults[f'{rules}_{suffix}'])
+        return cls(diameter_um=get('a'), min_spacing_um=get('b'),
+                   min_enclosure_um=get('c'), min_edgeseal_um=get('d'),
+                   min_pitch_um=get('e'), rules=rules)
 
     @classmethod
     def from_body_diameter(cls, body_diameter: float) -> 'DrcParams':
@@ -290,12 +370,15 @@ class DrcParams:
         )
 
     @classmethod
-    def load(cls, path: Optional[str] = None) -> 'DrcParams':
-        """Load DRC params from interposer_tech_default.json.
+    def load(cls, path: Optional[str] = None,
+             fab_anchor_id: str = DEFAULT_FAB_ANCHOR) -> 'DrcParams':
+        """Load the DRC params of ``fab_anchor_id``'s rule set from
+        interposer_tech_default.json.
 
-        Falls back to hardcoded Option 2 defaults if path is None or
-        file is missing.
+        Falls back to the hardcoded defaults of that rule set (Option 2 for
+        the Cu pillar) if path is None or file is missing.
         """
+        rule_set = fab_anchor(fab_anchor_id).rules
         if path is None:
             # Try auto-detect relative to this script
             script_dir = Path(__file__).resolve().parent
@@ -311,25 +394,20 @@ class DrcParams:
             except (json.JSONDecodeError, OSError) as e:
                 print(f"Warning: failed to read tech JSON {path}: {e}; "
                       f"using built-in defaults", file=sys.stderr)
-                return cls()
+                return cls._from_rules(rule_set, {})
             rules = data.get('rules', {}) if isinstance(data, dict) else {}
-            return cls(
-                diameter_um=rules.get('Padc_a', DEFAULT_DRC_PARAMS['Padc_a']),
-                min_spacing_um=rules.get('Padc_b', DEFAULT_DRC_PARAMS['Padc_b']),
-                min_enclosure_um=rules.get('Padc_c', DEFAULT_DRC_PARAMS['Padc_c']),
-                min_edgeseal_um=rules.get('Padc_d', DEFAULT_DRC_PARAMS['Padc_d']),
-                min_pitch_um=rules.get('Padc_e', DEFAULT_DRC_PARAMS['Padc_e']),
-            )
+            return cls._from_rules(rule_set, rules)
 
-        return cls()  # hardcoded defaults
+        return cls._from_rules(rule_set, {})  # hardcoded defaults
 
     def to_dict(self) -> dict:
+        r = self.rules
         return {
-            'Padc_a_diameter_um': self.diameter_um,
-            'Padc_b_min_spacing_um': self.min_spacing_um,
-            'Padc_c_min_enclosure_um': self.min_enclosure_um,
-            'Padc_d_min_edgeseal_um': self.min_edgeseal_um,
-            'Padc_e_min_pitch_um': self.min_pitch_um,
+            f'{r}_a_diameter_um': self.diameter_um,
+            f'{r}_b_min_spacing_um': self.min_spacing_um,
+            f'{r}_c_min_enclosure_um': self.min_enclosure_um,
+            f'{r}_d_min_edgeseal_um': self.min_edgeseal_um,
+            f'{r}_e_min_pitch_um': self.min_pitch_um,
         }
 
 
@@ -388,7 +466,8 @@ class ValidationReport:
 # ---------------------------------------------------------------------------
 
 class DrcValidator:
-    """Validate Cu-pillar bump locations against DRC rules."""
+    """Validate bump locations against one pad rule set (``params.rules``):
+    every rule id it reports carries that prefix, Padc.e or Padb.e."""
 
     def __init__(self, params: DrcParams):
         self.params = params
@@ -401,8 +480,8 @@ class DrcValidator:
 
         Args:
             bumps: List of bump locations in global coordinates
-            diameter_um: User-specified diameter (checked against Padc_a)
-            enclosure_um: User-specified enclosure (checked against Padc_c)
+            diameter_um: User-specified diameter (checked against <rules>_a)
+            enclosure_um: User-specified enclosure (checked against <rules>_c)
             max_detail: Max per-rule detailed violation entries to emit
                 (a trailing "... and N more" summary covers the rest).
                 Pass ``None`` for a complete, uncapped report (every
@@ -412,29 +491,32 @@ class DrcValidator:
             ValidationReport with all check results
 
         Note:
-            This coordinate-only pre-validator covers Padc.a/b/c/e/f. Padc.d
-            (pad-to-EdgeSeal spacing, min_edgeseal_um) is intentionally NOT
-            checked here: it needs EdgeSeal geometry that the bump list does
-            not carry. Padc.d is enforced by the full intm4tm2.drc deck. The
-            field is retained so a loaded tech JSON round-trips its value.
+            This coordinate-only pre-validator covers a/b/c/e/f of the rule
+            set. d (pad-to-EdgeSeal spacing, min_edgeseal_um) is intentionally
+            NOT checked here: it needs EdgeSeal geometry that the bump list
+            does not carry. Padc.d and Padb.d are enforced by the full
+            intm4tm2.drc deck. The field is retained so a loaded tech JSON
+            round-trips its value. e is the one the decks leave out (it
+            repeats b there, where a is exact); here it is a true
+            center-to-center check.
         """
         results: List[ValidationResult] = []
 
-        # Padc.a -- diameter check
+        # a -- diameter check
         results.extend(self._check_diameter(diameter_um))
 
-        # Padc.b -- edge-to-edge spacing
+        # b -- edge-to-edge spacing
         results.extend(self._check_spacing(bumps, diameter_um, max_detail))
 
-        # Padc.c -- enclosure check
+        # c -- enclosure check
         results.extend(self._check_enclosure(enclosure_um))
 
-        # Padc.e -- center-to-center pitch
+        # e -- center-to-center pitch
         results.extend(self._check_pitch(bumps, max_detail))
 
-        # Padc.f -- circular shape (always passes, info)
+        # f -- circular shape (always passes, info)
         results.append(ValidationResult(
-            rule='Padc.f',
+            rule=self._rule('f'),
             severity='info',
             message='Circular shape: OK (256-point polygon approximation)',
         ))
@@ -446,23 +528,26 @@ class DrcValidator:
             results=results,
         )
 
+    def _rule(self, letter: str) -> str:
+        return f'{self.params.rules}.{letter}'
+
     def _check_diameter(self, diameter_um: Optional[float]) -> List[ValidationResult]:
         if diameter_um is None:
             return [ValidationResult(
-                rule='Padc.a',
+                rule=self._rule('a'),
                 severity='info',
                 message=f'Using tech diameter: {self.params.diameter_um} um',
             )]
         if abs(diameter_um - self.params.diameter_um) > 0.01:
             return [ValidationResult(
-                rule='Padc.a',
+                rule=self._rule('a'),
                 severity='error',
                 message=(f'Diameter {diameter_um} um does not match tech value '
                          f'{self.params.diameter_um} um'),
                 details={'given': diameter_um, 'expected': self.params.diameter_um},
             )]
         return [ValidationResult(
-            rule='Padc.a',
+            rule=self._rule('a'),
             severity='info',
             message=f'Diameter matches tech: {diameter_um} um',
         )]
@@ -470,7 +555,7 @@ class DrcValidator:
     def _check_spacing(self, bumps: List[BumpLocation],
                        diameter_um: Optional[float] = None,
                        max_detail: Optional[int] = 5) -> List[ValidationResult]:
-        """Padc.b: edge-to-edge spacing >= min_spacing_um."""
+        """b: edge-to-edge spacing >= min_spacing_um."""
         d = diameter_um if diameter_um is not None else self.params.diameter_um
         min_spacing = self.params.min_spacing_um
         results: List[ValidationResult] = []
@@ -496,7 +581,7 @@ class DrcValidator:
                     violations += 1
                     if max_detail is None or violations <= max_detail:
                         results.append(ValidationResult(
-                            rule='Padc.b',
+                            rule=self._rule('b'),
                             severity='error',
                             message=(f'Edge spacing {edge_spacing:.2f} um < '
                                      f'{min_spacing} um between '
@@ -512,13 +597,13 @@ class DrcValidator:
 
         if violations == 0:
             results.append(ValidationResult(
-                rule='Padc.b',
+                rule=self._rule('b'),
                 severity='info',
                 message=f'All edge-to-edge spacings >= {min_spacing} um',
             ))
         elif max_detail is not None and violations > max_detail:
             results.append(ValidationResult(
-                rule='Padc.b',
+                rule=self._rule('b'),
                 severity='error',
                 message=f'... and {violations - max_detail} more spacing '
                         f'violations',
@@ -527,30 +612,30 @@ class DrcValidator:
         return results
 
     def _check_enclosure(self, enclosure_um: Optional[float]) -> List[ValidationResult]:
-        """Padc.c: TM2 enclosure around passiv opening."""
+        """c: TM2 enclosure around passiv opening."""
         min_encl = self.params.min_enclosure_um
         if enclosure_um is None:
             return [ValidationResult(
-                rule='Padc.c',
+                rule=self._rule('c'),
                 severity='info',
                 message=f'Using tech enclosure: {min_encl} um',
             )]
         if enclosure_um < min_encl - 0.01:
             return [ValidationResult(
-                rule='Padc.c',
+                rule=self._rule('c'),
                 severity='warning',
                 message=(f'Enclosure {enclosure_um} um < minimum {min_encl} um'),
                 details={'given': enclosure_um, 'minimum': min_encl},
             )]
         return [ValidationResult(
-            rule='Padc.c',
+            rule=self._rule('c'),
             severity='info',
             message=f'Enclosure {enclosure_um} um >= minimum {min_encl} um',
         )]
 
     def _check_pitch(self, bumps: List[BumpLocation],
                      max_detail: Optional[int] = 5) -> List[ValidationResult]:
-        """Padc.e: center-to-center pitch >= min_pitch_um."""
+        """e: center-to-center pitch >= min_pitch_um."""
         min_pitch = self.params.min_pitch_um
         results: List[ValidationResult] = []
 
@@ -572,7 +657,7 @@ class DrcValidator:
                     violations += 1
                     if max_detail is None or violations <= max_detail:
                         results.append(ValidationResult(
-                            rule='Padc.e',
+                            rule=self._rule('e'),
                             severity='error',
                             message=(f'Pitch {center_dist:.2f} um < '
                                      f'{min_pitch} um between '
@@ -588,13 +673,13 @@ class DrcValidator:
 
         if violations == 0:
             results.append(ValidationResult(
-                rule='Padc.e',
+                rule=self._rule('e'),
                 severity='info',
                 message=f'All center-to-center pitches >= {min_pitch} um',
             ))
         elif max_detail is not None and violations > max_detail:
             results.append(ValidationResult(
-                rule='Padc.e',
+                rule=self._rule('e'),
                 severity='error',
                 message=f'... and {violations - max_detail} more pitch '
                         f'violations',
@@ -623,14 +708,23 @@ class CuPillarGenerator:
     Supports per-device body diameters via Table 6.1 lookup.
     Caches pillar cells by body diameter so mixed-option assemblies
     use the correct geometry for each device.
+
+    The fab anchor picks the pad cell: the Cu-pillar anchor's CuPillarPad
+    by default, or the solder-bump anchor's SolderBumpPad. Table 6.1 is a
+    Cu-pillar table, so a solder bump always takes its opening from
+    passiv_opening_um (the method's manifest fab_params) and never derives
+    it from the body (the SAC305 ball).
     """
 
-    def __init__(self, enclosure_um: float = 7.5, num_points: int = 256,
+    def __init__(self, enclosure_um: Optional[float] = None, num_points: int = 256,
                  bodies: Optional[List[Tuple[str, int, int]]] = None,
-                 passiv_opening_um: Optional[float] = None):
+                 passiv_opening_um: Optional[float] = None,
+                 fab_anchor_id: str = DEFAULT_FAB_ANCHOR):
         """
         Args:
-            enclosure_um: TM2 enclosure around the passiv opening.
+            enclosure_um: TM2 enclosure around the passiv opening; None =
+                          the anchor's <rules>_c fallback (7.5 um for the
+                          Cu pillar, 10 um for the solder bump).
             num_points:   circle discretization of the 3D bodies only; the
                           fabrication circles are PCell-defined at a fixed
                           256 points.
@@ -641,12 +735,19 @@ class CuPillarGenerator:
             passiv_opening_um: fab pad opening for body diameters outside
                           Table 6.1, normally the method's manifest
                           fab_params (e.g. a vendor microbump). Table 6.1
-                          still wins for the diameters it knows.
+                          still wins for the diameters it knows, for the
+                          Cu-pillar anchor only.
+            fab_anchor_id: the interconnect fab anchor the pads are for
+                          (FAB_ANCHORS); it picks the PCell and the layers
+                          the drawn cell is held to.
         """
         if db is None:
             raise ImportError("klayout package required for GDS generation. "
                               "Install with: pip install klayout")
-        self.enclosure_um = enclosure_um
+        self.fab_anchor_id = fab_anchor_id
+        self.anchor = fab_anchor(fab_anchor_id)
+        self.enclosure_um = (self.anchor.defaults[f'{self.anchor.rules}_c']
+                             if enclosure_um is None else enclosure_um)
         self.num_points = num_points
         self.bodies = bodies
         self.passiv_opening_um = passiv_opening_um
@@ -672,13 +773,19 @@ class CuPillarGenerator:
         if key in self._pillar_cells:
             return self._pillar_cells[key]
 
-        option = CUPILLAR_TABLE_6_1.get(body_diameter_um)
+        option = (CUPILLAR_TABLE_6_1.get(body_diameter_um)
+                  if self.anchor.table_6_1 else None)
         if option is None and self.passiv_opening_um is not None:
             # Method-supplied fab geometry (interconnect manifest
             # fab_params): diameters outside the IHP Table 6.1 carry
             # their own passivation opening.
             option = {'option': 'manifest',
                       'passiv_opening': self.passiv_opening_um}
+        if option is None and not self.anchor.table_6_1:
+            raise ValueError(
+                f"{self.anchor.pcell} pads for {self.fab_anchor_id} take their "
+                f"opening from the method, not from the {body_diameter_um} um "
+                f"body: construct the generator with passiv_opening_um.")
         if option is None:
             raise ValueError(
                 f"Unknown Cu-pillar body diameter: {body_diameter_um} um. "
@@ -692,31 +799,31 @@ class CuPillarGenerator:
         opt_val = option['option']
         opt_token = f"opt{opt_val}" if isinstance(opt_val, int) else str(opt_val)
         cell = self.layout.create_cell(
-            f"CUPILLAR_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
+            f"{self.anchor.cell_prefix}_{body_diameter_um:.0f}um_{opt_token}{cap_suffix}")
 
-        # Fabrication layers (CUPILLAR_FAB_LAYERS) come from the CuPillarPad
-        # PCell -- the single source of Cu-pillar pad geometry. The variant
+        # Fabrication layers (the anchor's FabAnchor.layers) come from its
+        # PCell -- the single source of that pad's geometry. The variant
         # is flattened, its shapes copied into the static cell, and the
         # leftover proxy pruned, so the output layout carries plain static
         # polygons with no library or PCell metadata.
         _ensure_pcell_lib()
         self.layout.technology_name = 'intm4tm2'
         variant = self.layout.create_cell(
-            'CuPillarPad', 'IntM4TM2',
+            self.anchor.pcell, 'IntM4TM2',
             {'diameter': _um_str(option['passiv_opening']),
              'passEncl': _um_str(self.enclosure_um),
              'addFillerEx': 'nil'})
         if variant is None:
             raise RuntimeError(
-                "IntM4TM2/CuPillarPad PCell variant could not be created "
-                "(layout.create_cell returned None; library or technology "
-                "did not resolve)")
+                f"IntM4TM2/{self.anchor.pcell} PCell variant could not be "
+                "created (layout.create_cell returned None; library or "
+                "technology did not resolve)")
         variant.flatten(-1, True)
         cell.copy_shapes(variant)
         self.layout.prune_cell(variant.cell_index(), -1)
 
-        # Contract check: the PCell must have produced exactly the four
-        # fabrication layers. A poisoned layer table (e.g. a stale
+        # Contract check: the PCell must have produced exactly the anchor's
+        # four fabrication layers. A poisoned layer table (e.g. a stale
         # KLAYOUT_LYP_FILE honored by an earlier registration of the
         # library) would otherwise retag or drop pad geometry while the
         # run still exits cleanly.
@@ -725,10 +832,10 @@ class CuPillarGenerator:
             if not cell.bbox_per_layer(idx).empty():
                 info = self.layout.get_info(idx)
                 drawn.add((info.layer, info.datatype))
-        expected = set(CUPILLAR_FAB_LAYERS.values())
+        expected = set(self.anchor.layers.values())
         if drawn != expected:
             raise RuntimeError(
-                f"CuPillarPad PCell produced layers {sorted(drawn)} instead "
+                f"{self.anchor.pcell} PCell produced layers {sorted(drawn)} instead "
                 f"of the fabrication set {sorted(expected)}. The IntM4TM2 "
                 f"library layer table is wrong -- check for a foreign "
                 f"KLAYOUT_LYP_FILE in the environment of whatever process "
@@ -757,10 +864,11 @@ class CuPillarGenerator:
                          with_cap: bool = True) -> int:
         """Place Cu-pillar instances for a single device.
 
-        Creates cell hierarchy: TOP > CUPILLARS_{ref} > CUPILLAR_{diam}um
+        Creates cell hierarchy: TOP > <prefix>S_{ref} > <prefix>_{diam}um,
+        with the anchor's cell_prefix (CUPILLAR or SBUMP).
         """
         pillar_cell = self._get_pillar_cell(body_diameter_um, with_cap)
-        group_cell = self.layout.create_cell(f"CUPILLARS_{ref}")
+        group_cell = self.layout.create_cell(f"{self.anchor.cell_prefix}S_{ref}")
         self.top_cell.insert(db.DCellInstArray(group_cell, db.DTrans()))
 
         count = 0
@@ -1086,14 +1194,14 @@ def auto_resolve_collisions(
     budget is exhausted the bump stops contributing. Iterates until convergence
     or max_iters.
 
-    Required separation = max(Padc.e min pitch, Padc.a diameter + Padc.b min
+    Required separation = max(e min pitch, a diameter + b min
     spacing). Coincident points (overlapping pads) cannot be split and produce
     a warning -- those must be fixed in the footprint.
 
     Args:
         bumps: 1:1 bump locations (caller's list is not modified).
         params: DRC parameters (uses min_spacing_um, min_pitch_um).
-        diameter_um: passiv opening diameter (Padc.a).
+        diameter_um: passiv opening diameter (a of the rule set).
         max_displacement_um: per-bump displacement cap from origin.
         max_iters: iteration cap.
 

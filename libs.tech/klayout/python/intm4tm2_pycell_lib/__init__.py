@@ -39,6 +39,7 @@ import traceback
 
 moduleNames = [
         'CuPillarPad_code',
+        'SolderBumpPad_code',
         'cmim_code',
         'bondpad_code',
         'sealring_code'
