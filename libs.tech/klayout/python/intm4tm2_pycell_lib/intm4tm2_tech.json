@@ -48,6 +48,9 @@
         "Metal4.nofill": "50, 23",
         "Passiv.pillar": "9, 35",
         "dfpad.pillar": "41, 35",
-        "Recog.pillar": "99, 35"
+        "Recog.pillar": "99, 35",
+        "Passiv.sbump": "9, 36",
+        "dfpad.sbump": "41, 36",
+        "Recog.sbump": "99, 36"
     }
 }

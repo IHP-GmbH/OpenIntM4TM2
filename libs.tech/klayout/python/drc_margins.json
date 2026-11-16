@@ -38,7 +38,7 @@
         "Padc.c": {"key": "Padc_c", "kind": "enclosure", "offset_nm": -10},
         "Padc.d": {"key": "Padc_d", "kind": "separation", "needs_seal": true},
         "Padb.b": {"key": "Padb_b", "kind": "space", "offset_nm": -10},
-        "Padb.c": {"key": "Padb_c", "kind": "enclosure"},
+        "Padb.c": {"key": "Padb_c", "kind": "enclosure", "offset_nm": -10},
         "Padb.d": {"key": "Padb_d", "kind": "separation", "needs_seal": true},
         "PadU.w": {"key": "PadU_w", "kind": "width", "offset_nm": -10},
         "PadU.s": {"key": "PadU_s", "kind": "space", "offset_nm": -10},

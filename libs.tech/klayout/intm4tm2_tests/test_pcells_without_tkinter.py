@@ -63,6 +63,7 @@ SCRIPT = textwrap.dedent("""\
         "cmim": ("cmim", {"Calculate": "C", "w": "10u", "l": "5u"}),
         "cmim_wl": ("cmim", {"w": "10u", "l": "5u"}),
         "CuPillarPad": ("CuPillarPad", {}),
+        "SolderBumpPad": ("SolderBumpPad", {}),
     }
     for key, (name, params) in cells.items():
         layout = pya.Layout()
@@ -106,7 +107,7 @@ def runs(tmp_path_factory):
 def test_pcells_draw_without_tkinter(runs):
     (reference, _), (out_dir, stdout) = runs
     assert "tkinter loaded: False" in stdout, stdout
-    for name in ("cmim", "CuPillarPad"):
+    for name in ("cmim", "CuPillarPad", "SolderBumpPad"):
         drawn = (out_dir / f"{name}.gds").read_bytes()
         assert drawn == (reference / f"{name}.gds").read_bytes(), (
             f"{name} drawn without tkinter differs from the reference")
