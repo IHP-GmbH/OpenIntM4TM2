@@ -5,11 +5,19 @@ Generate the Pad DRC unit testcase (`pad.gds`) for the interposer, following the
 IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS with intentional
 PASS / FAIL structures labeled by text on layer 63/0.
 
-The layout has two top cells, each checked as a whole by run_regression.py:
+Each top cell is checked as a whole by run_regression.py:
   - pad_viol : one violating structure per rule  -> expects {Pad.dR}
   - pad_clean: the corresponding legal structures -> expects {}
+  - pad_d_viol, pad_d_clean, pad_d_overlap: a pad 7.495 um from, 7.50 um from,
+    and 1 um over an EdgeSeal strip covered by recog -> {Pad.d}, {}, {Pad.d};
+    pad_d_abut and pad_d_corner_touch, the strip on the pad's edge and on its
+    corner point -> {Pad.d} each.
+    Pad.d (min. Pad-to-EdgeSeal space = 7.50 um) measures to EdgeSeal itself,
+    Pad.dR leaves recog-covered EdgeSeal out, so only Pad.d can fire there.
 
-Only Pad.dR (min. recommended Pad-to-EdgeSeal space = 25.0 um) is designed to fire.
+In pad_viol and pad_clean only Pad.dR (min. recommended Pad-to-EdgeSeal space
+= 25.0 um) is designed to fire; their pads are 10 um or more from EdgeSeal, so
+Pad.d stays quiet.
 The other rules in 6_9_pad.drc are deliberately kept quiet in both cells:
   - Pad.m  : SBumpPad and CuPillarPad never coexist (no 9/35, 9/36, 41/35, 41/36 drawn).
   - Pad.i  : dfpad is fully covered by TopMetal2 (dfpad box == TopMetal2 box exactly).
@@ -50,6 +58,7 @@ SEAL_W = 10.0     # EdgeSeal strip width (um)
 SEAL_OVER = 10.0  # EdgeSeal strip vertical overhang beyond the pad on each side (um)
 RECOG_MARGIN = 2.0  # recog overhang beyond the EdgeSeal strip on each side (um)
 STRUCT2_DX = 200.0  # x-offset of the recog-exclusion structure from the first (um)
+PAD_D = 7.5       # Pad_d, the Pad-to-EdgeSeal space
 
 
 def _box(cell, idx, x0, y0, x1, y1):
@@ -115,6 +124,28 @@ def build():
          esx0 + SEAL_W + RECOG_MARGIN, esy1 + RECOG_MARGIN)
     _text(clean, tx, rx0, ry1 + 0.3,
           "Pad.dR PASS (10 um to recog-covered EdgeSeal)")
+
+    # Pad.d against an EdgeSeal strip covered by recog, so that Pad.dR (which
+    # leaves recog-covered EdgeSeal out) stays quiet and only Pad.d can fire.
+    for name, gap in (("pad_d_viol", PAD_D - 0.005), ("pad_d_clean", PAD_D),
+                      ("pad_d_overlap", -1.0)):
+        top = layout.create_cell(name)
+        _text(top, tx, 0.0, -SEAL_OVER - 1.0, f"Pad.d: {gap} um to recog-covered EdgeSeal")
+        _, y0, x1, y1 = _pad(top, passiv, dfpad, tm2, 0.0, 0.0)
+        sx0 = x1 + gap
+        _box(top, edgeseal, sx0, y0 - SEAL_OVER, sx0 + SEAL_W, y1 + SEAL_OVER)
+        _box(top, recog, sx0 - RECOG_MARGIN, y0 - SEAL_OVER - RECOG_MARGIN,
+             sx0 + SEAL_W + RECOG_MARGIN, y1 + SEAL_OVER + RECOG_MARGIN)
+    # Zero distance: the strip on the pad's whole right edge, and a strip
+    # whose corner meets the pad's top right corner at one point.
+    for name, corner in (("pad_d_abut", False), ("pad_d_corner_touch", True)):
+        top = layout.create_cell(name)
+        _text(top, tx, 0.0, -SEAL_OVER - 1.0, f"Pad.d: {name}")
+        _, y0, x1, y1 = _pad(top, passiv, dfpad, tm2, 0.0, 0.0)
+        sy0, sy1 = (y1, y1 + 2 * SEAL_OVER) if corner else (y0 - SEAL_OVER, y1 + SEAL_OVER)
+        _box(top, edgeseal, x1, sy0, x1 + SEAL_W, sy1)
+        _box(top, recog, x1 - RECOG_MARGIN, sy0 - RECOG_MARGIN,
+             x1 + SEAL_W + RECOG_MARGIN, sy1 + RECOG_MARGIN)
 
     return layout
 

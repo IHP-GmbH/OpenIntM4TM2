@@ -77,11 +77,11 @@ MAIN = (DRC_DIR / "intm4tm2.drc").read_text()
 M4, M5, VIA4, MIM, TM1, TM2 = (50, 0), (67, 0), (66, 0), (36, 0), (126, 0), (134, 0)
 M5_SLIT, TM1_SLIT, SEAL = (67, 24), (126, 24), (39, 0)
 PASSIV, PILLAR, SBUMP = (9, 0), (9, 35), (9, 36)
-DF_PILLAR, DF_SBUMP = (41, 35), (41, 36)
+DF_PILLAR, DF_SBUMP, DFPAD, RECOG = (41, 35), (41, 36), (41, 0), (99, 0)
 
 # The structures at a known distance inside the window: rule -> thinnest um.
 KNOWN = {"M4.a": 0.22, "M5.a": 0.22, "M5.b": 0.24, "V4.c": 0.02, "MIM.c": 0.7, "MIM.e": 0.7,
-         "Slt.g_M5": 0.65}
+         "Slt.g_M5": 0.65, "Pad.d": 8.0}
 # The structures drawn at the floor plus delta.
 AT_FLOOR = ("Padc.b", "Padc.c", "Padb.b", "Padb.c", "Pas.c", "PadU.w", "PadU.s")
 PAD_DECKS = "passiv,copperpillar,solderbump,ubm_floor"
@@ -92,7 +92,7 @@ SLITS = "7_3_metalslits.drc"
 SLIT_LOOP = ("slt_metal_cfg.each do |slt_abbrev, slt_met, slt_met_slit, slt_exempt, "
              "slt_g_applies, slt_sep_rules|")
 # The table rules whose deck output is polygons, so the tool taps them.
-TAPPED = {"Pas.c", "Padc.c", "Padb.c", "MIM.c", "Slt.g_M5", "Slt.g_TM1"}
+TAPPED = {"Pas.c", "Padc.c", "Padb.c", "Pad.d", "MIM.c", "Slt.g_M5", "Slt.g_TM1"}
 
 
 def _reads_seal(text, seal):
@@ -222,7 +222,7 @@ def test_the_rules_measured_against_the_seal_ring_are_the_ones_that_read_it():
 def test_the_tool_taps_the_deck_lines_of_its_rules_and_nothing_else():
     """In the copy of each TAPS deck two lines change, the check and then the join, and
     each reads as before without what the tap put in, which sits right before the check's
-    .polygons and right after the join's branch. The rules tapped are TAPPED: the four
+    .polygons and right after the join's branch. The rules tapped are TAPPED: the five
     named ones, and Slt.g on each slit row whose Slt.g flag is true."""
     tapped = set()
     for name, deck in dm.TAPS.items():
@@ -369,6 +369,13 @@ def _layout(path, delta=0.0, seal=True):
     box(PILLAR, 600, 450, 605, 460)
     gap = _floor("PadU.s") + delta
     box(PILLAR, 605 + gap, 450, 610 + gap, 460)
+    # Pad.d: a 30 um pad 8 um from an EdgeSeal strip under recog, which keeps Pad.dR
+    # (it leaves recog-covered EdgeSeal out) from measuring it.
+    # Drawn only with the ring, so that a layout without one has no EdgeSeal.
+    pad(PASSIV, DFPAD, 700, 650, 30, 3)
+    if seal:
+        box(SEAL, 738, 640, 748, 690)
+        box(RECOG, 736, 638, 750, 692)
     layout.write(str(path))
     return path
 
@@ -442,7 +449,8 @@ def test_without_a_seal_ring_the_seal_rules_read_unmeasured(tmp_path, clean_env)
 @pytest.mark.live_tool
 def test_a_rule_the_deck_flags_outright_reads_flagged(tmp_path, clean_env):
     """A Passiv opening, a pillar opening, a solder-bump opening and a MIM with no metal
-    under them, and a Metal5 and a TopMetal1 slit inside a MIM: the deck flags each
+    under them, a Metal5 and a TopMetal1 slit inside a MIM, and a pad opening on
+    EdgeSeal: the deck flags each
     whatever the distance, so every tapped rule reads flagged, first."""
     layout, box = _top()
     box(PASSIV, 100, 100, 110, 110)                       # Pas.c: no TopMetal2
@@ -458,6 +466,8 @@ def test_a_rule_the_deck_flags_outright_reads_flagged(tmp_path, clean_env):
     box(M5, 490, 290, 530, 330)
     box(TM1, 490, 290, 530, 330)
     box(TM1_SLIT, 505, 305, 508, 315)
+    box(PASSIV, 700, 785, 720, 795)                       # Pad.d: a pad opening on EdgeSeal
+    box(DFPAD, 700, 785, 720, 795)
     gds = tmp_path / "outright.gds"
     layout.write(str(gds))
     record = dm.measure(gds, tmp_path / "out", env=clean_env)

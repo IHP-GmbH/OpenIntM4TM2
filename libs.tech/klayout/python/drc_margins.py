@@ -31,7 +31,8 @@ the main deck. The original deck is not touched. Most rules are measured at thei
 The few whose deck output is polygons (TAPS below) are measured on the deck's own lines,
 found from the line that outputs the rule: the edge pairs of the check are recorded
 before its .polygons, and the shapes of the branch the deck joins to it, which it flags
-whatever the distance (an opening or a MIM not wholly on its metal, a slit over a MIM),
+whatever the distance (an opening or a MIM not wholly on its metal, a slit over a MIM, a pad opening on
+EdgeSeal),
 are counted as the rule's flagged shapes. The copy fails unless each of those lines is
 found exactly once and in that shape. The hook keeps only the thinnest pair of each
 table rule and drops every output, since a raised key can also move the derived geometry
@@ -78,6 +79,7 @@ TAPS = {
     "Pas.c": "5_27_passiv.drc",
     "Padc.c": "6_9_copperpillar.drc",
     "Padb.c": "6_9_solderbump.drc",
+    "Pad.d": "6_9_pad.drc",
     "MIM.c": "6_11_mim.drc",
     "Slt.g_#{slt_abbrev}": "7_3_metalslits.drc",
 }

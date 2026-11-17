@@ -67,16 +67,18 @@ VIA_RINGS = {  # layer -> ring width
     (125, 0): round(RULES["Seal_c2"] * 1000),  # TopVia1
     (133, 0): round(RULES["Seal_c3"] * 1000),  # TopVia2
 }
-BOUNDARY_TO_EDGESEAL = 30000
 STEP = 5
 
 # Public SG13G2 section 6.10 values, as literals: every other test reads the
 # same rule file as the PCell and would follow a drifted value.
 PUBLIC_SEAL_RULES = {"Seal_a": 3.5, "Seal_c1": 0.19, "Seal_c2": 0.42, "Seal_c3": 0.9,
-                     "Seal_e": 4.2, "Seal_f": 1.0, "Seal_k": 21.0}
-# Drawing values with no rule of their own on this stack (nm): the via rings'
-# offset from the outer metal edge (Seal.d) and the ring-to-Passiv space.
-VIA_OFFSET = 1300
+                     "Seal_d": 1.3, "Seal_e": 4.2, "Seal_f": 1.0, "Seal_k": 21.0,
+                     "Seal_l1": 30.0}
+# Drawn at the minimum of their rule (nm): EdgeSeal from the boundary
+# (Seal.l1) and the via rings from the outer metal edge (Seal.d). The
+# ring-to-Passiv space is a drawing value with no rule.
+BOUNDARY_TO_EDGESEAL = round(PUBLIC_SEAL_RULES["Seal_l1"] * 1000)
+VIA_OFFSET = round(PUBLIC_SEAL_RULES["Seal_d"] * 1000)
 PASSIV_SPACE = 3000
 # Slit cut height per layer (nm): the minimum metal spaces, and for the vias
 # Seal.d either side of the 0.21 um SG13G2 Act.b notch.

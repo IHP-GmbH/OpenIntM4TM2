@@ -26,15 +26,22 @@
 #   to the Metal4..TopMetal2 stack, with its rule ids (Seal.a_<layer>,
 #   Seal.c1.Via4, Seal.c2, Seal.c3, Seal.e, Seal.f.<layer>).
 #
-# DEVIATION: the entire Seal.b family (Min. Activ space to EdgeSeal-Activ,
-# EdgeSeal-pSD, EdgeSeal-Metal1..5, EdgeSeal-TopMetal1, EdgeSeal-TopMetal2) is
-# DROPPED. Its primary layer is Activ, which -- together with pSD and
-# Metal1..3 -- does not exist in this backend-only (Metal4..TopMetal2) stack.
-# Without Activ there is nothing to measure the EdgeSeal spacing against, so the
-# rule is meaningless here rather than merely relaxed, and no Seal_b key is
-# provided in interposer_tech_default.json. Seal.d (EdgeSeal-Activ enclosure of
-# the via rings) and the Activ, pSD, Cont and Metal1..3 parts of Seal.a, c and f
-# are dropped for the same reason.
+# DEVIATION: this backend-only (Metal4..TopMetal2) stack has no Activ, pSD,
+# Cont or Metal1..3, so the parts of Seal.a, c and f on those layers are
+# dropped. Three rules that SG13G2 states against Activ are restated for this
+# stack instead:
+#   Seal.b_<L>   SG13G2 spaces design Activ 4.90 um from the ring. Here it is
+#                design <L> to the ring's <L>, on the same layer, at that
+#                layer's own minimum space (Mn_b, TM1_b, TM2_b): the metal
+#                decks run on metal NOT EdgeSeal and never measure it. A
+#                design shape that touches or overlaps the ring fails too.
+#                Drawn metal only; filler is held off all metal, the ring
+#                included, by MFil.c, TM1Fil.c and TM2Fil.c.
+#   Seal.d.<V>   SG13G2 encloses the via rings by EdgeSeal-Activ. Here EdgeSeal
+#                encloses them: the ring is drawn as one band of EdgeSeal,
+#                Activ and metals, so EdgeSeal stands where Activ stood.
+#   Seal.l1      Not an SG13G2 rule id: the 30 um from EdgeSeal to the
+#                sealring boundary of Fig. 6.12, as a minimum.
 #
 # DEVIATION: the source deck wraps Seal.l in an en_tiles/setup_run_mode block;
 # that wrapper is stripped here like in the filler decks (the interposer engine
@@ -104,8 +111,9 @@ if BEOL
   end
 
   # Seal-ring presence, with -rd require_sealring=true (parsed in intm4tm2.drc).
-  # Without a ring Seal.l is skipped (it needs 39/4), and Seal.n, Pas.c, Pad.dR,
-  # Padc.d, Padb.d and LBE.d pass because they have no EdgeSeal to measure to.
+  # Without a ring Seal.l is skipped (it needs 39/4), and Seal.n, Seal.b,
+  # Seal.d, Pas.c, Pad.d, Pad.dR, Padc.d, Padb.d and LBE.d pass because they
+  # have no EdgeSeal to measure to.
   # These rules make a missing, broken or misplaced ring an error. They are not
   # SG13G2 rules, hence the SEAL.REQ names.
   if REQUIRE_SEALRING
@@ -128,15 +136,17 @@ if BEOL
     # skipped: everything would be "outside" and the report would drown.
     #
     # A slit is accepted: every metal and via ring open, each in one piece cut
-    # once by at most 2.81 um, the widest cut of the sealring PCell (its via
-    # rings stop Seal.d, 1.30 um, short of both sides of a 0.21 um notch, the
-    # SG13G2 Act.b space), and every via ring under both of its metals, so
-    # that each via cut covers the metal cuts beside it and the cuts line up.
+    # once by at most 0.21 + 2 Seal.d (2.81 um), the widest cut of the
+    # sealring PCell (its via rings stop Seal.d short of both sides of a
+    # 0.21 um notch, the SG13G2 Act.b space), and every via ring under both
+    # of its metals, so that each via cut covers the metal cuts beside it and
+    # the cuts line up.
     # EdgeSeal must stay closed. One cut layer on a closed stack is still
     # reported; with every ring layer open, so are the layers that are not
     # such a cut.
     seal_req_shrink = (fetch_rule(drc_rules, 'Seal_c1') / 2 - 0.005).round(3)
-    seal_req_bridge = ((2.81 + 2 * seal_req_shrink) / 2).round(3)
+    seal_req_notch = 0.21   # SLIT_VIA_NOTCH_NM of the sealring PCell
+    seal_req_bridge = ((seal_req_notch + 2 * fetch_rule(drc_rules, 'Seal_d') + 2 * seal_req_shrink) / 2).round(3)
     if seal_interior.is_empty?
       edgeseal_drw.output('SEAL.REQ.3_ES', 'SEAL.REQ.3_ES : EdgeSeal is not a closed ring')
     else
@@ -218,13 +228,17 @@ if BEOL
     seal_m_chip.forget
     seal_m_l.forget
 
+    # The ring's stack, once for every rule below: [name, layer, space key]
+    # for the metals, [name, layer, width key, Seal.c rule id] for the vias.
+    seal_stack_metals = [['Metal4', metal4_drw, 'Mn_b'], ['Metal5', metal5_drw, 'Mn_b'],
+                         ['TopMetal1', topmetal1_drw, 'TM1_b'], ['TopMetal2', topmetal2_drw, 'TM2_b']]
+    seal_stack_vias = [['Via4', via4_drw, 'Seal_c1', 'Seal.c1.Via4'], ['TopVia1', topvia1_drw, 'Seal_c2', 'Seal.c2'],
+                       ['TopVia2', topvia2_drw, 'Seal_c3', 'Seal.c3']]
+
     # Seal.a, Seal.c1-c3, Seal.e and Seal.f measure the ring itself: each
     # layer AND an EdgeSeal polygon with a hole, and the Passiv loop around it.
     seal_ring = edgeseal_drw.with_holes(1, nil)
-    seal_metals = [['Metal4', metal4_drw], ['Metal5', metal5_drw],
-                   ['TopMetal1', topmetal1_drw], ['TopMetal2', topmetal2_drw]].map do |name, layer|
-      [name, layer.and(seal_ring)]
-    end
+    seal_metals = seal_stack_metals.map { |name, layer, _| [name, layer.and(seal_ring)] }
 
     # Rule Seal.a_<L>: Min. EdgeSeal-<L> width is 3.50 um
     logger.info('Executing rule Seal.a')
@@ -238,8 +252,7 @@ if BEOL
     # Rule Seal.c1 / c2 / c3: the EdgeSeal via rings are exactly their width,
     # neither narrower nor wider anywhere.
     logger.info('Executing rules Seal.c1, Seal.c2, Seal.c3')
-    [['Seal.c1.Via4', 'Seal_c1', via4_drw, 'Via4'], ['Seal.c2', 'Seal_c2', topvia1_drw, 'TopVia1'],
-     ['Seal.c3', 'Seal_c3', topvia2_drw, 'TopVia2']].each do |rule, key, layer, name|
+    seal_stack_vias.each do |name, layer, key, rule|
       seal_c_value = fetch_rule(drc_rules, key)
       seal_c_ring = layer.and(seal_ring)
       seal_c_half = (seal_c_value / 2).round(3)
@@ -270,6 +283,66 @@ if BEOL
 
     seal_metals.each { |_, layer| layer.forget }
     seal_ring.forget
+
+    # Seal.b and Seal.d measure the design against the ring, Seal.l1 the ring
+    # against the boundary. They take EdgeSeal itself, not seal_ring, so that
+    # a ring that is cut open (no hole) is still checked.
+
+    # Rule Seal.b_<L>: Min. design <L> space to EdgeSeal-<L> is the layer's
+    # own minimum space; touching or overlapping the ring is not allowed.
+    # Design metal is the metal outside EdgeSeal; a shape merged into the ring
+    # leaves an edge shared with the ring's metal, reported as such.
+    logger.info('Executing rule Seal.b')
+    seal_stack_metals.each do |name, layer, key|
+      seal_b_value = fetch_rule(drc_rules, key)
+      seal_b_ring = layer.and(edgeseal_drw)
+      seal_b_design = layer.not(edgeseal_drw)
+      seal_b_message = "6.10. Seal.b_#{name} : Min. design #{name} space to EdgeSeal-#{name} is " \
+                       "#{seal_b_value} um, touching not allowed"
+      seal_b_space = seal_b_design.separation(seal_b_ring, seal_b_value.um, euclidian)
+      seal_b_space.output("Seal.b_#{name}", seal_b_message)
+      seal_b_touch = seal_b_design.edges.and(seal_b_ring.edges)
+      seal_b_touch.output("Seal.b_#{name}", seal_b_message)
+      seal_b_ring.forget
+      seal_b_design.forget
+      seal_b_space.forget
+      seal_b_touch.forget
+    end
+
+    # Rule Seal.d.<V>: Min. EdgeSeal enclosure of the EdgeSeal-<V> ring is
+    # 1.30 um, to both edges of the ring, corners included (euclidian). A via
+    # overlapping the ring and reaching out of it is reported by the part
+    # outside.
+    logger.info('Executing rule Seal.d')
+    seal_d_value = fetch_rule(drc_rules, 'Seal_d')
+    seal_stack_vias.each do |name, layer, _, _|
+      seal_d_vias = layer.overlapping(edgeseal_drw)
+      seal_d_message = "6.10. Seal.d.#{name} : Min. EdgeSeal enclosure of EdgeSeal-#{name} is #{seal_d_value} um"
+      seal_d_encl = seal_d_vias.enclosed(edgeseal_drw, seal_d_value.um, euclidian)
+      seal_d_encl.output("Seal.d.#{name}", seal_d_message)
+      seal_d_out = seal_d_vias.not(edgeseal_drw)
+      seal_d_out.output("Seal.d.#{name}", seal_d_message)
+      seal_d_vias.forget
+      seal_d_encl.forget
+      seal_d_out.forget
+    end
+
+    # Rule Seal.l1: Min. sealring boundary enclosure of EdgeSeal is 30.00 um.
+    # Skipped without a boundary (SEAL.REQ.2 reports that case when the ring
+    # is required). Unlike Seal.l it takes every 39/4 shape, not only those
+    # over the chip, and runs only outside precheck, like the ring rules.
+    # EdgeSeal reaching out of the boundary is reported by the part outside.
+    logger.info('Executing rule Seal.l1')
+    seal_l1_value = fetch_rule(drc_rules, 'Seal_l1')
+    unless edgeseal_boundary.is_empty?
+      seal_l1_message = "6.10. Seal.l1 : Min. sealring boundary enclosure of EdgeSeal is #{seal_l1_value} um"
+      seal_l1_l = edgeseal_drw.enclosed(edgeseal_boundary, seal_l1_value.um, euclidian)
+      seal_l1_l.output('Seal.l1', seal_l1_message)
+      seal_l1_out = edgeseal_drw.not(edgeseal_boundary)
+      seal_l1_out.output('Seal.l1', seal_l1_message)
+      seal_l1_l.forget
+      seal_l1_out.forget
+    end
   end
 
   if seal_checked
