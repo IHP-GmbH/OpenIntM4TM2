@@ -33,6 +33,11 @@
         "Pas.a": {"key": "Pas_a", "kind": "width"},
         "Pas.b": {"key": "Pas_b", "kind": "space"},
         "Pas.c": {"key": "Pas_c", "kind": "enclosure", "needs_seal": true},
+        "Pad.d": {
+            "key": "Pad_d",
+            "kind": "separation",
+            "needs_seal": true
+        },
         "Pad.dR": {"key": "Pad_dR", "kind": "separation", "needs_seal": true},
         "Padc.b": {"key": "Padc_b", "kind": "space", "offset_nm": -10},
         "Padc.c": {"key": "Padc_c", "kind": "enclosure", "offset_nm": -10},

@@ -202,7 +202,7 @@ available decks and what they check:
 | `pad` | 6.9 | Pad recognition consistency, pad-to-sealring distance |
 | `copperpillar` | 6.9.2 | Cu-pillar opening size, pitch, enclosure, shape |
 | `solderbump` | 6.9.1 | Solder-bump opening size, pitch, enclosure, shape |
-| `sealring` | 6.10 | Seal ring integrity, ring and Passiv ring widths, corners, uniqueness, outside structures |
+| `sealring` | 6.10 | Seal ring integrity, ring and Passiv ring widths, corners, uniqueness, outside structures, via enclosure, design metal to the ring, boundary distance |
 | `mim` | 6.11 | MIM capacitor: width, space, enclosures, per-device min/max area, via coverage, total area |
 | `metalslits` | 7.3 | Slit size/coverage on wide metal plates |
 | `lbe` | 9.1 | Local back etch size, spacing, keep-outs |
@@ -214,7 +214,8 @@ it is opt-in via `--density` (or an explicit `--deck density`); its DEN.BND.*
 boundary sanity rules are enabled with `--density_sanity`.
 
 Without a seal ring, Seal.l is skipped (it needs 39/4) and the rules that
-measure to EdgeSeal (Seal.n, Pas.c, Pad.dR, Padc.d, Padb.d, LBE.d) have nothing
+measure to EdgeSeal (Seal.n, Seal.b, Seal.d, Pas.c, Pad.d, Pad.dR, Padc.d,
+Padb.d, LBE.d) have nothing
 to measure and pass. For a layout that must carry one, `--require_sealring`
 (`-rd require_sealring=true`) turns on the SEAL.REQ.* rules of the `sealring`
 deck:
@@ -234,9 +235,21 @@ With or without the define, a closed EdgeSeal ring is measured by the SG13G2
 ring rules ported to this stack: `Seal.a_<L>` (Metal4..TopMetal2 at least
 3.50 um), `Seal.c1.Via4`, `Seal.c2` and `Seal.c3` (each via ring exactly its
 width), `Seal.e` (Passiv ring at least 4.20 um) and `Seal.f.<L>` (Passiv ring
-at least 1.00 um from the ring metals). The via offset (Seal.d, measured to
-Activ in SG13G2), the 30 um from EdgeSeal to the boundary and the spacing from
-design metal to the ring are not checked.
+at least 1.00 um from the ring metals). Three SG13G2 rules stated against
+Activ are restated for this stack, which has none:
+
+| Rule | Fails when |
+| --- | --- |
+| `Seal.b_<L>` | design Metal4, Metal5, TopMetal1 or TopMetal2 (the metal outside EdgeSeal) is closer to the ring's metal on the same layer than that layer's own minimum space (0.21, 0.21, 1.64, 2.00 um), or touches or overlaps it. Filler is held off the ring by MFil.c, TM1Fil.c and TM2Fil.c |
+| `Seal.d.<V>` | EdgeSeal encloses a Via4, TopVia1 or TopVia2 ring by less than 1.30 um on either side, corners included, or a via on EdgeSeal reaches out of it |
+| `Seal.l1` | the sealring boundary 39/4 encloses EdgeSeal by less than 30 um, or EdgeSeal reaches out of it (Fig. 6.12; not an SG13G2 rule id) |
+
+The `pad` deck checks `Pad.d`: a pad opening (Passiv and dfpad) at least
+7.50 um from EdgeSeal; an opening that overlaps or touches EdgeSeal fails
+too. Seal.b and Seal.d also run on an EdgeSeal that is cut open, so a cut
+under an intact stack shows as Seal.b and Seal.d markers even without the
+define. Not measured to the ring: the wide-metal spaces (M4/M5.e, M4/M5.f,
+TM2.bR), which the metal decks apply only between design shapes.
 
 ```bash
 python tech/drc/run_drc.py --path <your_layout.gds>                       # all default decks

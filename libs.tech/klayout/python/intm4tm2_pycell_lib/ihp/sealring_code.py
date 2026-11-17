@@ -49,8 +49,9 @@ where each comes from.
 
 Widths are the public SG13G2 section 6.10 values, read from the DRC rule
 file rather than from techParams (as bondpad does) because they are rule
-values: Seal.a ring width, Seal.c1/c2/c3 via ring widths, Seal.e Passiv ring
-width, Seal.k corner span; and the metal spaces that size the slit.
+values: Seal.a ring width, Seal.c1/c2/c3 via ring widths, Seal.d via ring
+offset, Seal.e Passiv ring width, Seal.k corner span, Seal.l1 boundary to
+EdgeSeal; and the metal spaces that size the slit.
 """
 
 __version__ = '$Revision: #1 $'
@@ -64,16 +65,8 @@ from .geometry import *
 from .pdk_version import pdk_version
 from .utility_functions import *
 
-# Section 6.10 introduction and Fig. 6.12: EdgeSeal sits 30 um from the
-# sealring boundary. The value has no rule ID and no DRC check; it is drawn
-# as the minimum.
-BOUNDARY_TO_EDGESEAL_NM = 30000
-# Drawing values without a rule of their own on this stack. Seal.d (1.30) is
-# the SG13G2 EdgeSeal-Activ enclosure of the via rings; with no Activ it is
-# drawn as the via rings' offset from the outer edge of the ring metal.
 # Seal.f is a 1.00 minimum; the ring is drawn 3.00 from Passiv, the value of
 # the open SG13G2 rule file and of its magic generator.
-VIA_OFFSET_NM = 1300
 PASSIV_SPACE_NM = 3000
 # SG13G2 Act.b, the notch the via rings are cut around in a slit.
 SLIT_VIA_NOTCH_NM = 210
@@ -84,7 +77,7 @@ GRID_NM = 5
 RULES_FILE = os.path.normpath(os.path.join(
     os.path.dirname(os.path.realpath(__file__)), '..', '..', '..',
     'tech', 'drc', 'rule_decks', 'interposer_tech_default.json'))
-RULE_KEYS = ('Seal_a', 'Seal_c1', 'Seal_c2', 'Seal_c3', 'Seal_e', 'Seal_k',
+RULE_KEYS = ('Seal_a', 'Seal_c1', 'Seal_c2', 'Seal_c3', 'Seal_d', 'Seal_e', 'Seal_k', 'Seal_l1',
              'Mn_e', 'TM1_b', 'TM2_b')
 METALS = (('Metal4', 'Mn_e'), ('Metal5', 'Mn_e'), ('TopMetal1', 'TM1_b'), ('TopMetal2', 'TM2_b'))
 VIAS = (('Via4', 'Seal_c1'), ('TopVia1', 'Seal_c2'), ('TopVia2', 'Seal_c3'))
@@ -173,15 +166,20 @@ class sealring(DloGen):
         rules = loadSealRules()
         ringWidth = rules['Seal_a']
         span = rules['Seal_k']
+        # Drawn at the minimum of their rule: EdgeSeal Seal_l1 (30 um, Fig.
+        # 6.12) from the boundary, and the via rings Seal_d (1.30) from the
+        # outer edge of EdgeSeal and the ring metal, which share one outline.
+        boundaryToEdgeSeal = rules['Seal_l1']
+        viaOffset = rules['Seal_d']
 
         sizeX = outlineToNm(self.l, 'l')
         sizeY = outlineToNm(self.w, 'w')
         if self.addSlit not in FLAGS:
             raise ValueError(f"sealring: addSlit must be 'nil' or 't', got {self.addSlit!r}")
-        # The published 114.25 um minimum, which callers compute from these
-        # constants too. The straight between two corners of a side is then
+        # The published 114.25 um minimum, which callers compute from the
+        # same rule values. The straight between two corners of a side is then
         # at least 2 Seal.a + Seal.k / 4 long, longer than any slit cut.
-        minSize = 2 * (BOUNDARY_TO_EDGESEAL_NM + span + ringWidth) + span // CORNER_STEPS
+        minSize = 2 * (boundaryToEdgeSeal + span + ringWidth) + span // CORNER_STEPS
         if min(sizeX, sizeY) < minSize:
             raise ValueError(f"sealring: outline {sizeX / 1000} x {sizeY / 1000} um is below "
                              f"the {minSize / 1000} um minimum")
@@ -189,9 +187,9 @@ class sealring(DloGen):
             raise ValueError(f"sealring: Seal_k - Seal_a does not split into {CORNER_STEPS} grid steps")
         step = (span - ringWidth) // CORNER_STEPS
 
-        x0 = y0 = BOUNDARY_TO_EDGESEAL_NM
-        x1 = sizeX - BOUNDARY_TO_EDGESEAL_NM
-        y1 = sizeY - BOUNDARY_TO_EDGESEAL_NM
+        x0 = y0 = boundaryToEdgeSeal
+        x1 = sizeX - boundaryToEdgeSeal
+        y1 = sizeY - boundaryToEdgeSeal
         outer = cornerStaircase(ringWidth, span)
         inner = shifted(outer, ringWidth, step)[:-1] + [(span, ringWidth)]
 
@@ -214,12 +212,13 @@ class sealring(DloGen):
             rings.append((Layer(name, 'drawing'), outer, inner, slitCut(0, ringWidth, rules[key])))
         for name, key in VIAS:
             width = rules[key]
-            if VIA_OFFSET_NM + width > min(ringWidth, step):
+            # Seal.d holds on both sides of the via ring.
+            if 2 * viaOffset + width > min(ringWidth, step):
                 raise ValueError(f"sealring: {key} does not fit Seal.d inside Seal_a")
-            cut = slitCut(VIA_OFFSET_NM, VIA_OFFSET_NM + width, SLIT_VIA_NOTCH_NM + 2 * VIA_OFFSET_NM)
+            cut = slitCut(viaOffset, viaOffset + width, SLIT_VIA_NOTCH_NM + 2 * viaOffset)
             rings.append((Layer(name, 'drawing'),
-                          shifted(outer, VIA_OFFSET_NM, VIA_OFFSET_NM),
-                          shifted(outer, VIA_OFFSET_NM + width, VIA_OFFSET_NM + width), cut))
+                          shifted(outer, viaOffset, viaOffset),
+                          shifted(outer, viaOffset + width, viaOffset + width), cut))
         passivOuter = PASSIV_SPACE_NM + rules['Seal_e']
         rings.append((Layer('Passiv', 'drawing'), shifted(outer, -passivOuter, -passivOuter),
                       shifted(outer, -PASSIV_SPACE_NM, -PASSIV_SPACE_NM), None))
