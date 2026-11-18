@@ -248,8 +248,9 @@ The `pad` deck checks `Pad.d`: a pad opening (Passiv and dfpad) at least
 7.50 um from EdgeSeal; an opening that overlaps or touches EdgeSeal fails
 too. Seal.b and Seal.d also run on an EdgeSeal that is cut open, so a cut
 under an intact stack shows as Seal.b and Seal.d markers even without the
-define. Not measured to the ring: the wide-metal spaces (M4/M5.e, M4/M5.f,
-TM2.bR), which the metal decks apply only between design shapes.
+define. The wide-metal spaces (M4/M5.e, M4/M5.f, TM2.bR) also measure design
+metal against the ring's metal, as they measure two design shapes, in the metal
+decks under their own rule ids.
 
 ```bash
 python tech/drc/run_drc.py --path <your_layout.gds>                       # all default decks
@@ -360,8 +361,9 @@ location, smallest margin first. A rule the deck flags whatever the distance (a 
 Passiv opening or a MIM not wholly on its metal, a slit over a MIM) reads "flagged" and
 comes first; `flagged_shapes` in `margins.json` counts those shapes. The rules it does
 not measure (exact sizes, maxima, areas, derived geometry, shapes) are listed with the
-reason, and on a layout without a seal ring the rules measured against it read "no seal
-ring". The original deck is not touched, and the list never decides pass or fail. It
+reason, and on a layout without a seal ring the rules measured only against it read "no
+seal ring" (the wide-metal spaces, measured against the ring as well, still measure). The
+original deck is not touched, and the list never decides pass or fail. It
 needs the `klayout` binary on PATH; `--threads N` hands the copy N threads.
 `margins.json` carries a `format` number that moves when one of its fields is renamed,
 dropped or changes meaning.

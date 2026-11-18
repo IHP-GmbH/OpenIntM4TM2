@@ -55,34 +55,61 @@ if BEOL
     unless PRECHECK_DRC
       # INTERPOSER DEVIATION: sg13g2 applies M{n}.e/f/g/i on the raw metal layer. Here they
       # run on the seal-excluded metal (met_nseal = met.not(edgeseal_drw)), matching the
-      # existing M{n}.a/M{n}.b so edge-seal geometry is never flagged by the interposer deck.
+      # existing M{n}.a/M{n}.b, so ring metal is never checked against itself.
+      # M{n}.e/f also measure design metal against the ring's metal on the same layer
+      # (met AND EdgeSeal), by the same rule as between two design shapes. Ring to ring is
+      # not measured; the ring's own geometry is held by the seal deck (Seal.a, Seal.c).
 
       # Rule M{n}.e: Min. space of Metal{n} lines if at least one line is wider than Mn_e_w
       # and the parallel run is longer than Mn_e_cr.
       # Wide seed = layer under/over-sized by Mn_e_w/2 (thin lines vanish); then a two-layer
       # separation between the layer and the wide seed limited to parallel runs over Mn_e_cr.
       logger.info("Executing rule M#{met_no}.e")
+      # The ring's metal, for M{n}.e and M{n}.f. It is derived after this log line, not
+      # beside met_nseal: test_drc_margins.py splits the deck at each "Executing rule" line
+      # and would count it as read by M{n}.b.
+      met_ring = met_lay.and(edgeseal_drw)
       mn_e_value = fetch_rule(drc_rules, 'Mn_e')
       mn_e_w = fetch_rule(drc_rules, 'Mn_e_w') / 2
       mn_e_cr = fetch_rule(drc_rules, 'Mn_e_cr')
+      mn_e_message = "5.17. M#{met_no}.e: Min. Metal#{met_no} space if a line wider than #{mn_e_w * 2} um with parallel run over #{mn_e_cr} um: #{mn_e_value} um."
       mn_e_seed = met_nseal.sized(-1 * mn_e_w.um).sized(mn_e_w.um)
-      mn_e_l = met_nseal.sep(mn_e_seed, mn_e_value.um, projection_limits(mn_e_cr.um + 0.001.um, nil))
-      mn_e_l.output("M#{met_no}.e",
-                    "5.17. M#{met_no}.e: Min. Metal#{met_no} space if a line wider than #{mn_e_w * 2} um with parallel run over #{mn_e_cr} um: #{mn_e_value} um.")
+      mn_e_ring_seed = met_ring.sized(-1 * mn_e_w.um).sized(mn_e_w.um)
+      # Pairs: design to wide design, design to wide ring, wide design to any ring. When
+      # both sides are wide the last two report the same edge pair, as two wide design
+      # shapes report one pair each way. INTERPOSER DEVIATION: transparent. sg13g2 runs
+      # these shielded, where each wide line's own copy in the seed shields it from a
+      # second wide line, so two wide lines closer than Mn_e passed; a notch between two
+      # wide arms of one polygon now counts as a space too. Unshielded, a shape between
+      # two lines at legal spaces keeps them at least Mn_b + Mn_a + Mn_b (0.62 um) apart,
+      # over Mn_f (0.60); metaln_wide_dashed_gap holds that.
+      [[met_nseal, mn_e_seed], [met_nseal, mn_e_ring_seed], [mn_e_seed, met_ring]].each do |mn_e_a, mn_e_b|
+        mn_e_l = mn_e_a.sep(mn_e_b, mn_e_value.um, projection_limits(mn_e_cr.um + 0.001.um, nil),
+                            transparent)
+        mn_e_l.output("M#{met_no}.e", mn_e_message)
+        mn_e_l.forget
+      end
       mn_e_seed.forget
-      mn_e_l.forget
+      mn_e_ring_seed.forget
 
       # Rule M{n}.f: same construct with the wider (Mn_f_w) / longer (Mn_f_cr) thresholds.
       logger.info("Executing rule M#{met_no}.f")
       mn_f_value = fetch_rule(drc_rules, 'Mn_f')
       mn_f_w = fetch_rule(drc_rules, 'Mn_f_w') / 2
       mn_f_cr = fetch_rule(drc_rules, 'Mn_f_cr')
+      mn_f_message = "5.17. M#{met_no}.f: Min. Metal#{met_no} space if a line wider than #{mn_f_w * 2} um with parallel run over #{mn_f_cr} um: #{mn_f_value} um."
       mn_f_seed = met_nseal.sized(-1 * mn_f_w.um).sized(mn_f_w.um)
-      mn_f_l = met_nseal.sep(mn_f_seed, mn_f_value.um, projection_limits(mn_f_cr.um + 0.001.um, nil))
-      mn_f_l.output("M#{met_no}.f",
-                    "5.17. M#{met_no}.f: Min. Metal#{met_no} space if a line wider than #{mn_f_w * 2} um with parallel run over #{mn_f_cr} um: #{mn_f_value} um.")
+      mn_f_ring_seed = met_ring.sized(-1 * mn_f_w.um).sized(mn_f_w.um)
+      # The same three pairs as M{n}.e, transparent as well.
+      [[met_nseal, mn_f_seed], [met_nseal, mn_f_ring_seed], [mn_f_seed, met_ring]].each do |mn_f_a, mn_f_b|
+        mn_f_l = mn_f_a.sep(mn_f_b, mn_f_value.um, projection_limits(mn_f_cr.um + 0.001.um, nil),
+                            transparent)
+        mn_f_l.output("M#{met_no}.f", mn_f_message)
+        mn_f_l.forget
+      end
       mn_f_seed.forget
-      mn_f_l.forget
+      mn_f_ring_seed.forget
+      met_ring.forget
 
       # Rule M{n}.g: Min. width of 45-degree bent Metal{n} when the bent segment is longer
       # than Mn_g_min. Select 45-degree edges longer than Mn_g_min, then width-check them.

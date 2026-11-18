@@ -33,7 +33,7 @@
 #   Seal.b_<L>   SG13G2 spaces design Activ 4.90 um from the ring. Here it is
 #                design <L> to the ring's <L>, on the same layer, at that
 #                layer's own minimum space (Mn_b, TM1_b, TM2_b): the metal
-#                decks run on metal NOT EdgeSeal and never measure it. A
+#                decks measure only their wide-line spaces against it. A
 #                design shape that touches or overlaps the ring fails too.
 #                Drawn metal only; filler is held off all metal, the ring
 #                included, by MFil.c, TM1Fil.c and TM2Fil.c.

@@ -5,10 +5,23 @@ Generate the Metaln DRC unit testcase (`metaln.gds`) for the interposer, followi
 IHP-SG13G2 `testing/testcases/unit/` convention: one table GDS with intentional
 PASS / FAIL structures labeled by text on layer 63/0.
 
-The layout has two top cells, each checked as a whole by run_regression.py:
+The layout has these top cells, each checked as a whole by run_regression.py:
   - metaln_viol : one violating structure per wide-line / 45-degree rule
                   -> expects {M4.e, M4.f, M4.g, M4.i, M5.e, M5.f, M5.g, M5.i}
   - metaln_clean: the corresponding near-limit legal structures -> expects {}
+  - metaln_ring_*: design metal beside a strip of ring metal (EdgeSeal 39/0 over
+    Metal4 and Metal5), which M{n}.e/f measure too. Named by the wide side; the
+    parameters are the RING_CELLS rows. A red cell is 5 nm short, its _limit twin
+    sits at the limit; the narrow and short-run cells are 5 nm short but clean,
+    because neither side is wide or the run is not long enough;
+    metaln_ring_to_ring puts two wide ring strips 5 nm short, which these rules do
+    not measure.
+  - metaln_wide_pair_*: two wide design lines, 5 nm short and at the limit (WIDE_PAIRS).
+  - metaln_wide_notch_e(_limit): a U of two 3.5 um arms, its notch 5 nm short / at
+    the limit of Mn_e; a gap inside one polygon counts as a space.
+  - metaln_wide_dashed_gap: two 12 um lines 0.62 apart (Mn_b + Mn_a + Mn_b) with
+    0.20 x 1.0 dashes between them at 0.21, clean: unshielded, a legal shape in the
+    gap leaves the lines over Mn_f apart.
 
 Every structure is drawn identically on BOTH Metal4 (50/0) and Metal5 (67/0); the
 metaln rules run per metal layer with no inter-layer interaction, so each M4.x maps to
@@ -32,6 +45,7 @@ import klayout.db as db
 L_METAL4 = (50, 0)
 L_METAL5 = (67, 0)
 L_TEXT = (63, 0)
+L_EDGESEAL = (39, 0)
 
 # Structure origins along x (um). Gaps are large enough that structures never interact
 # (the M.f block spans 12 um in x).
@@ -58,6 +72,33 @@ def _text(cell, tx, x, y, s):
     cell.shapes(tx).insert(db.DText(s, db.DTrans(db.DVector(x, y))))
 
 
+# Design metal beside ring metal: (cell, design width, ring width, gap, parallel run), um.
+# Mn_e 0.24 for a side wider than 0.39 over a run above 1.0; Mn_f 0.60 for a side
+# wider than 10 over a run above 10.
+RING_CELLS = (
+    ("metaln_ring_e_wide_ring", 0.30, 3.5, 0.235, 10.0),        # -> M.e
+    ("metaln_ring_e_wide_ring_limit", 0.30, 3.5, 0.24, 10.0),
+    ("metaln_ring_e_wide_design", 2.0, 0.30, 0.235, 10.0),      # -> M.e
+    ("metaln_ring_e_wide_design_limit", 2.0, 0.30, 0.24, 10.0),
+    ("metaln_ring_e_narrow", 0.30, 0.30, 0.235, 10.0),
+    ("metaln_ring_e_short_run", 0.30, 3.5, 0.235, 1.0),
+    ("metaln_ring_f_wide_design", 12.0, 3.5, 0.595, 20.0),      # -> M.f
+    ("metaln_ring_f_wide_design_limit", 12.0, 3.5, 0.60, 20.0),
+    ("metaln_ring_f_wide_ring", 0.30, 12.0, 0.595, 20.0),       # -> M.f
+    ("metaln_ring_f_wide_ring_limit", 0.30, 12.0, 0.60, 20.0),
+    ("metaln_ring_f_narrow", 2.0, 3.5, 0.595, 20.0),
+    ("metaln_ring_f_short_run", 0.30, 12.0, 0.595, 10.0),
+)
+
+# Two wide design lines: (cell, width of each, gap, run), um.
+WIDE_PAIRS = (
+    ("metaln_wide_pair_e", 3.5, 0.235, 10.0),                   # -> M.e
+    ("metaln_wide_pair_e_limit", 3.5, 0.24, 10.0),
+    ("metaln_wide_pair_f", 12.0, 0.595, 20.0),                  # -> M.f
+    ("metaln_wide_pair_f_limit", 12.0, 0.60, 20.0),
+)
+
+
 def build():
     layout = db.Layout()
     layout.dbu = 0.001
@@ -73,9 +114,7 @@ def build():
     _text(viol, tx, X_E, -1.0, "5.17 Metaln - FAIL")
 
     # (a) M{n}.e : a 0.5 um wide line (> 0.39) beside a 0.30 um narrow line, spaced
-    #     0.22 um over a 3 um parallel run. NOTE the ported construct (layer.sep(wide_seed))
-    #     flags the neighbour edge that is NOT part of the wide seed, so exactly one line
-    #     must be narrow (<= Mn_e_w) -- a wide/wide pair does not trip this construct.
+    #     0.22 um over a 3 um parallel run (a wide/wide pair is metaln_wide_pair_e).
     #     0.22 > Mn_b (0.21) so M.b stays quiet; 0.22 < Mn_e (0.24) with 3 um parallel
     #     run (> 1.0) -> M{n}.e. Neither line reaches 10 um so M.f stays quiet.
     _box(viol, met, X_E + 0.00, 0.0, X_E + 0.50, 3.0)
@@ -154,6 +193,37 @@ def build():
         (X_I + 0.0, 0.59),
     ])
     _text(clean, tx, X_I, 1.1, "M.i PASS (45 chamfer @0.24)")
+
+    # =================================================================== #
+    #  Design metal against the ring's metal                              #
+    # =================================================================== #
+    es = layout.layer(*L_EDGESEAL)
+    for name, design_w, ring_w, gap, run in RING_CELLS:
+        cell = layout.create_cell(name)
+        _box(cell, met + (es,), -ring_w, -5.0, 0.0, run + 5.0)
+        _box(cell, met, gap, 0.0, gap + design_w, run)
+        _text(cell, tx, 0.0, -6.0, f"{name}: {design_w} design, {ring_w} ring, gap {gap}, run {run}")
+    for name, width, gap, run in WIDE_PAIRS:
+        cell = layout.create_cell(name)
+        _box(cell, met, -width, 0.0, 0.0, run)
+        _box(cell, met, gap, 0.0, gap + width, run)
+        _text(cell, tx, 0.0, -1.0, f"{name}: two {width} lines, gap {gap}, run {run}")
+    for name, gap in (("metaln_wide_notch_e", 0.235), ("metaln_wide_notch_e_limit", 0.24)):
+        cell = layout.create_cell(name)
+        _box(cell, met, -3.5, -3.5, gap + 3.5, 0.0)      # the base of the U
+        _box(cell, met, -3.5, 0.0, 0.0, 10.0)
+        _box(cell, met, gap, 0.0, gap + 3.5, 10.0)
+        _text(cell, tx, 0.0, -4.5, f"{name}: U of two 3.5 arms, notch {gap}, run 10")
+    cell = layout.create_cell("metaln_wide_dashed_gap")
+    _box(cell, met, -12.0, 0.0, 0.0, 20.0)
+    _box(cell, met, 0.62, 0.0, 12.62, 20.0)
+    for k in range(10):
+        _box(cell, met, 0.21, 0.5 + 2.0 * k, 0.41, 1.5 + 2.0 * k)
+    _text(cell, tx, 0.0, -1.0, "metaln_wide_dashed_gap: 12 | 0.62 | 12 with 0.20 x 1.0 dashes")
+    cell = layout.create_cell("metaln_ring_to_ring")
+    _box(cell, met + (es,), -3.5, -5.0, 0.0, 15.0)
+    _box(cell, met + (es,), 0.235, -5.0, 3.735, 15.0)
+    _text(cell, tx, 0.0, -6.0, "metaln_ring_to_ring: two 3.5 ring strips, gap 0.235")
 
     return layout
 
