@@ -212,11 +212,14 @@ def test_each_rule_takes_the_offset_its_check_adds():
 
 
 def test_the_rules_measured_against_the_seal_ring_are_the_ones_that_read_it():
+    """needs_seal: measured only against the ring; also_seal: against the ring as well
+    as between design shapes. A rule is one or the other, and reads the ring iff so."""
     for name, rule in TABLE["rules"].items():
         blocks = _rule_blocks(name)
         assert blocks, name
+        assert not (rule.get("needs_seal") and rule.get("also_seal")), name
         reads = any(_reads_seal(block.code, block.seal) for block in blocks)
-        assert reads == bool(rule.get("needs_seal")), name
+        assert reads == bool(rule.get("needs_seal") or rule.get("also_seal")), name
 
 
 def test_the_tool_taps_the_deck_lines_of_its_rules_and_nothing_else():
