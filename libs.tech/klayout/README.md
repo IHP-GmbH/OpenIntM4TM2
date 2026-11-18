@@ -268,6 +268,10 @@ whatever it says).
 
 The `assembly` deck is no longer here; if requested, `run_drc.py` redirects you to
 the ADK assembly DRC (`adk/klayout/drc/run_drc.py --interposer-adapter <name>`).
+The decks take the interposer GDS alone, never a complete GDS with the dies
+placed: a die's own metals and seal ring sit on the same layer numbers and read
+as interposer layers, so Seal.b, Seal.m or Pad.fR markers there are not
+interposer findings.
 
 ### Metal fill
 
