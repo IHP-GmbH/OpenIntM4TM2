@@ -5,7 +5,7 @@
   "roles": [
     "carrier"
   ],
-  "revision": "0.5.0",
+  "revision": "0.7.0",
   "description": "IHP 130-nm IntM4TM2 aluminium BEOL interposer.",
   "dbu_um": 0.001,
   "manufacturing_grid_um": 0.005,

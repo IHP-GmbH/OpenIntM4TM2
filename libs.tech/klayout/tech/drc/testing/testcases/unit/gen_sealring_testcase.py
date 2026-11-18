@@ -8,11 +8,12 @@ with intentional PASS / FAIL structures labeled by text on layer 63/0.
 Every top cell is checked as a whole by run_regression.py. Two of them cover
 the rules of the sg13g2 sealring deck:
   - sealring_viol : violates every one of them -> expects
-                    {Seal.k, Seal.l, Seal.m, Seal.n}
+                    {Seal.k, Seal.l, Seal.l1, Seal.m, Seal.n}
   - sealring_clean: near-limit legal versions  -> expects {}
 
-Those rules (interposer backend-only subset; the Seal.b family is dropped
-because its primary layer Activ does not exist here):
+Those rules (interposer backend-only subset; the rules SG13G2 states against
+Activ are restated for this stack in the deck and covered by the seal_b_*,
+seal_d_* and seal_l1 cells below):
   - Seal.l : no drawn structure may fall outside the 39/4 sealring boundary.
   - Seal.n : the EdgeSeal (39/0) must be enclosed by an unbroken Passiv (9/0) ring.
   - Seal.k : every 45-degree EdgeSeal corner edge must be >= 21.00 um long.
@@ -24,12 +25,13 @@ viol cell:
   - a second, far-away EdgeSeal donut -> two EdgeSeal polygons -> Seal.m
     (structurally unavoidable with two rings; deliberately in the golden set).
   - a 39/4 boundary that covers both rings but a Metal4 (50/0) box sits OUTSIDE
-    it -> Seal.l.
+    it -> Seal.l; the boundary is 10 um from the rings -> Seal.l1.
 
 clean cell:
   - a single EdgeSeal donut with 45-degree corners >= 21 um (Seal.k ok, Seal.m ok
     since one polygon), enclosed inside the hole of a Passiv donut (Seal.n ok),
-    and one 39/4 box covering every drawn shape so nothing is outside (Seal.l ok).
+    and one 39/4 box covering every drawn shape so nothing is outside (Seal.l ok),
+    30 um from the EdgeSeal (Seal.l1 ok).
 
 Everything is placed on the 5 nm grid (dbu = 0.001 um, all coords multiples of
 5 dbu) and structures are spaced far apart so they never interact.
@@ -39,13 +41,16 @@ with -rd require_sealring=true (the GOLDEN table sets it per cell). Each cell is
 one 200 um square with a 39/4 boundary and, unless the cell says otherwise, a
 complete rectangular ring 30 um inside it (EdgeSeal plus the Metal4..TopMetal2
 stack, centred via rings and a Passiv ring outside) around a Metal4 core:
-  - sealreq_clean, sealreq_sub_cell (ring in a sub-cell), sealreq_touching_core
-    (core metal touching the ring from inside), sealreq_markers (nofill and
+  - sealreq_touching_core (core metal touching the ring from inside)
+    -> {Seal.b_Metal4}, a design shape may not touch the ring
+  - sealreq_clean, sealreq_sub_cell (ring in a sub-cell), sealreq_markers (nofill and
     keep-out markers from the board edge into the margin, prBoundary on the
     outline), sealreq_crossbar_ES (an EdgeSeal bar splits the interior in two)
     -> {}
   - sealreq_no_edgeseal -> {SEAL.REQ.1}; sealreq_no_boundary -> {SEAL.REQ.2}
-  - sealreq_es_open (EdgeSeal cut, the stack is not) -> {SEAL.REQ.3_ES}
+  - sealreq_es_open (EdgeSeal cut, the stack is not) -> {SEAL.REQ.3_ES}, and
+    the metal and vias left in the cut are outside EdgeSeal: Seal.b_<L> for
+    each metal, Seal.d.<V> for each via
   - sealreq_break_<L>, one per ring layer, 1 um cut -> {SEAL.REQ.3_<L>}
   - sealreq_point_contact_M5 (two Metal5 pieces touching at one corner),
     sealreq_gap_5nm_TM1, sealreq_neck_M4 (0.18 um neck) and sealreq_missing_TV2
@@ -53,7 +58,8 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
   - sealreq_corner_ring (small ring, core outside it), sealreq_fill_in_margin,
     sealreq_stray_passiv, sealreq_passiv_loop (a 9/0 donut in the margin that
     does not go around EdgeSeal), sealreq_trace_crossing (Metal4 from the core
-    through the ring into the margin) -> {SEAL.REQ.4}
+    through the ring into the margin) -> {SEAL.REQ.4}; the trace also adds
+    Seal.b_Metal4
   - sealreq_nested_ring: a second complete ring inside the first -> {Seal.m}
   - sealreq_off_no_seal: core only and no define -> {} (the default is unchanged)
   - sealreq_slit: every metal and via ring cut once on the right side, the
@@ -62,7 +68,7 @@ stack, centred via rings and a Passiv ring outside) around a Metal4 core:
     sealreq_slit_two_cuts_M4 (a second Metal4 cut) -> {SEAL.REQ.3_TM2,
     SEAL.REQ.3_TV2} and {SEAL.REQ.3_M4, SEAL.REQ.3_V4}, the via ring lying
     over the extra metal cut; sealreq_slit_es_cut (EdgeSeal cut as well)
-    -> {SEAL.REQ.3_ES};
+    -> {SEAL.REQ.3_ES, Seal.d.<V>}, the via ends 1.285 um from the EdgeSeal cut;
     sealreq_slit_via_short_TM2 (a 0.5 um TopVia2 cut, inside the TopMetal2 cut)
     -> {SEAL.REQ.3_TV2}; sealreq_slit_misaligned (the Metal5 cut on the top
     side, the others on the right) -> {SEAL.REQ.3_V4, SEAL.REQ.3_TV1}
@@ -81,10 +87,27 @@ from the ring, the Seal.f floor):
   - seal_a_<L>: Metal4, Metal5, TopMetal1 or TopMetal2 5 nm narrower for 10 um
     -> {Seal.a_<L>}
   - seal_c_narrow_<V> / seal_c_wide_<V>: a via ring 5 nm narrower or wider for
-    10 um -> {Seal.c1.Via4}, {Seal.c2}, {Seal.c3}
+    10 um -> {Seal.c1.Via4}, {Seal.c2}, {Seal.c3}; the wider TopVia2, centred at
+    exactly Seal.d, also gives Seal.d.TopVia2
   - seal_e: the Passiv ring 5 nm narrower for 10 um -> {Seal.e}
   - seal_f_<L>: EdgeSeal and <L> 5 nm closer to the Passiv ring for 10 um
-    -> {Seal.f.<L>}
+    -> {Seal.f.<L>, Seal.l1}, the EdgeSeal then 29.995 um from the boundary
+  - seal_b_<L>: a 2 um design strip of <L> inside the ring, 5 nm short of the
+    layer's space (Mn_b, TM1_b, TM2_b) -> {Seal.b_<L>}; seal_b_limit has all
+    four at exactly their space -> {}; seal_b_touch_Metal4 (touching) and
+    seal_b_overlap_TopMetal2 (straddling the ring's inner edge) -> {Seal.b_<L>}
+  - seal_d_<V>: the via ring moved out to 1.295 um from the ring's outer edge
+    -> {Seal.d.<V>}; seal_d_limit has all three at exactly 1.30 -> {};
+    seal_d_out_Via4, a via square across EdgeSeal's outer edge
+    -> {Seal.d.Via4, Seal.c1.Via4} (the part inside is narrower than the ring)
+  - seal_b_touch_no_ring_Metal5: a ring without Metal5 and a design Metal5
+    strip on EdgeSeal's inner edge -> {}
+  - seal_d_corner_Via4 / _limit_Via4 / _touch_TopVia1: a via square in the
+    ring corner, diagonal to the hole corner at 1.294 um, 1.301 um and 0
+    -> {Seal.d.Via4}, {}, {Seal.d.TopVia1}
+  - seal_l1: the whole ring 5 nm closer to the left of the boundary -> {Seal.l1}
+  - seal_l1_out: the ring's left side centred on the boundary edge
+    -> {Seal.l, Seal.l1}
 
 Regenerate with:  python3 gen_sealring_testcase.py   (writes sealring.gds here)
 """
@@ -199,8 +222,9 @@ def build():
     clean.shapes(passiv).insert(passiv_clean)
     _text(clean, tx, 0, 78000, "Seal.n ok: Passiv ring hole encloses EdgeSeal")
 
-    # One 39/4 boundary covering every drawn shape -> nothing outside (Seal.l ok).
-    _box(clean, bnd, -20000, -20000, 80000, 80000)
+    # One 39/4 boundary covering every drawn shape -> nothing outside (Seal.l
+    # ok), 30 um from the EdgeSeal (Seal.l1 ok).
+    _box(clean, bnd, -30000, -30000, 90000, 90000)
 
     build_presence(layout)
     return layout
@@ -337,6 +361,7 @@ def build_presence(layout):
     build_slit(cell)
     build_corner_marks(cell)
     build_ring_rules(cell)
+    build_design_rules(cell)
 
 
 # Slit cuts on the right side, centred on y = 100 um.
@@ -445,6 +470,75 @@ def build_ring_rules(cell):
         for grown in (L_EDGESEAL, key):
             shapes[grown] += db.Region(db.Box(right, stretch[0], right + 5, stretch[1]))
         cell(f"seal_f_{name}", shapes)
+
+
+# Rule values the cells below sit at, in nm.
+SEAL_B = {(50, 0): 210, (67, 0): 210, (126, 0): 1640, (134, 0): 2000}   # Mn_b, TM1_b, TM2_b
+SEAL_D = 1300
+
+
+def build_design_rules(cell):
+    """Seal.b (design metal to the ring), Seal.d (EdgeSeal enclosure of the
+    via rings) and Seal.l1 (boundary enclosure of EdgeSeal)."""
+    inner = SIDE - INSET - RING   # inner edge of the ring's right side
+    stretch = (95000, 105000)
+
+    def design_box(space):
+        return db.Region(db.Box(inner - space - 2000, stretch[0], inner - space, stretch[1]))
+
+    # A 2 um design strip inside the ring, 5 nm short of the layer's space.
+    for key, name in METAL_NAMES.items():
+        shapes = _ring_shapes()
+        shapes[key] += design_box(SEAL_B[key] - 5)
+        cell(f"seal_b_{name}", shapes)
+    shapes = _ring_shapes()
+    for key in METAL_NAMES:
+        shapes[key] += design_box(SEAL_B[key])
+    cell("seal_b_limit", shapes)
+    shapes = _ring_shapes()
+    shapes[(50, 0)] += design_box(0)
+    cell("seal_b_touch_Metal4", shapes)
+    # Straddles the ring's inner edge: the part outside EdgeSeal is design.
+    shapes = _ring_shapes()
+    shapes[(134, 0)] += db.Region(db.Box(inner - 2000, stretch[0], inner + 1000, stretch[1]))
+    cell("seal_b_overlap_TopMetal2", shapes)
+    # A ring without Metal5 and a design Metal5 strip on EdgeSeal's inner edge:
+    # nothing on that layer to touch, so Seal.b stays quiet.
+    shapes = _ring_shapes()
+    shapes[(67, 0)] = design_box(0)
+    cell("seal_b_touch_no_ring_Metal5", shapes)
+
+    # Each via ring moved out until its outer enclosure is 5 nm short; the
+    # limit cell holds all three at exactly Seal.d on the outer side.
+    for key, name in VIA_NAMES.items():
+        shapes = _ring_shapes()
+        shapes[key] = _band(INSET + SEAL_D - 5, VIA_RINGS[key])
+        cell(f"seal_d_{name}", shapes)
+    shapes = _ring_shapes()
+    for key, width in VIA_RINGS.items():
+        shapes[key] = _band(INSET + SEAL_D, width)
+    cell("seal_d_limit", shapes)
+    # A via square straddling EdgeSeal's outer edge, away from the via ring.
+    shapes = _ring_shapes()
+    shapes[(66, 0)] += db.Region(db.Box(SIDE - INSET - 95, stretch[0], SIDE - INSET + 95, stretch[0] + 190))
+    cell("seal_d_out_Via4", shapes)
+    # A via square in the ring's corner, its corner facing the hole corner
+    # diagonally: no facing edges, so only a euclidian measure sees it.
+    # 915 nm in x and y is 1.294 um, 920 nm is 1.301 um; the TopVia1 square
+    # touches the hole corner at one point.
+    hole = INSET + RING
+    for name, key, d in (("seal_d_corner_Via4", (66, 0), 915),
+                         ("seal_d_corner_limit_Via4", (66, 0), 920),
+                         ("seal_d_corner_touch_TopVia1", (125, 0), 0)):
+        side = VIA_RINGS[key]
+        shapes = _ring_shapes()
+        shapes[key] += db.Region(db.Box(hole - d - side, hole - d - side, hole - d, hole - d))
+        cell(name, shapes)
+
+    # The whole ring 5 nm closer to the left side of the boundary.
+    cell("seal_l1", {key: region.moved(-5, 0) for key, region in _ring_shapes().items()})
+    # The ring's left side centred on the boundary edge: EdgeSeal reaches out.
+    cell("seal_l1_out", {key: region.moved(-INSET - RING // 2, 0) for key, region in _ring_shapes().items()})
 
 
 def main():

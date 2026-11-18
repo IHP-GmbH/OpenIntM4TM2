@@ -202,7 +202,7 @@ available decks and what they check:
 | `pad` | 6.9 | Pad recognition consistency, pad-to-sealring distance |
 | `copperpillar` | 6.9.2 | Cu-pillar opening size, pitch, enclosure, shape |
 | `solderbump` | 6.9.1 | Solder-bump opening size, pitch, enclosure, shape |
-| `sealring` | 6.10 | Seal ring integrity, ring and Passiv ring widths, corners, uniqueness, outside structures |
+| `sealring` | 6.10 | Seal ring integrity, ring and Passiv ring widths, corners, uniqueness, outside structures, via enclosure, design metal to the ring, boundary distance |
 | `mim` | 6.11 | MIM capacitor: width, space, enclosures, per-device min/max area, via coverage, total area |
 | `metalslits` | 7.3 | Slit size/coverage on wide metal plates |
 | `lbe` | 9.1 | Local back etch size, spacing, keep-outs |
@@ -214,7 +214,8 @@ it is opt-in via `--density` (or an explicit `--deck density`); its DEN.BND.*
 boundary sanity rules are enabled with `--density_sanity`.
 
 Without a seal ring, Seal.l is skipped (it needs 39/4) and the rules that
-measure to EdgeSeal (Seal.n, Pas.c, Pad.dR, Padc.d, Padb.d, LBE.d) have nothing
+measure to EdgeSeal (Seal.n, Seal.b, Seal.d, Pas.c, Pad.d, Pad.dR, Padc.d,
+Padb.d, LBE.d) have nothing
 to measure and pass. For a layout that must carry one, `--require_sealring`
 (`-rd require_sealring=true`) turns on the SEAL.REQ.* rules of the `sealring`
 deck:
@@ -234,9 +235,22 @@ With or without the define, a closed EdgeSeal ring is measured by the SG13G2
 ring rules ported to this stack: `Seal.a_<L>` (Metal4..TopMetal2 at least
 3.50 um), `Seal.c1.Via4`, `Seal.c2` and `Seal.c3` (each via ring exactly its
 width), `Seal.e` (Passiv ring at least 4.20 um) and `Seal.f.<L>` (Passiv ring
-at least 1.00 um from the ring metals). The via offset (Seal.d, measured to
-Activ in SG13G2), the 30 um from EdgeSeal to the boundary and the spacing from
-design metal to the ring are not checked.
+at least 1.00 um from the ring metals). Three SG13G2 rules stated against
+Activ are restated for this stack, which has none:
+
+| Rule | Fails when |
+| --- | --- |
+| `Seal.b_<L>` | design Metal4, Metal5, TopMetal1 or TopMetal2 (the metal outside EdgeSeal) is closer to the ring's metal on the same layer than that layer's own minimum space (0.21, 0.21, 1.64, 2.00 um), or touches or overlaps it. Filler is held off the ring by MFil.c, TM1Fil.c and TM2Fil.c |
+| `Seal.d.<V>` | EdgeSeal encloses a Via4, TopVia1 or TopVia2 ring by less than 1.30 um on either side, corners included, or a via on EdgeSeal reaches out of it |
+| `Seal.l1` | the sealring boundary 39/4 encloses EdgeSeal by less than 30 um, or EdgeSeal reaches out of it (Fig. 6.12; not an SG13G2 rule id) |
+
+The `pad` deck checks `Pad.d`: a pad opening (Passiv and dfpad) at least
+7.50 um from EdgeSeal; an opening that overlaps or touches EdgeSeal fails
+too. Seal.b and Seal.d also run on an EdgeSeal that is cut open, so a cut
+under an intact stack shows as Seal.b and Seal.d markers even without the
+define. The wide-metal spaces (M4/M5.e, M4/M5.f, TM2.bR) also measure design
+metal against the ring's metal, as they measure two design shapes, in the metal
+decks under their own rule ids.
 
 ```bash
 python tech/drc/run_drc.py --path <your_layout.gds>                       # all default decks
@@ -255,6 +269,10 @@ whatever it says).
 
 The `assembly` deck is no longer here; if requested, `run_drc.py` redirects you to
 the ADK assembly DRC (`adk/klayout/drc/run_drc.py --interposer-adapter <name>`).
+The decks take the interposer GDS alone, never a complete GDS with the dies
+placed: a die's own metals and seal ring sit on the same layer numbers and read
+as interposer layers, so Seal.b, Seal.m or Pad.fR markers there are not
+interposer findings.
 
 ### Metal fill
 
@@ -343,8 +361,9 @@ location, smallest margin first. A rule the deck flags whatever the distance (a 
 Passiv opening or a MIM not wholly on its metal, a slit over a MIM) reads "flagged" and
 comes first; `flagged_shapes` in `margins.json` counts those shapes. The rules it does
 not measure (exact sizes, maxima, areas, derived geometry, shapes) are listed with the
-reason, and on a layout without a seal ring the rules measured against it read "no seal
-ring". The original deck is not touched, and the list never decides pass or fail. It
+reason, and on a layout without a seal ring the rules measured only against it read "no
+seal ring" (the wide-metal spaces, measured against the ring as well, still measure). The
+original deck is not touched, and the list never decides pass or fail. It
 needs the `klayout` binary on PATH; `--threads N` hands the copy N threads.
 `margins.json` carries a `format` number that moves when one of its fields is renamed,
 dropped or changes meaning.

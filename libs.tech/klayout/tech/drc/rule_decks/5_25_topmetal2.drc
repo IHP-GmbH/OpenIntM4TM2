@@ -58,6 +58,9 @@ if BEOL
     # seal-excluded metal (topmetal2_drw.not(edgeseal_drw)) to match this deck's style
     # (TM2.a/TM2.b also work on seal-excluded TopMetal2). The .not(ind_drw) inductor
     # exclusion is preserved from the sg13g2 source so inductor windings are not flagged.
+    # The design metal is also measured against the ring's TopMetal2 on the same terms
+    # (TopMetal2 AND EdgeSeal). Ring to ring is not measured; the ring's own geometry
+    # is held by the seal deck.
     logger.info('Executing rule TM2.bR')
     tm2_br_value = fetch_rule(drc_rules, 'TM2_bR')
     tm2_br_w_value = fetch_rule(drc_rules, 'TM2_bR_w')
@@ -70,14 +73,27 @@ if BEOL
     # than TM2_bR_w (a line exactly TM2_bR_w wide collapses to nothing on the
     # shrink), i.e. the "wide" lines that trigger the enlarged spacing requirement.
     tm2_br_seed = tm2_br_metal.not(ind_drw).sized(-tm2_br_half.um).sized(tm2_br_half.um)
-    # Flag separations below TM2_bR only where the parallel run exceeds TM2_bR_cr
-    # (the +0.001 um keeps runs of exactly TM2_bR_cr legal).
-    tm2_br_l = tm2_br_metal.sep(tm2_br_seed, tm2_br_value.um,
-                                projection_limits(tm2_br_cr_value.um + 0.001.um, nil))
-    tm2_br_l.output('TM2.bR',
-                    "5.25. TM2.bR : Min. space of TopMetal2 lines if at least one line is wider than #{tm2_br_w_value} um and the parallel run is more than #{tm2_br_cr_value} um is #{tm2_br_value} um")
+    # The ring's TopMetal2 and its wide seed; the ring carries no inductor to exclude.
+    tm2_br_ring = topmetal2_drw.and(edgeseal_drw)
+    tm2_br_ring_seed = tm2_br_ring.sized(-tm2_br_half.um).sized(tm2_br_half.um)
+    tm2_br_message = "5.25. TM2.bR : Min. space of TopMetal2 lines if at least one line is wider than " \
+                     "#{tm2_br_w_value} um and the parallel run is more than #{tm2_br_cr_value} um is #{tm2_br_value} um"
+    # Pairs: design to wide design, design to wide ring, wide design to any ring. Flag
+    # separations below TM2_bR only where the parallel run exceeds TM2_bR_cr (the
+    # +0.001 um keeps runs of exactly TM2_bR_cr legal). INTERPOSER DEVIATION: transparent.
+    # sg13g2 runs it shielded, where a wide line's own copy in the seed shields it from a
+    # second wide line, so two wide lines closer than TM2_bR passed; a notch between two
+    # wide arms of one polygon now counts as a space too. Unshielded, a shape between
+    # them at legal spaces keeps them TM2_b + TM2_a + TM2_b (6.0 um) apart, over TM2_bR.
+    [[tm2_br_metal, tm2_br_seed], [tm2_br_metal, tm2_br_ring_seed], [tm2_br_seed, tm2_br_ring]].each do |tm2_br_a, tm2_br_b|
+      tm2_br_l = tm2_br_a.sep(tm2_br_b, tm2_br_value.um,
+                              projection_limits(tm2_br_cr_value.um + 0.001.um, nil), transparent)
+      tm2_br_l.output('TM2.bR', tm2_br_message)
+      tm2_br_l.forget
+    end
     tm2_br_metal.forget
     tm2_br_seed.forget
-    tm2_br_l.forget
+    tm2_br_ring.forget
+    tm2_br_ring_seed.forget
   end
 end
