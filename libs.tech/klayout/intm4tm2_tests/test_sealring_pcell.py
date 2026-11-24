@@ -57,6 +57,17 @@ RULES = json.loads((DRC_DIR / "rule_decks" / "interposer_tech_default.json").rea
 
 KLAYOUT_BIN = shutil.which("klayout")
 
+
+def _declared_version():
+    """The version this tree's pyproject.toml declares, read by the PDK's own
+    reader (loaded alone: the library package registers itself with KLayout)."""
+    import importlib.util
+    path = PYTHON_DIR / "intm4tm2_pycell_lib" / "ihp" / "pdk_version.py"
+    spec = importlib.util.spec_from_file_location("pdk_version", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.declared_version(REPO_KLAYOUT.parents[1])
+
 # All values in nm (dbu 0.001 um).
 SEAL_A = round(RULES["Seal_a"] * 1000)
 SEAL_E = round(RULES["Seal_e"] * 1000)
@@ -442,8 +453,13 @@ def test_labels(generated, case):
     assert abs(x_um - size[0] / 1000) <= 0.05 and abs(y_um - size[1] / 1000) <= 0.05
     # The area of the outline in mm^2, to the label's two digits.
     assert area_mm2 == pytest.approx(x_um * y_um / 1e6, rel=0.05)
-    # Where the commit comes from is test_pdk_version.py's matter.
+    # The label is this tree's name and version, with '(local changes)' in a
+    # checkout whose tracked files differ from its commit; test_pdk_version.py
+    # checks which applies when.
     assert texts[1][2] == "PDK version: " + generated["pdk_version"]
+    version = _declared_version()
+    assert texts[1][2] in (f"PDK version: intm4tm2 {version}",
+                           f"PDK version: intm4tm2 {version} (local changes)")
 
 
 @pytest.mark.parametrize("path", EXAMPLES, ids=[path.stem for path in EXAMPLES])
