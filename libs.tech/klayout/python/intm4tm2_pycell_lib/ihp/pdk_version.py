@@ -15,28 +15,23 @@
 # limitations under the License.
 #
 ########################################################################
-"""The PDK version a layout records: 'intm4tm2 <version> (<commit>)'.
+"""The PDK version a layout records: 'intm4tm2 <version>'.
 
 The version is the one the [project] table of the tree's pyproject.toml
-declares. The commit is the one the tree is at, so a layout names the exact
-PDK it was made with:
-- a tree with a .git entry, even one that cannot be followed, takes it
-  from git, and only when the tree is the top of its own work tree, with
-  '-dirty' when a tracked file differs from it;
-- a tree without .git takes it from STAMP at its top: the commit id alone
-  on one line, '-dirty' allowed;
-- otherwise, or when git cannot read the tree, the label says 'commit
-  unknown'.
-A tree that only sits inside another repository never takes that
-repository's commit, and GIT_* variables in the environment are ignored.
+declares, or 'unknown'. The label names nothing else that changes between
+two commits of one version, so a layout drawn at any commit of a version is
+the layout drawn at any other; CHANGELOG.md says when the version rises.
 
-This repository never writes STAMP. Whatever installs the tree without .git
-has to write it, and keep pyproject.toml beside it; otherwise the label reads
-'unknown' for what is missing.
+' (local changes)' is appended when the tree is the top of its own git work
+tree and a tracked file differs from its commit. Nothing is appended when
+the tree has no .git, when it only sits inside another repository, when its
+.git cannot be followed, or when git is missing, fails or hangs: the label
+says only what it knows. GIT_* variables in the environment are ignored.
 
-In a checkout each call starts up to two git processes, each bounded by
-GIT_TIMEOUT_S. The seal ring calls it on every evaluation, so its label
-follows the tree as its widths follow the rule file.
+In a checkout each call starts two git processes, each bounded by
+GIT_TIMEOUT_S; a tree without .git starts none. The seal ring calls it on
+every evaluation, so its label follows the tree as its widths follow the
+rule file.
 
 Only the standard library is imported, so the module loads without KLayout.
 """
@@ -49,10 +44,8 @@ import subprocess
 # The top of the tree, five directories above this file's own
 # (libs.tech/klayout/python/intm4tm2_pycell_lib/ihp).
 ROOT = pathlib.Path(__file__).resolve().parents[5]
-STAMP = '.shipped-ref'
 NAME = 'intm4tm2'
-COMMIT_ID = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
-STAMPED_ID = re.compile(rf'(?:{COMMIT_ID.pattern})(?:-dirty)?')
+LOCAL_CHANGES = ' (local changes)'
 # A git that hangs holds the PCell for at most this long per call. Nothing in
 # the process can stop one stuck in uninterruptible I/O on a dead hard mount.
 GIT_TIMEOUT_S = 10
@@ -91,31 +84,17 @@ def _git(root, *args):
     return os.fsdecode(out).strip()
 
 
-def _git_commit(root):
-    """The commit of the work tree whose top is `root`, '-dirty' appended when
-    a tracked file differs from it; None when `root` is not such a top or git
-    cannot read it."""
-    out = _git(root, 'rev-parse', '--show-toplevel', 'HEAD')
-    lines = out.splitlines() if out else []
+def _has_local_changes(root):
+    """Whether `root` is the top of its own work tree with a tracked file
+    differing from its commit; False when it is not such a top or git cannot
+    tell."""
+    top = _git(root, 'rev-parse', '--show-toplevel')
     # os.path.realpath does not raise on a loop; Path.resolve does up to
     # Python 3.12.
-    if len(lines) != 2 or os.path.realpath(lines[0]) != os.path.realpath(root):
-        return None
-    commit = lines[1]
+    if not top or os.path.realpath(top) != os.path.realpath(root):
+        return False
     changes = _git(root, '--no-optional-locks', 'status', '--porcelain', '--untracked-files=no')
-    if changes is None or not COMMIT_ID.fullmatch(commit):
-        return None
-    return commit + ('-dirty' if changes else '')
-
-
-def _stamped_commit(root):
-    """The commit id in root/STAMP, or None when the file is missing or holds
-    anything else."""
-    try:
-        commit = (pathlib.Path(root) / STAMP).read_text(encoding='utf-8').strip()
-    except (OSError, ValueError):
-        return None
-    return commit if STAMPED_ID.fullmatch(commit) else None
+    return bool(changes)
 
 
 def pdk_version(root=ROOT):
@@ -125,5 +104,5 @@ def pdk_version(root=ROOT):
     # os.path.lexists, unlike Path.exists, does not raise on a directory it
     # may not search, and it counts a .git it cannot follow.
     has_git = os.path.lexists(os.path.join(root, '.git'))
-    commit = _git_commit(root) if has_git else _stamped_commit(root)
-    return f'{NAME} {version} ({commit or "commit unknown"})'
+    local = has_git and _has_local_changes(root)
+    return f'{NAME} {version}' + (LOCAL_CHANGES if local else '')

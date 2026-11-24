@@ -44,6 +44,7 @@ WITHOUT_GIT = "INTM4TM2_TREE_WITHOUT_GIT"
 
 # (version, sha256 of the selected files), oldest first.
 CONTENT = [
+    ("0.8.0", "258284a2b2684369a21bf46884c4ec0d9eea8b6f3a034dd1c9f13a69552e7ee1"),
 ]
 
 DOCUMENTS = ("*.md", "*.rst", "*.pdf")
