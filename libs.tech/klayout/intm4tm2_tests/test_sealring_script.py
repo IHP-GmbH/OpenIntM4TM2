@@ -25,7 +25,8 @@ example's own outline, and the result equals the example except for the
 ring's version marks and labels. Every refusal exits 1 with one error line
 and writes nothing, including a library module loaded from another tree and
 another layer table. A copy of the tree without .git, as an install has it,
-labels the ring with the commit its install stamp names, or 'commit unknown'.
+labels the ring with the PDK's name and version, and a stamp beside it is not
+read.
 """
 
 import os
@@ -309,8 +310,8 @@ def test_layer_table_that_changes_nothing_is_accepted(tmp_path, lyp):
 @pytest.mark.parametrize("stamp", [None, "0123456789abcdef0123456789abcdef01234567"],
                          ids=["unstamped", "stamped"])
 def test_install_without_git(tmp_path, stamp):
-    # The tree as an install has it: no .git, and the commit, if any, in a
-    # stamp at the top of the tree.
+    # The tree as an install has it: no .git, and perhaps a stamp at its top,
+    # which the label does not read.
     root = tmp_path / "pdk"
     shutil.copytree(REPO_KLAYOUT, root / "libs.tech" / "klayout",
                     ignore=shutil.ignore_patterns("__pycache__", "intm4tm2_tests", "regression_run"))
@@ -325,4 +326,4 @@ def test_install_without_git(tmp_path, stamp):
     texts = layout.top_cell().begin_shapes_rec(layout.find_layer(*TEXT))
     labels = [it.shape().text_string for it in texts if it.shape().is_text()]
     versions = [label for label in labels if label.startswith("PDK version: ")]
-    assert versions == [f"PDK version: intm4tm2 9.8.7 ({stamp or 'commit unknown'})"]
+    assert versions == ["PDK version: intm4tm2 9.8.7"]

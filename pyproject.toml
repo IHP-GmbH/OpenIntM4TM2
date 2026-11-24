@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intm4tm2"
-version = "0.7.0"
+version = "0.8.0"
 description = "KLayout PDK and assembly tooling for the IHP 130-nm IntM4TM2 aluminium BEOL interposer."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,8 +32,11 @@ testpaths = ["libs.tech/klayout/intm4tm2_tests"]
 # appears. --strict-markers and --strict-config turn a typo in a marker or an
 # ini key into an error instead of a silently ignored line.
 #
-# A bare `pytest` starts none of the design tools. It does run git, for the
-# PDK version label (test_pdk_version.py, whose git cases skip without it).
+# A bare `pytest` starts none of the design tools. It does run git: for the
+# PDK version label (test_pdk_version.py, whose git cases skip without it),
+# and to list the files the version covers (test_version_content.py, which
+# fails without git where the tree has a .git, and fails without a .git
+# unless INTM4TM2_TREE_WITHOUT_GIT declares the tree a copy of one commit).
 # The cases that run the klayout binary, ngspice, xschem or kicad-cli carry
 # live_tool and are deselected here: a name on PATH is enough to start them,
 # and the klayout wheel ships the Python module without the binary. The field
