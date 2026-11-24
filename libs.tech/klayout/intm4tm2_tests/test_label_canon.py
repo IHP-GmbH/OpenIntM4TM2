@@ -21,7 +21,8 @@ The ring is drawn with tech/scripts/sealring.py, as a user draws it, in
 copies of the tree committed to their own repositories. Two commits that
 differ only in a README, made at different dates, give layouts equal once
 the GDS timestamps (the BGNLIB and BGNSTR records) are set aside; a version
-rise gives another label and other bytes.
+rise gives another label and other bytes. It draws with the klayout binary,
+so it runs with the live_tool tests.
 """
 
 import os

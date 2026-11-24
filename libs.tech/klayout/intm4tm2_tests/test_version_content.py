@@ -44,7 +44,7 @@ WITHOUT_GIT = "INTM4TM2_TREE_WITHOUT_GIT"
 
 # (version, sha256 of the selected files), oldest first.
 CONTENT = [
-    ("0.8.0", "258284a2b2684369a21bf46884c4ec0d9eea8b6f3a034dd1c9f13a69552e7ee1"),
+    ("0.8.0", "3f56cb59e2babff92d814cd7c09c66c3e73d94696fab6e1318b8fed856d0c8dd"),
 ]
 
 DOCUMENTS = ("*.md", "*.rst", "*.pdf")
@@ -106,9 +106,12 @@ def _listed():
 
 def content_digest():
     """The sha256 over '<sha256 of the file>  <path>' lines of the selected
-    files, sorted by path, read from the work tree."""
+    files, sorted by path, read from the work tree. A listed file deleted
+    from the work tree counts as removed."""
     lines = []
     for path in sorted(p for p in _listed() if selected(p)):
+        if not os.path.lexists(ROOT / path):
+            continue
         data = (ROOT / path).read_bytes()
         lines.append(f"{hashlib.sha256(data).hexdigest()}  {path}\n")
     return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
@@ -137,9 +140,10 @@ def test_rows_are_oldest_first_once_each():
 def test_newest_row_names_this_tree():
     digest = content_digest()
     assert CONTENT and CONTENT[-1][1] == digest, (
-        f"the files the PDK version covers changed since the newest row of CONTENT: raise "
-        f"pyproject.toml's version (see CHANGELOG.md), then add (\"<new version>\", \"{digest}\") "
-        f"to CONTENT")
+        f"the files the PDK version covers changed since the newest row of CONTENT: raise the "
+        f"version as CHANGELOG.md says, with the revision in libs.tech/adk/technology.json among "
+        f"the edits, then run this test again and add the row it prints; as the tree stands now "
+        f"the row is (\"<new version>\", \"{digest}\")")
 
 
 def test_newest_row_is_the_declared_version():

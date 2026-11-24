@@ -28,7 +28,7 @@ the tree has no .git, when it only sits inside another repository, when its
 .git cannot be followed, or when git is missing, fails or hangs: the label
 says only what it knows. GIT_* variables in the environment are ignored.
 
-In a checkout each call starts two git processes, each bounded by
+In a checkout each call starts up to two git processes, each bounded by
 GIT_TIMEOUT_S; a tree without .git starts none. The seal ring calls it on
 every evaluation, so its label follows the tree as its widths follow the
 rule file.
